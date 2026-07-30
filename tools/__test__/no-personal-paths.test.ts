@@ -50,15 +50,25 @@ export function trackedFiles(root = repoRoot): string[] {
 
 export type Leak = { file: string; match: string; name: string };
 
+// why: a test that exercises this gate has to contain a realistic account name, and so does a fixture that
+// proves a resolver works. The exception is per line and spelled out, so it is visible to a reviewer and
+// greppable — a generated file would never carry the marker.
+export const ALLOW_MARKER = "leak-gate-allow";
+
 export function findPersonalPaths(text: string, file: string): Leak[] {
   const leaks: Leak[] = [];
-  for (const pattern of HOME_PATTERNS) {
-    for (const match of text.matchAll(pattern)) {
-      const name = (match[1] ?? "").toLowerCase();
-      if (PLACEHOLDER_NAMES.has(name)) {
-        continue;
+  for (const line of text.split("\n")) {
+    if (line.includes(ALLOW_MARKER)) {
+      continue;
+    }
+    for (const pattern of HOME_PATTERNS) {
+      for (const match of line.matchAll(pattern)) {
+        const name = (match[1] ?? "").toLowerCase();
+        if (PLACEHOLDER_NAMES.has(name)) {
+          continue;
+        }
+        leaks.push({ file, match: match[0], name });
       }
-      leaks.push({ file, match: match[0], name });
     }
   }
   return leaks;
@@ -71,16 +81,23 @@ describe("findPersonalPaths", () => {
   });
 
   test("refuses a real account name on every platform spelling", () => {
-    assert.equal(findPersonalPaths("/home/jsmith/repos/thing", "f").length, 1);
-    assert.equal(findPersonalPaths("/Users/jsmith/repos/thing", "f").length, 1);
-    assert.equal(findPersonalPaths("C:\\Users\\jsmith\\thing", "f").length, 1);
+    assert.equal(findPersonalPaths("/home/jsmith/repos/thing", "f").length, 1); // leak-gate-allow
+    assert.equal(findPersonalPaths("/Users/jsmith/repos/thing", "f").length, 1); // leak-gate-allow
+    assert.equal(findPersonalPaths("C:\\Users\\jsmith\\thing", "f").length, 1); // leak-gate-allow
   });
 
   test("reports what it found, so the failure names the leak", () => {
-    const [leak] = findPersonalPaths("/home/jsmith/x/", "settings.json");
+    const [leak] = findPersonalPaths("/home/jsmith/x/", "settings.json"); // leak-gate-allow
     assert.equal(leak?.file, "settings.json");
     assert.equal(leak?.name, "jsmith");
     assert.match(leak?.match ?? "", /jsmith/);
+  });
+
+  test("a line carrying the allow marker is skipped, and only that line", () => {
+    const text = ["/home/jsmith/one/ // leak-gate-allow", "/home/jsmith/two/"].join("\n");
+    const leaks = findPersonalPaths(text, "f");
+    assert.equal(leaks.length, 1);
+    assert.match(leaks[0]?.match ?? "", /jsmith/);
   });
 
   test("a home path with no trailing segment is not a match, which keeps prose about ~/ quiet", () => {

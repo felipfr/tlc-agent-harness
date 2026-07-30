@@ -1,6 +1,18 @@
 export const MIN_NODE_MAJOR: number;
 
-export function resolveHarnessHome(binDir: string, env?: Record<string, string | undefined>): string;
+export function conventionalHarnessHome(home?: string): string;
+
+export type HarnessHomeDeps = {
+  realpath: (path: string) => string;
+  home: () => string;
+};
+
+export function resolveHarnessHome(
+  binDir: string,
+  env?: Record<string, string | undefined>,
+  invoked?: string,
+  deps?: HarnessHomeDeps,
+): string;
 
 export function bunExecutableName(platform?: string): string;
 
