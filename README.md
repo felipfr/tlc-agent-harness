@@ -50,6 +50,10 @@ To give one project its own rules, open it and say **"setup harness"** to the ag
 | Survive context loss | Handoff + lessons on disk |
 | Control cost/quality | Subagent model allowlist (per provider) |
 | Measure what happened | Observability + cost catalogs, tagged by provider |
+| See cost across every repo | Optional global observability spool under the runtime home |
+| Fail scope creep like a test | Plan gate: `HARNESS_PLAN` vs the diff, deviations need a stated reason |
+| Never obey content read from outside | Untrusted-content framing, once per turn |
+| Let CI and agents read the output | `--json` on every read command |
 
 ### The floor
 
@@ -64,7 +68,7 @@ them. Every denial names its rule.
 | `history-rewrite` | `git push --force`. `--force-with-lease` is allowed, since it refuses when the remote moved |
 | `machine-control` | `shutdown`, `reboot`, `halt`, `poweroff` |
 
-Harness policy and state are not agent-writable either. Everything else is opt-in: 17 capabilities, each
+Harness policy and state are not agent-writable either. Everything else is opt-in: 21 capabilities, each
 presented with benefit, trade-off and default by the init skill. Full list in
 [`docs/architecture.md`](docs/architecture.md).
 
@@ -210,6 +214,7 @@ See `tlc harness help architecture` or [`docs/architecture.md`](docs/architectur
 | Command | Purpose |
 |---------|---------|
 | `tlc harness status` | Mode, grind, gates |
+| `--json` on any read command | Machine-readable output: `status`, `doctor`, `obs`, `lessons`, `prices lookup` |
 | `tlc harness update` | Pull runtime + refresh skill/CLI/wiring + doctor |
 | `tlc harness doctor` | Health checklist |
 | `tlc harness help [topic]` | Docs |

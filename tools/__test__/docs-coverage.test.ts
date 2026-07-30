@@ -70,3 +70,19 @@ test("a missing region marker is an error, not a silent no-op", async () => {
   const { replaceRegion } = await import("../render-capabilities.ts");
   assert.throws(() => replaceRegion("no markers here", "rails", "x"), /missing region marker/);
 });
+
+// hazard: the README states a capability count in prose. It was already one behind the catalog when this
+// test was written, so the number is asserted against the catalog rather than trusted.
+test("the README's capability count matches the catalog", () => {
+  const catalog = JSON.parse(readFileSync(join(repoRoot, "capabilities", "catalog.json"), "utf8")) as {
+    capabilities: unknown[];
+  };
+  const readme = readFileSync(join(repoRoot, "README.md"), "utf8");
+  const stated = /opt-in: (\d+) capabilities/.exec(readme);
+  assert.ok(stated, "the README no longer states a capability count");
+  assert.equal(
+    Number(stated[1]),
+    catalog.capabilities.length,
+    "the README's capability count drifted from capabilities/catalog.json",
+  );
+});
