@@ -153,6 +153,8 @@ export function helpText(): string {
 
 Requires Node.js 24+ (Active LTS 24 or Current 26).
 
+Read commands accept --json: status, doctor, obs, lessons, prices lookup.
+
 QUICK
   tlc harness status              mode / grind / gates
   tlc harness update              pull runtime + refresh skill/CLI, then doctor
@@ -553,7 +555,7 @@ function main(argv: string[]): void {
       runEntry("refresh-model-prices", [action.scope], root);
       break;
     case "prices-lookup":
-      runEntry("price-lookup", [action.modelId], root);
+      runEntry("price-lookup", json ? [action.modelId, JSON_FLAG] : [action.modelId], root);
       break;
     case "entry":
       runEntry(action.entry, json ? [...action.args, JSON_FLAG] : action.args, root);

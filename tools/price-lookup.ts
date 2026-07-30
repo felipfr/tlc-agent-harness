@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { emitJson, takeJsonFlag } from "../src/platform/cli-output.ts";
 import {
   type CostEstimate,
   estimateCostUsd,
@@ -32,7 +33,8 @@ export function lookupPrice(args: PriceLookupArgs): PriceLookupResult {
 }
 
 function main(): void {
-  const args = parsePriceLookupArgs(process.argv.slice(2));
+  const { json, rest } = takeJsonFlag(process.argv.slice(2));
+  const args = parsePriceLookupArgs(rest);
   if (!args) {
     console.error("usage: tlc harness prices lookup <model-id> [provider]");
     console.error(
@@ -41,7 +43,11 @@ function main(): void {
     process.exit(1);
   }
   const result = lookupPrice(args);
-  console.log(JSON.stringify(result, null, 2));
+  if (json) {
+    emitJson(result);
+  } else {
+    console.log(JSON.stringify(result, null, 2));
+  }
   if (!result.resolved) {
     process.exit(2);
   }
