@@ -1,0 +1,86 @@
+[
+  {
+    "query": "setup harness",
+    "should_trigger": true,
+    "phrase": "setup harness",
+    "note": "the canonical opening phrase named in the description"
+  },
+  {
+    "query": "setup harness aqui neste repo, quero escolher as regras",
+    "should_trigger": true,
+    "phrase": "setup harness",
+    "note": "same intent in Portuguese, with the policy choice made explicit"
+  },
+  {
+    "query": "init harness for this project",
+    "should_trigger": true,
+    "phrase": "init harness",
+    "note": "init is the CLI verb; the wizard owns the interactive path"
+  },
+  {
+    "query": "enable harness on this repository",
+    "should_trigger": true,
+    "phrase": "enable harness",
+    "note": "enable reads as first-time connection, not as a single toggle"
+  },
+  {
+    "query": "ligar o harness neste repositório",
+    "should_trigger": true,
+    "phrase": "ligar o harness",
+    "note": "Portuguese trigger; the skill is bilingual by description"
+  },
+  {
+    "query": "bootstrap harness",
+    "should_trigger": true,
+    "phrase": "bootstrap harness",
+    "note": "bootstrap implies writing project policy plus shim hooks"
+  },
+  {
+    "query": "configure harness for this repo",
+    "should_trigger": true,
+    "phrase": "configure harness for this repo",
+    "note": "configure plus repo scope is the wizard, not the help topic"
+  },
+  {
+    "query": "quero definir a política de lessons e grind com os trade-offs explicados",
+    "should_trigger": true,
+    "phrase": "policy",
+    "note": "policy chosen with trade-offs is a listed trigger even without the word harness"
+  },
+  {
+    "query": "I want the shipGate policy for this project, walk me through the trade-offs",
+    "should_trigger": true,
+    "phrase": "policy",
+    "note": "shipGate policy with trade-offs routes to discovery, capability by capability"
+  },
+  {
+    "query": "qual o status do harness agora?",
+    "should_trigger": false,
+    "note": "status is a non-goal — answer with tlc harness status, never run the wizard"
+  },
+  {
+    "query": "how do I see harness metrics?",
+    "should_trigger": false,
+    "note": "explaining metrics is a non-goal — send this to tlc harness help measure"
+  },
+  {
+    "query": "what does the ship gate actually do?",
+    "should_trigger": false,
+    "note": "expert Q&A is a non-goal — the help topics are the source of truth, not the wizard"
+  },
+  {
+    "query": "turn grind off",
+    "should_trigger": false,
+    "note": "a grind toggle alone is a non-goal — tlc harness grind off, no discovery pass"
+  },
+  {
+    "query": "mude o mode para paired",
+    "should_trigger": false,
+    "note": "a mode toggle alone is a non-goal — tlc harness mode paired"
+  },
+  {
+    "query": "run the tests and fix whatever fails",
+    "should_trigger": false,
+    "note": "ordinary engineering work; nothing about connecting a repo to the harness"
+  }
+]
