@@ -16,6 +16,12 @@
 # (TLC_HOME pointing at a dev clone, e.g. via install.sh's existing-checkout link).
 /state/
 
+# Project shim hooks, written by `tlc harness init` per detected provider. They carry the absolute path of
+# the runtime on the machine that generated them, so they are per-machine artifacts rather than shared
+# configuration — see docs/decisions/ad-019.md for why that path is not portable today.
+.cursor/hooks.json
+.claude/settings.json
+
 # Predecessor state directory, still written by an older installed runtime.
 # The Cursor adapter itself (.cursor/hooks.json, .cursor/rules/) is tracked.
 .cursor/harness-state/

@@ -49,6 +49,16 @@
     "onViolation": "followup",
     "mode": "declared"
   },
+  "obs": {
+    "globalSpool": true
+  },
+  "untrustedContent": {
+    "enabled": true
+  },
+  "planGate": {
+    "enabled": true,
+    "windowMinutes": 120
+  },
   "shell": {
     "catastrophicAsk": true,
     "stallDetection": true,
