@@ -58,8 +58,22 @@ export function isLockStale(path: string, args: { now: number; staleMs: number }
   return age !== null && age >= args.staleMs;
 }
 
-export function describeHolder(root: string): string | null {
-  const body = readLockBody(gateLockPath(root));
+export type DescribeHolderOptions = {
+  now?: number;
+  staleMs?: number;
+};
+
+// hazard: an abandoned lock must not read as held. Callers short-circuit on this answer before
+// withGateLock can reach stealIfStale, so reporting a stale holder blocks the grind for as long as the
+// file survives — not until the threshold, which is what the threshold exists to bound.
+export function describeHolder(root: string, options: DescribeHolderOptions = {}): string | null {
+  const path = gateLockPath(root);
+  const now = options.now ?? Date.now();
+  const staleMs = options.staleMs ?? GATE_LOCK_STALE_MS;
+  if (isLockStale(path, { now, staleMs })) {
+    return null;
+  }
+  const body = readLockBody(path);
   if (!body) {
     return null;
   }

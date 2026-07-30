@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -268,6 +268,38 @@ test("a grind lock held by another provider yields a follow-up naming that provi
     }
     release();
     await held;
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// hazard: the process holding the lock can die without releasing it. Before this case the stop reported
+// the dead holder and returned, so withGateLock never ran and the grind stayed blocked indefinitely —
+// the stale threshold was unreachable from the only path that reaches it in production.
+test("a stale grind lock left by a dead process does not block the stop", async () => {
+  const root = repoWithChange();
+  try {
+    writeProjectPolicy(root, ALWAYS_FAIL);
+    const lockPath = join(root, ".tlc", "harness", "state", "grind.lock");
+    mkdirSync(dirname(lockPath), { recursive: true });
+    writeFileSync(
+      lockPath,
+      JSON.stringify({
+        provider: "claude",
+        session: "dead-session",
+        pid: 999_999,
+        acquired_at: new Date(Date.now() - 40 * 60 * 1000).toISOString(),
+      }),
+    );
+    const past = new Date(Date.now() - 40 * 60 * 1000);
+    utimesSync(lockPath, past, past);
+
+    const outcome = await runHandler(stopHandler, stdinOf(cursorStop(root)));
+    assert.equal(outcome.decision.kind, "continue");
+    if (outcome.decision.kind === "continue") {
+      assert.doesNotMatch(outcome.decision.text, /grind lock is held by/);
+      assert.match(outcome.decision.text, /lint/);
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

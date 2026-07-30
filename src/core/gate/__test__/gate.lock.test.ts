@@ -75,6 +75,47 @@ test("describeHolder returns null when nothing holds the lock", () => {
   }
 });
 
+// hazard: the stop path short-circuits on this answer before withGateLock can reach stealIfStale, so a
+// holder still reported past the threshold blocks the grind for as long as the abandoned file survives.
+test("describeHolder returns null once the lock is past the stale threshold", () => {
+  const root = tempRoot();
+  try {
+    writeRawLock(
+      root,
+      { provider: "provider-dead", session: "dead-session", pid: 999_999, acquired_at: "x" },
+      40 * 60 * 1000,
+    );
+    assert.equal(describeHolder(root), null);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("describeHolder still names a holder inside the stale threshold", () => {
+  const root = tempRoot();
+  try {
+    writeRawLock(
+      root,
+      { provider: "provider-live", session: "live-session", pid: 4242, acquired_at: "x" },
+      60_000,
+    );
+    assert.equal(describeHolder(root), "provider-live session live-session (pid 4242)");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("describeHolder honours an explicit staleMs so callers can tighten the window", () => {
+  const root = tempRoot();
+  try {
+    writeRawLock(root, { provider: "p", session: "s", pid: 1, acquired_at: "x" }, 5_000);
+    assert.equal(describeHolder(root, { staleMs: 1_000 }), null);
+    assert.equal(describeHolder(root, { staleMs: 60_000 }), "p session s (pid 1)");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("isLockStale is false below the threshold and true at or above it", () => {
   const root = tempRoot();
   try {
