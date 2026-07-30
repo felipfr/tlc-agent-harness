@@ -352,6 +352,28 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
     }
   }
 
+  // invariant: the plan gate runs before the ship gate. A turn that changed files nobody planned has an
+  // invalid scope, which makes any evidence it produced evidence for the wrong change.
+  const planDecision = coreFacade.plan.evaluatePlanGate({
+    enabled: policy.planGate.enabled,
+    declaredAt: handoff.plan_at,
+    windowMinutes: policy.planGate.windowMinutes,
+    planned: handoff.plan_paths ?? [],
+    deviations: handoff.plan_deviations ?? [],
+    changedFiles,
+  });
+  if (planDecision.kind !== "abstain") {
+    await coreFacade.handoff.patchHandoff(root, provider, {
+      slice: {
+        last_gate_result: "fail",
+        last_failure_category: "policy",
+        blockers: "Changed files fall outside the declared HARNESS_PLAN.",
+        next_action: "Revert what the plan did not call for, or justify each path with a stated reason.",
+      },
+    });
+    return planDecision;
+  }
+
   const recentShipClaim =
     handoff.last_ship_claim_kind === "structured" &&
     coreFacade.ship.recentShipClaimActive(handoff.last_ship_claim_at, policy.shipGate.claimWindowMinutes);

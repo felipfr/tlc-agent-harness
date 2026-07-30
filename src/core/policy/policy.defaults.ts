@@ -63,6 +63,10 @@ export const DEFAULTS: Policy = {
     extraTools: [],
     extraCommandPatterns: [],
   },
+  planGate: {
+    enabled: false,
+    windowMinutes: 120,
+  },
   shell: {
     catastrophicAsk: true,
     stallDetection: false,

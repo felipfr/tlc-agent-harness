@@ -1,5 +1,5 @@
 {
-  "catalogVersion": 7,
+  "catalogVersion": 8,
   "capabilities": [
     {
       "id": "format",
@@ -234,6 +234,18 @@
       "asks": [
         "extraTools",
         "extraCommandPatterns"
+      ]
+    },
+    {
+      "id": "planGate",
+      "configPath": "planGate.enabled",
+      "title": "Plan gate (declared scope vs diff)",
+      "benefit": "Blocks the stop when the turn changed files the declared HARNESS_PLAN did not name, so scope creep fails like a failing test instead of surviving as a review comment.",
+      "tradeOff": "Requires the agent to declare HARNESS_PLAN before editing, and each honest deviation to state a reason. A turn with no declaration is not gated at all.",
+      "defaultOn": false,
+      "sinceCatalogVersion": 8,
+      "asks": [
+        "windowMinutes"
       ]
     }
   ]

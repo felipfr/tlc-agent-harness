@@ -81,6 +81,10 @@ export type Policy = {
     extraTools: string[];
     extraCommandPatterns: string[];
   };
+  planGate: {
+    enabled: boolean;
+    windowMinutes: number;
+  };
   shell: {
     catastrophicAsk: boolean;
     stallDetection: boolean;
@@ -110,6 +114,7 @@ export type PartialPolicy = Partial<Policy> & {
   comments?: Partial<Policy["comments"]>;
   obs?: Partial<Policy["obs"]>;
   untrustedContent?: Partial<Policy["untrustedContent"]>;
+  planGate?: Partial<Policy["planGate"]>;
   shell?: Partial<Policy["shell"]>;
   intelligence?: Partial<Policy["intelligence"]> & {
     lessons?: Partial<LessonsPolicyConfig>;

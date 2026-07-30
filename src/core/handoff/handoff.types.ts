@@ -1,4 +1,5 @@
 import type { FailureCategory, GateGap } from "../gate/gate.types.ts";
+import type { PlanDeviation } from "../plan/plan.types.ts";
 import type { OperatorMode } from "../policy/policy.types.ts";
 
 export type GateResult = "pass" | "fail" | "skipped";
@@ -28,6 +29,10 @@ export type HandoffProviderSlice = {
   fingerprint_hits?: number;
   last_failure_category?: FailureCategory;
   previous_gaps?: GateGap[];
+  plan_paths?: string[];
+  plan_at?: string;
+  plan_snippet?: string;
+  plan_deviations?: PlanDeviation[];
   next_action?: string;
   blockers?: string;
   machine_state?: Record<string, unknown>;
@@ -43,6 +48,10 @@ export type HandoffFile = {
 
 export type ForeignSlice = {
   provider: string;
+  plan_paths?: string[];
+  plan_at?: string;
+  plan_snippet?: string;
+  plan_deviations?: PlanDeviation[];
   next_action?: string;
   blockers?: string;
 };

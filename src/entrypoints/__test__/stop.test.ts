@@ -610,3 +610,99 @@ test("no docs command means the gate does not run", async () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+const PLAN_ON = { planGate: { enabled: true } };
+
+async function declarePlan(root: string, text: string): Promise<void> {
+  await runHandler(
+    responseAfterHandler,
+    stdinOf(
+      JSON.stringify({
+        hook_event_name: "afterAgentResponse",
+        workspace_roots: [root],
+        conversation_id: "conv-1",
+        session_id: "sess-1",
+        text,
+      }),
+    ),
+  );
+}
+
+test("planGate off ignores an unplanned file", async () => {
+  const root = repoWithChange();
+  try {
+    await declarePlan(root, "HARNESS_PLAN: nothing/real.ts");
+    const outcome = await runHandler(stopHandler, stdinOf(cursorStop(root)));
+    assert.equal(outcome.decision.kind, "abstain");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a turn with no declared plan is not gated", async () => {
+  const root = repoWithChange();
+  try {
+    writeProjectPolicy(root, PLAN_ON);
+    const outcome = await runHandler(stopHandler, stdinOf(cursorStop(root)));
+    assert.equal(outcome.decision.kind, "abstain");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a changed file outside the declared plan blocks the stop and names it", async () => {
+  const root = repoWithChange();
+  try {
+    writeProjectPolicy(root, PLAN_ON);
+    await declarePlan(root, "HARNESS_PLAN: docs/only.md");
+    const outcome = await runHandler(stopHandler, stdinOf(cursorStop(root)));
+    assert.equal(outcome.decision.kind, "continue");
+    if (outcome.decision.kind === "continue") {
+      assert.match(outcome.decision.text, /outside the declared plan/);
+      assert.match(outcome.decision.text, /HARNESS_PLAN_DEVIATION/);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a justified deviation lets the same stop through", async () => {
+  const root = repoWithChange();
+  try {
+    writeProjectPolicy(root, PLAN_ON);
+    await declarePlan(root, "HARNESS_PLAN: docs/only.md");
+    const blocked = await runHandler(stopHandler, stdinOf(cursorStop(root)));
+    assert.equal(blocked.decision.kind, "continue");
+
+    const changed = readFileSync(join(root, ".tlc", "harness", "state", "handoff.json"), "utf8");
+    const parsed = JSON.parse(changed) as {
+      by_provider: Record<string, { last_changed_files?: string[] }>;
+    };
+    const touched = parsed.by_provider.cursor?.last_changed_files ?? [];
+    assert.ok(touched.length > 0);
+    await declarePlan(root, `HARNESS_PLAN_DEVIATION: ${touched[0]} — the change belongs to this task`);
+
+    const allowed = await runHandler(stopHandler, stdinOf(cursorStop(root)));
+    assert.equal(allowed.decision.kind, "abstain");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the plan gate runs before the ship gate, since bad scope invalidates the evidence", async () => {
+  const root = repoWithChange();
+  try {
+    writeProjectPolicy(root, {
+      ...PLAN_ON,
+      shipGate: { enabled: true, emptyDiffAntiShip: true, evidenceDir: null },
+    });
+    await declarePlan(root, "HARNESS_SHIP_CLAIM: done\nHARNESS_PLAN: docs/only.md");
+    const outcome = await runHandler(stopHandler, stdinOf(cursorStop(root)));
+    assert.equal(outcome.decision.kind, "continue");
+    if (outcome.decision.kind === "continue") {
+      assert.match(outcome.decision.text, /outside the declared plan/);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

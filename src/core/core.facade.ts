@@ -42,6 +42,8 @@ import {
   recordObs,
 } from "./observability/observability.service.ts";
 import { getRollup, pruneObs, pruneSpool } from "./observability/observability.store.ts";
+import { detectDeviations, detectPlan } from "./plan/plan.detect.ts";
+import { evaluatePlanGate, planVerdict } from "./plan/plan.service.ts";
 import { guardPolicySurface } from "./policy/policy.guard.ts";
 import { isUnderCodePaths, loadPolicy } from "./policy/policy.loader.ts";
 import { operatorBootstrapLines } from "./policy/policy.operator.ts";
@@ -160,6 +162,12 @@ export const coreFacade = {
   untrusted: {
     evaluateUntrustedContent,
     clearFramingMarker,
+  },
+  plan: {
+    detectPlan,
+    detectDeviations,
+    evaluatePlanGate,
+    planVerdict,
   },
   policy: {
     guardPolicySurface,

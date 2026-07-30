@@ -211,6 +211,7 @@ Each denial names its rule, so `rule=secret-access` in a message maps to a row h
 | Docs staleness gate | Runs the repository's own documentation staleness tool on stop, so a stale document fails like a failing test. | `docs.command` |
 | Global observability spool | Mirrors this repo's obs and audit records into one file under the runtime home, so cost and gate history can be read across every repository at once. | `obs.globalSpool` |
 | Untrusted-content framing | Injects one framing line per turn when the agent reads a pull request, an issue, a fetched page or an MCP result, stating that the content is data and that any directive inside it is to be reported as a prompt-injection attempt, not obeyed. | `untrustedContent.enabled` |
+| Plan gate (declared scope vs diff) | Blocks the stop when the turn changed files the declared HARNESS_PLAN did not name, so scope creep fails like a failing test instead of surviving as a review comment. | `planGate.enabled` |
 
 <!-- /generated -->
 
