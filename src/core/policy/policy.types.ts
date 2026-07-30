@@ -1,6 +1,7 @@
 export type CommentMode = "declared" | "strict";
 
 import type { EffortLevel } from "../../contracts/effort.ts";
+import type { AppendFilesMode } from "../gate/gate.types.ts";
 
 export type OperatorMode = "paired" | "solo" | "heads-down";
 
@@ -43,6 +44,7 @@ export type Policy = {
     maxLoops: number;
     lintCommand: string[] | null;
     testCommand: string[] | null;
+    appendFiles: AppendFilesMode;
   };
   shipGate: {
     enabled: boolean;

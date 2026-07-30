@@ -250,7 +250,8 @@ var DEFAULTS = {
     enabled: false,
     maxLoops: 5,
     lintCommand: null,
-    testCommand: null
+    testCommand: null,
+    appendFiles: "auto"
   },
   shipGate: {
     enabled: false,

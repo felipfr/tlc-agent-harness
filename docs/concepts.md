@@ -13,8 +13,13 @@ timestamp: "2026-07-29"
 `grind.enabled`. After each completed agent turn, run configured lint/test against **relevant** changed files:
 
 - **lint** — only when files under `codePaths` changed
-- **test** — when test files changed (scoped args), or in `focus` mode when `codePaths` files changed (full
-  `testCommand`). Policy-only / non-code changes do **not** trigger the test gate
+- **test** — when test files changed, or in `heads-down` mode when `codePaths` files changed. Policy-only /
+  non-code changes do **not** trigger the test gate
+
+`grind.appendFiles` decides whether the changed files are appended to the lint/test argv. `auto` (default)
+appends them, except to a recipe runner — `just`, `make`, `task`, `mise`, `rake` — which takes a target name
+and would read the first path as a second target and abort. `always` and `never` force the behaviour; use
+`never` for any other runner that does not accept paths.
 
 Lint/test runs are serialized with `.tlc/harness/state/grind.lock` (wait up to 120s; locks older than 30
 minutes are stolen).
@@ -26,6 +31,10 @@ Optional: the child may write findings to the path in `HARNESS_GATE_REPORT` (JSO
 
 On failure, send a follow-up so the agent fixes (loop, capped). Identical failure fingerprints trigger a
 stagnation follow-up. Trade-off: catches breakage early; burns turns if gates are flaky.
+
+A gate whose command never ran — exit 127, or a runner that could not resolve the target — is reported as
+`config`, not `verification`. The distinction matters: the verification follow-up tells the agent to fix the
+findings without deleting tests, which on a malformed command sends it to edit healthy code.
 
 ## format on edit
 

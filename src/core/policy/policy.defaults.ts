@@ -27,6 +27,7 @@ export const DEFAULTS: Policy = {
     maxLoops: 5,
     lintCommand: null,
     testCommand: null,
+    appendFiles: "auto",
   },
   shipGate: {
     enabled: false,

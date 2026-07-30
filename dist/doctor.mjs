@@ -1850,6 +1850,43 @@ function computeGateFingerprint(artifact) {
   return createHash("sha256").update(raw).digest("hex").slice(0, 16);
 }
 
+// src/core/gate/gate.command.ts
+import { basename as basename2 } from "node:path";
+var RECIPE_RUNNERS = new Set(["just", "make", "task", "mise", "rake"]);
+var RESOLUTION_FAILURE_PATTERNS = [
+  /does not contain recipe/i,
+  /no rule to make target/i,
+  /unknown recipe/i,
+  /missing script:/i,
+  /task ".*" does not exist/i,
+  /don't know how to build task/i
+];
+function executableName(command) {
+  const argv0 = command[0] ?? "";
+  return basename2(argv0).replace(/\.(exe|cmd|bat)$/i, "").toLowerCase();
+}
+function isRecipeRunner(command) {
+  return RECIPE_RUNNERS.has(executableName(command));
+}
+function shouldAppendFiles(command, mode) {
+  if (command.length === 0) {
+    return false;
+  }
+  if (mode === "always") {
+    return true;
+  }
+  if (mode === "never") {
+    return false;
+  }
+  return !isRecipeRunner(command);
+}
+function isCommandResolutionFailure(args) {
+  if (args.exitCode === 127) {
+    return true;
+  }
+  return RESOLUTION_FAILURE_PATTERNS.some((pattern) => pattern.test(args.output));
+}
+
 // src/core/gate/gate.lock.ts
 import {
   closeSync as closeSync2,
@@ -2708,7 +2745,7 @@ import { createHash as createHash3, randomUUID } from "node:crypto";
 
 // src/core/observability/observability.store.ts
 import { existsSync as existsSync12, mkdirSync as mkdirSync9, readdirSync, readFileSync as readFileSync13, unlinkSync as unlinkSync3, writeFileSync as writeFileSync8 } from "node:fs";
-import { basename as basename2, join as join13 } from "node:path";
+import { basename as basename3, join as join13 } from "node:path";
 function safeMkdir(dir) {
   try {
     mkdirSync9(dir, { recursive: true });
@@ -2718,7 +2755,7 @@ function safeMkdir(dir) {
   }
 }
 function spoolEnvelope(root, stream, record) {
-  return { repo: root, project: basename2(root), stream, record };
+  return { repo: root, project: basename3(root), stream, record };
 }
 function appendSpoolRecord(root, stream, record) {
   try {
@@ -3232,7 +3269,8 @@ var DEFAULTS = {
     enabled: false,
     maxLoops: 5,
     lintCommand: null,
-    testCommand: null
+    testCommand: null,
+    appendFiles: "auto"
   },
   shipGate: {
     enabled: false,
@@ -4597,7 +4635,10 @@ var coreFacade = {
     computeGateFingerprint,
     gapsFromArtifact,
     withGateLock,
-    describeHolder
+    describeHolder,
+    shouldAppendFiles,
+    isRecipeRunner,
+    isCommandResolutionFailure
   },
   stagnation: {
     computeFingerprint,

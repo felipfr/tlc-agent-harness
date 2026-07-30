@@ -21,6 +21,7 @@ import {
 } from "./comment-policy/comment-policy.service.ts";
 import { evaluateFloor } from "./floor/floor.service.ts";
 import { computeGateFingerprint, readLastGate, writeLastGate } from "./gate/gate.artifact.ts";
+import { isCommandResolutionFailure, isRecipeRunner, shouldAppendFiles } from "./gate/gate.command.ts";
 import { describeHolder, withGateLock } from "./gate/gate.lock.ts";
 import { gapsFromArtifact } from "./gate/gate.service.ts";
 import { patchHandoff, readForeignSlices, readHandoff, readHandoffFile } from "./handoff/handoff.service.ts";
@@ -125,6 +126,9 @@ export const coreFacade = {
     gapsFromArtifact,
     withGateLock,
     describeHolder,
+    shouldAppendFiles,
+    isRecipeRunner,
+    isCommandResolutionFailure,
   },
   stagnation: {
     computeFingerprint,

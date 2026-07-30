@@ -56,7 +56,12 @@ async function failGate(args: {
     output: args.artifact.outputTail,
   });
   const hits = coreFacade.stagnation.trackFingerprint(args.root, args.sessionKey, fingerprint);
-  const category = coreFacade.turn.classifyGateFailure(args.gate);
+  const category = coreFacade.gate.isCommandResolutionFailure({
+    exitCode: args.artifact.exitCode,
+    output: args.artifact.outputTail,
+  })
+    ? "config"
+    : coreFacade.turn.classifyGateFailure(args.gate);
   const freshGaps = coreFacade.gate.gapsFromArtifact({ artifact: args.artifact, category });
   const handoff = coreFacade.handoff.readHandoff(args.root, args.provider);
   const gaps = intel.progressiveContext
@@ -277,7 +282,9 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
       session,
       gate: "lint",
       command: policy.grind.lintCommand,
-      argvFiles: codeTargets,
+      argvFiles: coreFacade.gate.shouldAppendFiles(policy.grind.lintCommand, policy.grind.appendFiles)
+        ? codeTargets
+        : [],
       recordFiles: codeTargets,
     });
     if (!artifact.passed) {
@@ -286,17 +293,18 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
   }
 
   if (policy.grind.enabled && policy.grind.testCommand) {
-    const argvFiles = testTargets.length > 0 ? testTargets : [];
-    const shouldRunTests = argvFiles.length > 0 || (policy.mode === "heads-down" && codeTargets.length > 0);
+    const shouldRunTests = testTargets.length > 0 || (policy.mode === "heads-down" && codeTargets.length > 0);
     if (shouldRunTests) {
-      const recordFiles = argvFiles.length > 0 ? argvFiles : codeTargets;
+      const recordFiles = testTargets.length > 0 ? testTargets : codeTargets;
       const artifact = await runLockedGate({
         root,
         provider,
         session,
         gate: "test",
         command: policy.grind.testCommand,
-        argvFiles,
+        argvFiles: coreFacade.gate.shouldAppendFiles(policy.grind.testCommand, policy.grind.appendFiles)
+          ? testTargets
+          : [],
         recordFiles,
       });
       if (!artifact.passed) {

@@ -19,6 +19,8 @@ export type LastGateArtifact = {
   findings: GateFinding[];
 };
 
+export type AppendFilesMode = "auto" | "always" | "never";
+
 export type FailureCategory =
   | "agent-quality"
   | "stagnation"

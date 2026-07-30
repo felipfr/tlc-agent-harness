@@ -35,5 +35,6 @@ Handoff section and a link back to this index.
 | [AD-018](/decisions/ad-018.md) | Three rails adopted from an external review, each off by default and declared rather than inferred | active |
 | [AD-019](/decisions/ad-019.md) | A resource is identified by what it resolves to, and a declared capability must be read where it matters | active |
 | [AD-020](/decisions/ad-020.md) | One resolution for the install path, one source for posture, and a config that only advertises what it reads | active |
+| [AD-021](/decisions/ad-021.md) | A gate command that never resolved is a config fault, and a recipe runner does not receive file arguments | active |
 
 Related: [/architecture.md](/architecture.md), [/concepts.md](/concepts.md), [/providers/index.md](/providers/index.md).

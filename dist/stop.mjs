@@ -1047,6 +1047,43 @@ function computeGateFingerprint(artifact) {
   return createHash("sha256").update(raw).digest("hex").slice(0, 16);
 }
 
+// src/core/gate/gate.command.ts
+import { basename as basename2 } from "node:path";
+var RECIPE_RUNNERS = new Set(["just", "make", "task", "mise", "rake"]);
+var RESOLUTION_FAILURE_PATTERNS = [
+  /does not contain recipe/i,
+  /no rule to make target/i,
+  /unknown recipe/i,
+  /missing script:/i,
+  /task ".*" does not exist/i,
+  /don't know how to build task/i
+];
+function executableName(command) {
+  const argv0 = command[0] ?? "";
+  return basename2(argv0).replace(/\.(exe|cmd|bat)$/i, "").toLowerCase();
+}
+function isRecipeRunner(command) {
+  return RECIPE_RUNNERS.has(executableName(command));
+}
+function shouldAppendFiles(command, mode) {
+  if (command.length === 0) {
+    return false;
+  }
+  if (mode === "always") {
+    return true;
+  }
+  if (mode === "never") {
+    return false;
+  }
+  return !isRecipeRunner(command);
+}
+function isCommandResolutionFailure(args) {
+  if (args.exitCode === 127) {
+    return true;
+  }
+  return RESOLUTION_FAILURE_PATTERNS.some((pattern) => pattern.test(args.output));
+}
+
 // src/core/gate/gate.lock.ts
 import {
   closeSync as closeSync2,
@@ -1905,7 +1942,7 @@ import { createHash as createHash3, randomUUID } from "node:crypto";
 
 // src/core/observability/observability.store.ts
 import { existsSync as existsSync9, mkdirSync as mkdirSync6, readdirSync, readFileSync as readFileSync10, unlinkSync as unlinkSync3, writeFileSync as writeFileSync5 } from "node:fs";
-import { basename as basename2, join as join10 } from "node:path";
+import { basename as basename3, join as join10 } from "node:path";
 
 // src/platform/fs-jsonl.ts
 import { appendFileSync, existsSync as existsSync8, mkdirSync as mkdirSync5, readFileSync as readFileSync9 } from "node:fs";
@@ -1943,7 +1980,7 @@ function safeMkdir(dir) {
   }
 }
 function spoolEnvelope(root, stream, record) {
-  return { repo: root, project: basename2(root), stream, record };
+  return { repo: root, project: basename3(root), stream, record };
 }
 function appendSpoolRecord(root, stream, record) {
   try {
@@ -2457,7 +2494,8 @@ var DEFAULTS = {
     enabled: false,
     maxLoops: 5,
     lintCommand: null,
-    testCommand: null
+    testCommand: null,
+    appendFiles: "auto"
   },
   shipGate: {
     enabled: false,
@@ -3834,7 +3872,10 @@ var coreFacade = {
     computeGateFingerprint,
     gapsFromArtifact,
     withGateLock,
-    describeHolder
+    describeHolder,
+    shouldAppendFiles,
+    isRecipeRunner,
+    isCommandResolutionFailure
   },
   stagnation: {
     computeFingerprint,
@@ -4883,7 +4924,10 @@ async function failGate(args) {
     output: args.artifact.outputTail
   });
   const hits = coreFacade.stagnation.trackFingerprint(args.root, args.sessionKey, fingerprint);
-  const category = coreFacade.turn.classifyGateFailure(args.gate);
+  const category = coreFacade.gate.isCommandResolutionFailure({
+    exitCode: args.artifact.exitCode,
+    output: args.artifact.outputTail
+  }) ? "config" : coreFacade.turn.classifyGateFailure(args.gate);
   const freshGaps = coreFacade.gate.gapsFromArtifact({ artifact: args.artifact, category });
   const handoff = coreFacade.handoff.readHandoff(args.root, args.provider);
   const gaps = intel.progressiveContext ? coreFacade.turn.mergeGaps(handoff.previous_gaps, freshGaps) : freshGaps;
@@ -5059,7 +5103,7 @@ var stopHandler = async (event, ctx) => {
       session,
       gate: "lint",
       command: policy.grind.lintCommand,
-      argvFiles: codeTargets,
+      argvFiles: coreFacade.gate.shouldAppendFiles(policy.grind.lintCommand, policy.grind.appendFiles) ? codeTargets : [],
       recordFiles: codeTargets
     });
     if (!artifact.passed) {
@@ -5067,17 +5111,16 @@ var stopHandler = async (event, ctx) => {
     }
   }
   if (policy.grind.enabled && policy.grind.testCommand) {
-    const argvFiles = testTargets.length > 0 ? testTargets : [];
-    const shouldRunTests = argvFiles.length > 0 || policy.mode === "heads-down" && codeTargets.length > 0;
+    const shouldRunTests = testTargets.length > 0 || policy.mode === "heads-down" && codeTargets.length > 0;
     if (shouldRunTests) {
-      const recordFiles = argvFiles.length > 0 ? argvFiles : codeTargets;
+      const recordFiles = testTargets.length > 0 ? testTargets : codeTargets;
       const artifact = await runLockedGate({
         root,
         provider,
         session,
         gate: "test",
         command: policy.grind.testCommand,
-        argvFiles,
+        argvFiles: coreFacade.gate.shouldAppendFiles(policy.grind.testCommand, policy.grind.appendFiles) ? testTargets : [],
         recordFiles
       });
       if (!artifact.passed) {
