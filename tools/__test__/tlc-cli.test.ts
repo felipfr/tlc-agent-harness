@@ -21,6 +21,7 @@ import {
   setMode,
   setPaused,
   skipFlagPath,
+  statusJson,
   statusText,
   UsageError,
 } from "../../bin/tlc-cli.ts";
@@ -226,6 +227,26 @@ describe("statusText / help text", () => {
     assert.ok(text.includes("mode:   solo"));
   });
 
+  test("statusJson carries the same three facts as data, with no prose", () => {
+    const root = newRoot();
+    assert.deepEqual(statusJson(root), { root, mode: "solo", grind: false, gatesPaused: false });
+  });
+
+  test("statusJson tracks grind and pause state", () => {
+    const root = newRoot();
+    setGrind(root, true);
+    setPaused(root, true);
+    assert.deepEqual(statusJson(root), { root, mode: "solo", grind: true, gatesPaused: true });
+  });
+
+  test("statusJson reports focus mode, which forces grind on without a flag file", () => {
+    const root = newRoot();
+    setMode(root, "focus");
+    const report = statusJson(root);
+    assert.equal(report.mode, "focus");
+    assert.equal(report.grind, true);
+  });
+
   test("helpText names 'tlc harness', never bare 'harness'", () => {
     const text = helpText();
     assert.ok(text.includes("tlc harness"));
@@ -244,6 +265,14 @@ describe("statusText / help text", () => {
 describe("route — dispatch table", () => {
   test("defaults to status when no subcommand is given", () => {
     assert.deepEqual(route([]), { kind: "status" });
+  });
+
+  test("doctor forwards its own arguments to the entry", () => {
+    assert.deepEqual(route(["doctor", "--json"]), {
+      kind: "entry",
+      entry: "doctor",
+      args: ["--json"],
+    });
   });
 
   test("routes doctor, build, update, and test", () => {

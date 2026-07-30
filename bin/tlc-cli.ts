@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { coreFacade } from "../src/core/index.ts";
+import { emitJson, JSON_FLAG, takeJsonFlag, unknownFlags } from "../src/platform/cli-output.ts";
 import { flagsDir, projectStateDir, runtimeHome } from "../src/platform/paths.ts";
 
 export class UsageError extends Error {}
@@ -87,6 +88,22 @@ export function statusText(root: string): string {
     "  solo      = normal daily mode (grind not forced)",
     "  paired    = explain more; check in before big moves",
   ].join("\n");
+}
+
+export type StatusReport = {
+  root: string;
+  mode: string;
+  grind: boolean;
+  gatesPaused: boolean;
+};
+
+export function statusJson(root: string): StatusReport {
+  return {
+    root,
+    mode: readMode(root),
+    grind: grindOn(root),
+    gatesPaused: gatesPaused(root),
+  };
 }
 
 export function setGrind(root: string, on: boolean): string {
@@ -274,9 +291,11 @@ export function route(args: string[]): Action {
     case "obs":
     case "o":
       return { kind: "entry", entry: "obs-cli", args: args.slice(1) };
+    // why: doctor used to drop its arguments, so every flag reached the entry as an empty list. It forwards
+    // them now, which is what lets --json arrive at the tool.
     case "doctor":
     case "doc":
-      return { kind: "entry", entry: "doctor", args: [] };
+      return { kind: "entry", entry: "doctor", args: args.slice(1) };
     case "lessons":
     case "lesson":
       return { kind: "entry", entry: "lessons-cli", args: args.slice(1) };
@@ -464,7 +483,7 @@ function main(argv: string[]): void {
     process.exit(1);
   }
 
-  const args = argv.slice(1);
+  const { json, rest: args } = takeJsonFlag(argv.slice(1));
   let action: Action;
   try {
     action = route(args);
@@ -477,9 +496,20 @@ function main(argv: string[]): void {
   }
 
   switch (action.kind) {
-    case "status":
-      console.log(statusText(root));
+    case "status": {
+      const leftover = unknownFlags(args.slice(1));
+      if (leftover.length > 0) {
+        console.error(`unknown flag: ${leftover[0]}`);
+        console.error("usage: tlc harness status [--json]");
+        process.exit(1);
+      }
+      if (json) {
+        emitJson(statusJson(root));
+      } else {
+        console.log(statusText(root));
+      }
       break;
+    }
     case "help":
       console.log(helpText());
       break;
@@ -526,7 +556,7 @@ function main(argv: string[]): void {
       runEntry("price-lookup", [action.modelId], root);
       break;
     case "entry":
-      runEntry(action.entry, action.args, root);
+      runEntry(action.entry, json ? [...action.args, JSON_FLAG] : action.args, root);
       break;
     case "unknown":
       console.error(`unknown: ${action.cmd}`);
