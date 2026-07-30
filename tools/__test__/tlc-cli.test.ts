@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, test } from "node:test";
 import {
   buildTestSteps,
+  ensureFlagsDir,
   gatesPaused,
   grindFlagPath,
   grindOn,
@@ -25,7 +26,7 @@ import {
   statusText,
   UsageError,
 } from "../../bin/tlc-cli.ts";
-import { flagsDir, projectStateDir } from "../../src/platform/paths.ts";
+import { flagsDir, projectConfigPath, projectStateDir } from "../../src/platform/paths.ts";
 
 function fixtureRoot(): string {
   return mkdtempSync(join(tmpdir(), "tlc-cli-"));
@@ -229,14 +230,26 @@ describe("statusText / help text", () => {
 
   test("statusJson carries the same three facts as data, with no prose", () => {
     const root = newRoot();
-    assert.deepEqual(statusJson(root), { root, mode: "solo", grind: false, gatesPaused: false });
+    assert.deepEqual(statusJson(root), {
+      root,
+      mode: "solo",
+      modeOrigin: "config",
+      grind: false,
+      gatesPaused: false,
+    });
   });
 
   test("statusJson tracks grind and pause state", () => {
     const root = newRoot();
     setGrind(root, true);
     setPaused(root, true);
-    assert.deepEqual(statusJson(root), { root, mode: "solo", grind: true, gatesPaused: true });
+    assert.deepEqual(statusJson(root), {
+      root,
+      mode: "solo",
+      modeOrigin: "config",
+      grind: true,
+      gatesPaused: true,
+    });
   });
 
   test("statusJson reports focus mode, which forces grind on without a flag file", () => {
@@ -381,5 +394,79 @@ describe("harness test — step plan and runner", () => {
     });
     assert.equal(status, 0);
     assert.equal(calls.length, buildTestSteps().length);
+  });
+});
+
+describe("status agrees with the policy the hooks resolve", () => {
+  function writePolicy(root: string, patch: Record<string, unknown>): void {
+    const path = projectConfigPath(root);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(patch), "utf8");
+  }
+
+  // hazard: status used to read flag files only and default to "solo", so a project whose policy set
+  // heads-down reported solo with grind off while every hook resolved the opposite.
+  test("policy mode heads-down reports focus, with config as the origin", () => {
+    const root = newRoot();
+    writePolicy(root, { version: 1, mode: "heads-down" });
+    const report = statusJson(root);
+    assert.equal(report.mode, "focus");
+    assert.equal(report.modeOrigin, "config");
+    assert.equal(report.grind, true, "heads-down forces grind on, exactly as the loader does");
+  });
+
+  test("policy grind.enabled is reported without any flag file", () => {
+    const root = newRoot();
+    writePolicy(root, { version: 1, grind: { enabled: true } });
+    const report = statusJson(root);
+    assert.equal(report.grind, true);
+    assert.equal(report.mode, "solo");
+  });
+
+  test("a mode file keeps precedence over the policy, and says so", () => {
+    const root = newRoot();
+    writePolicy(root, { version: 1, mode: "heads-down" });
+    setMode(root, "paired");
+    const report = statusJson(root);
+    assert.equal(report.mode, "paired");
+    assert.equal(report.modeOrigin, "file");
+  });
+
+  test("a flag keeps precedence over the policy, and says so", () => {
+    const root = newRoot();
+    writePolicy(root, { version: 1, mode: "solo" });
+    ensureFlagsDir(root);
+    writeFileSync(headsDownFlagPath(root), "");
+    const report = statusJson(root);
+    assert.equal(report.mode, "focus");
+    assert.equal(report.modeOrigin, "flag");
+  });
+
+  test("an unrecognised mode file is ignored, matching the loader", () => {
+    const root = newRoot();
+    writePolicy(root, { version: 1, mode: "paired" });
+    ensureFlagsDir(root);
+    writeFileSync(modeFilePath(root), "sideways\n");
+    const report = statusJson(root);
+    assert.equal(report.mode, "paired");
+    assert.equal(report.modeOrigin, "config");
+  });
+
+  test("the text form renders the same three values as the json form", () => {
+    const root = newRoot();
+    writePolicy(root, { version: 1, mode: "heads-down" });
+    const report = statusJson(root);
+    const text = statusText(root);
+    assert.ok(text.includes(report.mode));
+    assert.ok(text.includes(`from ${report.modeOrigin}`));
+    assert.match(text, /grind: {2}ON/);
+  });
+
+  test("pause still comes from the flag the stop reads", () => {
+    const root = newRoot();
+    writePolicy(root, { version: 1 });
+    assert.equal(statusJson(root).gatesPaused, false);
+    setPaused(root, true);
+    assert.equal(statusJson(root).gatesPaused, true);
   });
 });

@@ -45,28 +45,35 @@ export function ensureFlagsDir(root: string): void {
   mkdirSync(flagsDir(root), { recursive: true });
 }
 
-export function readMode(root: string): string {
+export type ModeOrigin = "file" | "flag" | "config";
+
+// hazard: this used to derive posture from flag files alone and default to "solo", so a project whose policy
+// set heads-down was reported as solo with grind off while every hook resolved the opposite. The loader is
+// the only thing that decides posture; status reads its answer instead of recomputing one.
+export function modeOrigin(root: string): ModeOrigin {
   const modeFile = modeFilePath(root);
   if (existsSync(modeFile)) {
     const raw = readFileSync(modeFile, "utf8").trim().toLowerCase();
-    if (raw === "heads-down") {
-      return "focus";
-    }
-    if (raw === "solo" || raw === "paired") {
-      return raw;
+    if (raw === "solo" || raw === "paired" || raw === "heads-down") {
+      return "file";
     }
   }
-  if (existsSync(headsDownFlagPath(root))) {
-    return "focus";
+  if (existsSync(headsDownFlagPath(root)) || existsSync(pairedFlagPath(root))) {
+    return "flag";
   }
-  if (existsSync(pairedFlagPath(root))) {
-    return "paired";
-  }
-  return "solo";
+  return "config";
+}
+
+export function operatorLabel(mode: string): string {
+  return mode === "heads-down" ? "focus" : mode;
+}
+
+export function readMode(root: string): string {
+  return operatorLabel(coreFacade.policy.loadPolicy(root).mode);
 }
 
 export function grindOn(root: string): boolean {
-  return existsSync(grindFlagPath(root)) || readMode(root) === "focus";
+  return coreFacade.policy.loadPolicy(root).grind.enabled;
 }
 
 export function gatesPaused(root: string): boolean {
@@ -74,12 +81,13 @@ export function gatesPaused(root: string): boolean {
 }
 
 export function statusText(root: string): string {
-  const mode = readMode(root);
+  const report = statusJson(root);
+  const mode = report.mode;
   return [
     `harness @ ${root}`,
-    `  mode:   ${mode}${mode === "focus" ? " (max autonomy + grind)" : ""}`,
-    `  grind:  ${grindOn(root) ? "ON  — stop hook re-runs lint/tests and auto-retries on fail" : "OFF — no auto fix loops"}`,
-    `  gates:  ${gatesPaused(root) ? "PAUSED — stop checks disabled" : "active"}`,
+    `  mode:   ${mode}${mode === "focus" ? " (max autonomy + grind)" : ""} [from ${report.modeOrigin}]`,
+    `  grind:  ${report.grind ? "ON  — stop hook re-runs lint/tests and auto-retries on fail" : "OFF — no auto fix loops"}`,
+    `  gates:  ${report.gatesPaused ? "PAUSED — stop checks disabled" : "active"}`,
     "",
     "Quick help:",
     "  grind ON  = after each agent turn, lint/test changed files; if fail → agent must fix",
@@ -93,15 +101,18 @@ export function statusText(root: string): string {
 export type StatusReport = {
   root: string;
   mode: string;
+  modeOrigin: ModeOrigin;
   grind: boolean;
   gatesPaused: boolean;
 };
 
 export function statusJson(root: string): StatusReport {
+  const policy = coreFacade.policy.loadPolicy(root);
   return {
     root,
-    mode: readMode(root),
-    grind: grindOn(root),
+    mode: operatorLabel(policy.mode),
+    modeOrigin: modeOrigin(root),
+    grind: policy.grind.enabled,
     gatesPaused: gatesPaused(root),
   };
 }
