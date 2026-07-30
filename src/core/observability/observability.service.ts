@@ -84,7 +84,7 @@ export function recordObs(root: string, config: ObservabilityConfig, input: Reco
   };
 
   const file = level === "signal" ? config.signalPath : config.debugPath;
-  if (!appendObsRecord(root, file, event)) {
+  if (!appendObsRecord(root, file, event, config.globalSpool)) {
     return null;
   }
 
@@ -203,12 +203,16 @@ function updateRollup(root: string, config: ObservabilityConfig, event: ObsEvent
   saveRollup(root, rollup);
 }
 
-export function recordAudit(root: string, event: string, payload: unknown): void {
-  appendAuditRecord(root, {
-    ts: new Date().toISOString(),
-    event,
-    payload: redactDeep(payload),
-  });
+export function recordAudit(root: string, event: string, payload: unknown, spool = false): void {
+  appendAuditRecord(
+    root,
+    {
+      ts: new Date().toISOString(),
+      event,
+      payload: redactDeep(payload),
+    },
+    spool,
+  );
 }
 
 export function recordFromEvent(

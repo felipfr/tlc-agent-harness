@@ -79,6 +79,7 @@ export type ObservabilityConfig = {
   sessionCostAlertUsd: number | null;
   retentionDays: number;
   maxSignalEvents: number;
+  globalSpool: boolean;
 };
 
 export const DEFAULT_OBS: ObservabilityConfig = {
@@ -91,6 +92,7 @@ export const DEFAULT_OBS: ObservabilityConfig = {
   sessionCostAlertUsd: 5,
   retentionDays: 14,
   maxSignalEvents: 50_000,
+  globalSpool: false,
 };
 
 export const SIGNAL_KINDS = new Set<ObsKind>([

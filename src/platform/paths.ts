@@ -9,6 +9,16 @@ export function runtimeHome(): string {
   return process.env.TLC_HOME ?? join(homedir(), ".tlc", "harness");
 }
 
+export function runtimeStateDir(): string {
+  return join(runtimeHome(), "state");
+}
+
+// why: one file for every repository on the machine. Per-repo state stays authoritative; this is the
+// cross-repo view, which cannot exist under any single project's state directory.
+export function runtimeSpoolPath(): string {
+  return join(runtimeStateDir(), "obs-spool.jsonl");
+}
+
 export function projectConfigPath(root: string): string {
   return join(harnessDir(root), "config.json");
 }
