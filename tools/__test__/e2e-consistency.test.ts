@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -77,20 +85,45 @@ function cursorStop(root: string) {
 // hazard: unit calls cannot catch a defect that lives in how the runtime resolves its own paths or in which
 // source a command reads. Every case here goes through bin/tlc-exec.mjs or bin/tlc-cli.ts.
 describe("E2E — CG-01: a generated shim names the install path", () => {
-  test("init writes the conventional path and never the checkout", () => {
+  // hazard: init only writes a shim for a provider it detects, and detection reads the provider's own config
+  // directory under HOME — not the project. A CI runner has neither, so the case has to build both: a scratch
+  // HOME holding ~/.claude, and the conventional install path symlinked at the real runtime.
+  test("init writes the conventional install path and never the checkout", () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), "tlc-e2e-fakehome-"));
+    cleanup.push(fakeHome);
+    mkdirSync(join(fakeHome, ".claude"), { recursive: true });
+    const conventional = join(fakeHome, ".tlc", "harness");
+    mkdirSync(dirname(conventional), { recursive: true });
+    try {
+      symlinkSync(repoRoot, conventional, "dir");
+    } catch {
+      return;
+    }
+
     const root = newRepo("tlc-e2e-shim-");
-    mkdirSync(join(root, ".claude"), { recursive: true });
-    mkdirSync(join(root, ".cursor"), { recursive: true });
-    const result = cli(["init", "--minimal"], root);
-    assert.equal(result.status, 0, result.stderr);
+    const result = spawnSync(process.execPath, [join(repoRoot, "tools", "init-project.ts"), "--minimal"], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        TLC_PROJECT_DIR: root,
+        HOME: fakeHome,
+        USERPROFILE: fakeHome,
+        TLC_HOME: undefined as unknown as string,
+        CLAUDE_CONFIG_DIR: undefined as unknown as string,
+        CURSOR_CONFIG_DIR: undefined as unknown as string,
+      },
+    });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
 
     const settings = readFileSync(join(root, ".claude", "settings.json"), "utf8");
-    const conventional = join(homedir(), ".tlc", "harness").replace(/\\/g, "/");
-    assert.ok(settings.includes(conventional), `expected the install path in the shim, got:\n${settings}`);
+    assert.ok(
+      settings.includes(JSON.stringify(conventional).slice(1, -1)),
+      `expected the install path in the shim, got:\n${settings}`,
+    );
     assert.equal(
-      settings.includes(repoRoot.replace(/\\/g, "/")),
+      settings.includes(JSON.stringify(repoRoot).slice(1, -1)),
       false,
-      "the shim must not name the checkout directory",
+      "the shim must not name the checkout the symlink points at",
     );
   });
 });

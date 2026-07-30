@@ -251,35 +251,47 @@ describe("resolveHarnessHome — install path preference", () => {
 
   // hazard: both wrappers collapse the symlink before invoking, so the candidate names the checkout. Every
   // shim hook written from this value pointed at a directory that exists only on the machine that ran init.
+  // hazard: the fixtures have to be built with join, since join is what the code calls. POSIX literals
+  // passed everywhere except Windows, where the separator differs and nothing matched.
   test("the conventional install path wins when it resolves to the same runtime", () => {
-    const home = resolveHarnessHome("/ignored", {}, "/repo/checkout/bin/tlc-exec.mjs", {
-      realpath: resolver({ "/home/u/.tlc/harness": "/repo/checkout", "/repo/checkout": "/repo/checkout" }), // leak-gate-allow
-      home: () => "/home/u", // leak-gate-allow
+    const fakeHome = join("/fake", "home"); // leak-gate-allow
+    const conventional = join(fakeHome, ".tlc", "harness");
+    const checkout = join("/repo", "checkout");
+    const home = resolveHarnessHome("/ignored", {}, join(checkout, "bin", "tlc-exec.mjs"), {
+      realpath: resolver({ [conventional]: checkout, [checkout]: checkout }),
+      home: () => fakeHome,
     });
-    assert.equal(home, join("/home/u", ".tlc", "harness"));
+    assert.equal(home, conventional);
   });
 
   test("a deliberately relocated install is left alone", () => {
-    const home = resolveHarnessHome("/ignored", {}, "/other/place/bin/tlc-exec.mjs", {
-      realpath: resolver({ "/home/u/.tlc/harness": "/somewhere/else", "/other/place": "/other/place" }), // leak-gate-allow
-      home: () => "/home/u", // leak-gate-allow
+    const fakeHome = join("/fake", "home"); // leak-gate-allow
+    const elsewhere = join("/other", "place");
+    const home = resolveHarnessHome("/ignored", {}, join(elsewhere, "bin", "tlc-exec.mjs"), {
+      realpath: resolver({
+        [join(fakeHome, ".tlc", "harness")]: join("/somewhere", "else"),
+        [elsewhere]: elsewhere,
+      }),
+      home: () => fakeHome,
     });
-    assert.equal(home, "/other/place");
+    assert.equal(home, elsewhere);
   });
 
   test("an absent conventional path falls back to the candidate instead of throwing", () => {
-    const home = resolveHarnessHome("/ignored", {}, "/other/place/bin/tlc-exec.mjs", {
-      realpath: resolver({ "/other/place": "/other/place" }),
-      home: () => "/home/u", // leak-gate-allow
+    const elsewhere = join("/other", "place");
+    const home = resolveHarnessHome("/ignored", {}, join(elsewhere, "bin", "tlc-exec.mjs"), {
+      realpath: resolver({ [elsewhere]: elsewhere }),
+      home: () => join("/fake", "home"), // leak-gate-allow
     });
-    assert.equal(home, "/other/place");
+    assert.equal(home, elsewhere);
   });
 
   test("binDir is used when the invocation is not the launcher itself", () => {
-    const home = resolveHarnessHome("/only/bin", {}, undefined, {
-      realpath: resolver({ "/only": "/only" }),
-      home: () => "/home/u", // leak-gate-allow
+    const binDir = join("/only", "bin");
+    const home = resolveHarnessHome(binDir, {}, undefined, {
+      realpath: resolver({ [join("/only")]: join("/only") }),
+      home: () => join("/fake", "home"), // leak-gate-allow
     });
-    assert.equal(home, join("/only", "bin", ".."));
+    assert.equal(home, join(binDir, ".."));
   });
 });
