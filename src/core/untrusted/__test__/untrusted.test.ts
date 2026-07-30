@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, test } from "node:test";
-import { detectUntrustedRead } from "../untrusted.detect.ts";
+import { commandSegments, detectUntrustedRead } from "../untrusted.detect.ts";
 import {
   evaluateUntrustedContent,
   framingMessage,
@@ -64,6 +64,39 @@ describe("detectUntrustedRead", () => {
 
   test("an ordinary command does not count", () => {
     assert.equal(detectUntrustedRead({ ...base, event: "shell.after", command: "npm test" }), null);
+  });
+
+  test("a pattern later in a pipeline still counts", () => {
+    assert.equal(
+      detectUntrustedRead({ ...base, event: "shell.after", command: "git log && gh issue view 3" })?.source,
+      "shell",
+    );
+    assert.equal(
+      detectUntrustedRead({ ...base, event: "shell.after", command: "curl -s x | jq ." })?.source,
+      "shell",
+    );
+  });
+
+  // hazard: a substring match reads the pattern out of a heredoc or a quoted argument and claims content was
+  // fetched that never was. This repository documents the patterns, so its own docs triggered the rail.
+  test("a pattern quoted, grepped or inside a heredoc is not a read", () => {
+    for (const command of [
+      'echo "curl https://example.com"',
+      'grep -rn "gh api" docs/',
+      "python3 - <<'PY'\nprint(\"gh pr view\")\nPY",
+      "rg --fixed-strings 'wget'",
+    ]) {
+      assert.equal(
+        detectUntrustedRead({ ...base, event: "shell.after", command }),
+        null,
+        `should not match: ${command}`,
+      );
+    }
+  });
+
+  test("commandSegments splits on the separators a shell actually honours", () => {
+    assert.deepEqual(commandSegments("a && b || c | d ; e\nf"), ["a", "b", "c", "d", "e", "f"]);
+    assert.deepEqual(commandSegments("   "), []);
   });
 
   // hazard: detection is declared, so an event the rail was never wired for must not silently match.

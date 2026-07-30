@@ -20,7 +20,8 @@ export type UntrustedPolicyConfig = {
 };
 
 // why: a declared list, never an inference over output. Guessing whether text came from outside the repo
-// would make the rail fire on ordinary work and teach the operator to ignore it.
+// would make the rail fire on ordinary work and teach the operator to ignore it. Each entry is matched at
+// the start of a command segment, so naming one inside a string or a heredoc is not a read.
 export const DEFAULT_UNTRUSTED_COMMAND_PATTERNS = [
   "gh pr view",
   "gh pr diff",
@@ -28,6 +29,6 @@ export const DEFAULT_UNTRUSTED_COMMAND_PATTERNS = [
   "gh issue view",
   "gh issue list",
   "gh api",
-  "curl ",
-  "wget ",
+  "curl",
+  "wget",
 ] as const;

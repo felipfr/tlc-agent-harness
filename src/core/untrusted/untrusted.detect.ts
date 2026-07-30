@@ -8,13 +8,29 @@ function matchesTool(toolName: string | undefined, tools: readonly string[]): st
   return tools.some((tool) => tool.toLowerCase() === needle) ? toolName : null;
 }
 
+// hazard: a substring match reads the pattern out of a heredoc, a quoted string or a grep argument and
+// reports content the command never fetched. This repository documents the patterns themselves, so
+// `python3 <<EOF ... "gh pr view" ... EOF` fired the rail on its own documentation. A pattern only counts
+// when a command segment starts with it, which is the only position where it is the thing being run.
+export function commandSegments(command: string): string[] {
+  return command
+    .split(/\|\||&&|[|;\n]/)
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+}
+
 function matchesCommand(command: string | undefined, patterns: readonly string[]): string | null {
   if (!command) {
     return null;
   }
-  const haystack = command.toLowerCase();
-  const hit = patterns.find((pattern) => haystack.includes(pattern.toLowerCase()));
-  return hit ?? null;
+  const segments = commandSegments(command.toLowerCase());
+  for (const pattern of patterns) {
+    const needle = pattern.toLowerCase().trim();
+    if (segments.some((segment) => segment === needle || segment.startsWith(`${needle} `))) {
+      return pattern;
+    }
+  }
+  return null;
 }
 
 export function detectUntrustedRead(input: UntrustedDetectInput): UntrustedHit | null {
