@@ -3619,13 +3619,21 @@ function matchesTool(toolName, tools) {
   const needle = toolName.toLowerCase();
   return tools.some((tool) => tool.toLowerCase() === needle) ? toolName : null;
 }
+function commandSegments(command) {
+  return command.split(/\|\||&&|[|;\n]/).map((segment) => segment.trim()).filter((segment) => segment.length > 0);
+}
 function matchesCommand(command, patterns) {
   if (!command) {
     return null;
   }
-  const haystack = command.toLowerCase();
-  const hit = patterns.find((pattern) => haystack.includes(pattern.toLowerCase()));
-  return hit ?? null;
+  const segments = commandSegments(command.toLowerCase());
+  for (const pattern of patterns) {
+    const needle = pattern.toLowerCase().trim();
+    if (segments.some((segment) => segment === needle || segment.startsWith(`${needle} `))) {
+      return pattern;
+    }
+  }
+  return null;
 }
 function detectUntrustedRead(input) {
   if (input.event === "mcp.after") {
@@ -3674,8 +3682,8 @@ var DEFAULT_UNTRUSTED_COMMAND_PATTERNS = [
   "gh issue view",
   "gh issue list",
   "gh api",
-  "curl ",
-  "wget "
+  "curl",
+  "wget"
 ];
 
 // src/core/untrusted/untrusted.service.ts
