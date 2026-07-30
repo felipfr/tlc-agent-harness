@@ -16,6 +16,11 @@ import type { LockBody } from "./gate.types.ts";
 export const GATE_LOCK_WAIT_MS = 120_000;
 export const GATE_LOCK_STALE_MS = 30 * 60 * 1000;
 
+// hazard: tryAcquire creates the file before writing the body, so a legitimate lock is briefly unreadable.
+// The grace window has to outlast that gap by orders of magnitude without approaching the stale threshold —
+// a lock nobody can read has no owner to wait for and no pid to release it.
+export const GATE_LOCK_UNREADABLE_GRACE_MS = 5_000;
+
 export class GateLockTimeoutError extends Error {
   constructor(message = "gate lock timeout") {
     super(message);
@@ -58,6 +63,36 @@ export function isLockStale(path: string, args: { now: number; staleMs: number }
   return age !== null && age >= args.staleMs;
 }
 
+// why: a body that parses but does not carry a holder is as useless as one that does not parse — there is
+// still no provider to name and no pid to release by. Both are "unreadable" for the purpose of reclaiming.
+export function isUsableLockBody(value: unknown): value is LockBody {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const body = value as Partial<LockBody>;
+  return (
+    typeof body.provider === "string" && typeof body.session === "string" && typeof body.pid === "number"
+  );
+}
+
+export function isLockUnreadable(path: string, args: { now: number; graceMs: number }): boolean {
+  const age = lockAgeMs(path, args.now);
+  if (age === null || age < args.graceMs) {
+    return false;
+  }
+  return !isUsableLockBody(readLockBody(path));
+}
+
+export function isLockReclaimable(
+  path: string,
+  args: { now: number; staleMs: number; graceMs: number },
+): boolean {
+  return (
+    isLockStale(path, { now: args.now, staleMs: args.staleMs }) ||
+    isLockUnreadable(path, { now: args.now, graceMs: args.graceMs })
+  );
+}
+
 export type DescribeHolderOptions = {
   now?: number;
   staleMs?: number;
@@ -74,7 +109,7 @@ export function describeHolder(root: string, options: DescribeHolderOptions = {}
     return null;
   }
   const body = readLockBody(path);
-  if (!body) {
+  if (!isUsableLockBody(body)) {
     return null;
   }
   return `${body.provider} session ${body.session} (pid ${body.pid})`;
@@ -95,13 +130,12 @@ function tryAcquire(path: string, body: LockBody): boolean {
   }
 }
 
-function stealIfStale(
+function stealIfReclaimable(
   path: string,
-  staleMs: number,
-  now: number,
+  args: { staleMs: number; graceMs: number; now: number },
   body: LockBody,
 ): { stolen: boolean; previousHolder: LockBody | null } {
-  if (!isLockStale(path, { now, staleMs })) {
+  if (!isLockReclaimable(path, args)) {
     return { stolen: false, previousHolder: null };
   }
   const previousHolder = readLockBody(path);
@@ -125,6 +159,7 @@ export function releaseLock(path: string, pid: number): void {
 export type WithGateLockOptions = {
   waitMs?: number;
   staleMs?: number;
+  unreadableGraceMs?: number;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   random?: () => number;
@@ -142,6 +177,7 @@ export async function withGateLock<T>(
 ): Promise<T> {
   const waitMs = options.waitMs ?? GATE_LOCK_WAIT_MS;
   const staleMs = options.staleMs ?? GATE_LOCK_STALE_MS;
+  const graceMs = options.unreadableGraceMs ?? GATE_LOCK_UNREADABLE_GRACE_MS;
   const nowFn = options.now ?? Date.now;
   const sleep = options.sleep ?? defaultSleep;
   const random = options.random ?? Math.random;
@@ -160,7 +196,7 @@ export async function withGateLock<T>(
       return runUnderLock(path, pid, fn);
     }
 
-    const steal = stealIfStale(path, staleMs, now, body);
+    const steal = stealIfReclaimable(path, { staleMs, graceMs, now }, body);
     if (steal.stolen) {
       if (steal.previousHolder) {
         options.onSteal?.(steal.previousHolder);

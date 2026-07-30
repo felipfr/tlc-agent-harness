@@ -8,7 +8,10 @@ import {
   describeHolder,
   GateLockTimeoutError,
   gateLockPath,
+  isLockReclaimable,
   isLockStale,
+  isLockUnreadable,
+  isUsableLockBody,
   readLockBody,
   releaseLock,
   withGateLock,
@@ -16,6 +19,17 @@ import {
 
 function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "tlc-gate-lock-"));
+}
+
+function writeCorruptLock(root: string, text: string, ageMs = 0): string {
+  const path = gateLockPath(root);
+  mkdirSync(join(root, ".tlc", "harness", "state"), { recursive: true });
+  writeFileSync(path, text);
+  if (ageMs > 0) {
+    const past = new Date(Date.now() - ageMs);
+    utimesSync(path, past, past);
+  }
+  return path;
 }
 
 function writeRawLock(root: string, body: unknown, ageMs = 0): string {
@@ -237,5 +251,143 @@ test("withGateLock's poll delay follows the jittered backoff formula, not a fixe
     assert.notEqual(delays[0], delays[1]);
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// hazard: a lock whose body cannot be read has no owner to wait for and no pid to release it. Before this
+// case it was only reclaimed by mtime, so a recent corrupt file cost every stop the full waitMs — measured
+// at 120 s in production — and then abstained with an adapter error.
+test("withGateLock reclaims an unreadable lock instead of waiting out the deadline", async () => {
+  const root = tempRoot();
+  try {
+    const path = writeCorruptLock(root, "{ this is not json", 10_000);
+    assert.equal(readLockBody(path), null);
+    let ran = false;
+    await withGateLock(
+      root,
+      "provider-new",
+      "session-new",
+      async () => {
+        ran = true;
+      },
+      { waitMs: 50, staleMs: 30 * 60 * 1000, unreadableGraceMs: 5_000, sleep: async () => {} },
+    );
+    assert.equal(ran, true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a zero-length lock past the grace window is reclaimed too", async () => {
+  const root = tempRoot();
+  try {
+    writeCorruptLock(root, "", 10_000);
+    let ran = false;
+    await withGateLock(
+      root,
+      "p",
+      "s",
+      async () => {
+        ran = true;
+      },
+      { waitMs: 50, unreadableGraceMs: 5_000, sleep: async () => {} },
+    );
+    assert.equal(ran, true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// hazard: tryAcquire creates the file before writing its body, so an unreadable lock younger than the grace
+// window may be a legitimate one mid-write. Stealing it would let two gates run at once.
+test("an unreadable lock inside the grace window is left alone", async () => {
+  const root = tempRoot();
+  try {
+    writeCorruptLock(root, "", 100);
+    let error: unknown;
+    try {
+      await withGateLock(root, "p", "s", async () => {}, {
+        waitMs: 30,
+        unreadableGraceMs: 5_000,
+        sleep: async () => {},
+      });
+    } catch (err) {
+      error = err;
+    }
+    assert.ok(error instanceof GateLockTimeoutError);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("isLockUnreadable separates absent, readable and unreadable locks", () => {
+  const root = tempRoot();
+  try {
+    const now = Date.now();
+    assert.equal(isLockUnreadable(gateLockPath(root), { now, graceMs: 1_000 }), false);
+    writeRawLock(root, { provider: "p", session: "s", pid: 1, acquired_at: "x" }, 10_000);
+    assert.equal(isLockUnreadable(gateLockPath(root), { now, graceMs: 1_000 }), false);
+    writeCorruptLock(root, "{ broken", 10_000);
+    assert.equal(isLockUnreadable(gateLockPath(root), { now, graceMs: 1_000 }), true);
+    assert.equal(isLockUnreadable(gateLockPath(root), { now, graceMs: 60_000 }), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("isLockReclaimable is true for a stale readable lock and for an unreadable one", () => {
+  const root = tempRoot();
+  try {
+    const now = Date.now();
+    const args = { now, staleMs: 30 * 60 * 1000, graceMs: 5_000 };
+    writeRawLock(root, { provider: "p", session: "s", pid: 1, acquired_at: "x" }, 60_000);
+    assert.equal(isLockReclaimable(gateLockPath(root), args), false);
+    writeRawLock(root, { provider: "p", session: "s", pid: 1, acquired_at: "x" }, 40 * 60 * 1000);
+    assert.equal(isLockReclaimable(gateLockPath(root), args), true);
+    writeCorruptLock(root, "{ broken", 10_000);
+    assert.equal(isLockReclaimable(gateLockPath(root), args), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// hazard: JSON.parse succeeds on a bare string, a number and an object with none of the fields. Each parses
+// but names no holder, so treating "parsed" as "usable" left the same 120 s wait behind a valid-JSON file.
+test("a body that parses but names no holder is reclaimed like a corrupt one", async () => {
+  for (const shape of ['"just a string"', "42", "{}", '{"provider":"p"}', "null", "[]"]) {
+    const root = tempRoot();
+    try {
+      writeCorruptLock(root, shape, 10_000);
+      assert.equal(describeHolder(root), null, `describeHolder should name nobody for ${shape}`);
+      let ran = false;
+      await withGateLock(
+        root,
+        "p",
+        "s",
+        async () => {
+          ran = true;
+        },
+        { waitMs: 30, unreadableGraceMs: 5_000, sleep: async () => {} },
+      );
+      assert.equal(ran, true, `withGateLock should reclaim ${shape}`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("isUsableLockBody accepts a real body and rejects every malformed shape", () => {
+  assert.equal(isUsableLockBody({ provider: "p", session: "s", pid: 1, acquired_at: "x" }), true);
+  for (const shape of [
+    null,
+    undefined,
+    "s",
+    42,
+    [],
+    {},
+    { provider: "p" },
+    { provider: "p", session: "s" },
+  ]) {
+    assert.equal(isUsableLockBody(shape), false, `should reject ${JSON.stringify(shape)}`);
   }
 });
