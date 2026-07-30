@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ProviderWiring, RuntimePaths, WiringEntry } from "../../contracts/index.ts";
 import { claudeConfigDir } from "../../platform/paths.ts";
@@ -104,6 +104,28 @@ export function isHarnessGroup(group: unknown): boolean {
   return JSON.stringify(group ?? null).includes(LAUNCHER_MARKER);
 }
 
+export function canonicalLauncherPath(path: string, resolve: (p: string) => string = realpathSync): string {
+  try {
+    return resolve(path);
+  } catch {
+    return path;
+  }
+}
+
+// hazard: an installation reached through a symlink writes one path into settings.json and resolves another
+// at runtime, so a structural comparison reports the wiring as broken every time. Comparing the launcher by
+// the file it actually points at is what makes "wired" mean wired, and stops every update from rewriting
+// a settings.json that was already correct.
+export function canonicalizeGroups(groups: unknown, resolve?: (p: string) => string): unknown {
+  return JSON.parse(
+    JSON.stringify(groups ?? null, (_key, value) =>
+      typeof value === "string" && value.includes(LAUNCHER_MARKER)
+        ? canonicalLauncherPath(value, resolve)
+        : value,
+    ),
+  );
+}
+
 export function mergeClaudeSettings(
   existingText: string | null,
   entries: readonly WiringEntry[],
@@ -139,7 +161,7 @@ export function mergeClaudeSettings(
     // changes, and every hook then fires twice. Ours are replaced wholesale; foreign ones stay.
     const foreign = existingGroups.filter((group) => !isHarnessGroup(group));
     const nextGroups = [...foreign, ...groups];
-    if (!deepEqual(existingGroups, nextGroups)) {
+    if (!deepEqual(canonicalizeGroups(existingGroups), canonicalizeGroups(nextGroups))) {
       changed = true;
     }
     mergedHooks[hookEvent] = nextGroups;

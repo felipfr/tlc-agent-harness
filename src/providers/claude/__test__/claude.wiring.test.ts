@@ -1,11 +1,21 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { claudeConfigDir } from "../../../platform/paths.ts";
 import {
   applyClaudeWiring,
+  canonicalizeGroups,
+  canonicalLauncherPath,
   claudeSettingsPath,
   claudeWiring,
   mergeClaudeSettings,
@@ -192,4 +202,66 @@ test("applyClaudeWiring is idempotent — re-running does not change file conten
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// hazard: the install path is a symlink in every from-a-clone setup, so settings.json holds one path while
+// the runtime resolves another. A structural comparison called that wiring broken on every doctor run and
+// rewrote a correct settings.json on every update.
+test("a launcher reached through a symlink is recognised as the same wiring", () => {
+  const dir = mkdtempSync(join(tmpdir(), "tlc-wiring-link-"));
+  try {
+    const real = join(dir, "checkout");
+    mkdirSync(join(real, "bin"), { recursive: true });
+    writeFileSync(join(real, "bin", "tlc-exec.mjs"), "");
+    const link = join(dir, "installed");
+    try {
+      symlinkSync(real, link, "dir");
+    } catch {
+      return;
+    }
+    const viaLink = mergeClaudeSettings(
+      null,
+      claudeWiring({ launcherPath: join(link, "bin", "tlc-exec.mjs") }).entries,
+    );
+    assert.equal(viaLink.ok, true);
+    const settingsFromLink = viaLink.ok ? viaLink.settingsText : "";
+
+    const viaReal = mergeClaudeSettings(
+      settingsFromLink,
+      claudeWiring({ launcherPath: join(real, "bin", "tlc-exec.mjs") }).entries,
+    );
+    assert.equal(viaReal.ok, true);
+    assert.equal(viaReal.ok && viaReal.changed, false, "the same file through two paths is one wiring");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a launcher at a genuinely different location is still a change", () => {
+  const first = mergeClaudeSettings(null, claudeWiring({ launcherPath: "/one/bin/tlc-exec.mjs" }).entries);
+  const settingsText = first.ok ? first.settingsText : "";
+  const second = mergeClaudeSettings(
+    settingsText,
+    claudeWiring({ launcherPath: "/two/bin/tlc-exec.mjs" }).entries,
+  );
+  assert.equal(second.ok && second.changed, true);
+});
+
+test("canonicalLauncherPath falls back to the literal path when it cannot be resolved", () => {
+  assert.equal(
+    canonicalLauncherPath("/absent/bin/tlc-exec.mjs", () => {
+      throw new Error("ENOENT");
+    }),
+    "/absent/bin/tlc-exec.mjs",
+  );
+});
+
+test("canonicalizeGroups only rewrites strings naming the launcher", () => {
+  const groups = [
+    { hooks: [{ type: "command", command: "node", args: ["/link/bin/tlc-exec.mjs", "stop"] }] },
+    { hooks: [{ type: "command", command: "bash /somebody/else/script.sh" }] },
+  ];
+  const canonical = canonicalizeGroups(groups, () => "/real/bin/tlc-exec.mjs") as typeof groups;
+  assert.equal(JSON.stringify(canonical).includes("/real/bin/tlc-exec.mjs"), true);
+  assert.equal(JSON.stringify(canonical).includes("/somebody/else/script.sh"), true);
 });
