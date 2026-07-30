@@ -82,6 +82,8 @@ import {
   nextLoop,
   resetLoop,
 } from "./turn/turn.loop-counter.ts";
+import { evaluateUntrustedContent } from "./untrusted/untrusted.service.ts";
+import { clearFramingMarker } from "./untrusted/untrusted.store.ts";
 
 async function selectLessons(
   args: Parameters<typeof selectLessonsInner>[0],
@@ -154,6 +156,10 @@ export const coreFacade = {
     getRollup,
     pruneObs,
     pruneSpool,
+  },
+  untrusted: {
+    evaluateUntrustedContent,
+    clearFramingMarker,
   },
   policy: {
     guardPolicySurface,

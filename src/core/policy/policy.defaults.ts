@@ -58,6 +58,11 @@ export const DEFAULTS: Policy = {
   obs: {
     globalSpool: false,
   },
+  untrustedContent: {
+    enabled: false,
+    extraTools: [],
+    extraCommandPatterns: [],
+  },
   shell: {
     catastrophicAsk: true,
     stallDetection: false,

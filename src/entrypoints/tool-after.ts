@@ -72,7 +72,16 @@ export const toolAfterHandler: Handler = (event: HarnessEvent, ctx: HandlerConte
       gen_ai: usageGenAi(event, ctx),
     });
   }
-  return { kind: "abstain" };
+
+  return coreFacade.untrusted.evaluateUntrustedContent({
+    root: event.projectDir,
+    sessionKey: event.sessionKey,
+    event: event.event,
+    toolName: event.toolName,
+    command: event.command,
+    config: ctx.policy.untrustedContent,
+    providerTools: ctx.provider.policyDefaults().untrustedTools,
+  });
 };
 
 if (import.meta.main) {

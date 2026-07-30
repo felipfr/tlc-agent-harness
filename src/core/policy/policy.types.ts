@@ -76,6 +76,11 @@ export type Policy = {
   obs: {
     globalSpool: boolean;
   };
+  untrustedContent: {
+    enabled: boolean;
+    extraTools: string[];
+    extraCommandPatterns: string[];
+  };
   shell: {
     catastrophicAsk: boolean;
     stallDetection: boolean;
@@ -104,6 +109,7 @@ export type PartialPolicy = Partial<Policy> & {
   docs?: Partial<Policy["docs"]>;
   comments?: Partial<Policy["comments"]>;
   obs?: Partial<Policy["obs"]>;
+  untrustedContent?: Partial<Policy["untrustedContent"]>;
   shell?: Partial<Policy["shell"]>;
   intelligence?: Partial<Policy["intelligence"]> & {
     lessons?: Partial<LessonsPolicyConfig>;

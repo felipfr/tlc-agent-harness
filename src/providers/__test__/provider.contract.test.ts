@@ -44,6 +44,17 @@ function assertSatisfiesContract(provider: ProviderPort): void {
     );
   }
   assert.ok(
+    Array.isArray(policyDefaults.untrustedTools),
+    `${provider.name}.policyDefaults().untrustedTools is an array`,
+  );
+  for (const tool of policyDefaults.untrustedTools) {
+    assert.equal(
+      typeof tool,
+      "string",
+      `${provider.name}.policyDefaults().untrustedTools entries are strings`,
+    );
+  }
+  assert.ok(
     Array.isArray(policyDefaults.blockedPatterns),
     `${provider.name}.policyDefaults().blockedPatterns is an array`,
   );
@@ -112,7 +123,12 @@ function makeFixtureProvider(): ProviderPort {
       return capabilities;
     },
     policyDefaults() {
-      return { allowedModels: ["fixture-model"], blockedPatterns: ["-fast(?:$|[^a-z0-9])"], minEffort: null };
+      return {
+        allowedModels: ["fixture-model"],
+        blockedPatterns: ["-fast(?:$|[^a-z0-9])"],
+        minEffort: null,
+        untrustedTools: ["FixtureFetch"],
+      };
     },
     toEvent(raw: Record<string, unknown>): HarnessEvent | null {
       if (raw.hook_event_name !== "fixtureStop") {

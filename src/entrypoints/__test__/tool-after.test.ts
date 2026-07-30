@@ -60,6 +60,14 @@ function claudeToolAfter(root: string, overrides: Record<string, unknown> = {}):
   });
 }
 
+function writeUntrustedPolicy(root: string): void {
+  mkdirSync(join(root, ".tlc", "harness"), { recursive: true });
+  writeFileSync(
+    join(root, ".tlc", "harness", "config.json"),
+    JSON.stringify({ version: 1, untrustedContent: { enabled: true } }),
+  );
+}
+
 function cursorShellAfter(root: string, command: string): string {
   return JSON.stringify({
     hook_event_name: "afterShellExecution",
@@ -331,6 +339,67 @@ test("cost estimation is skipped when usage arrives in the payload (Cursor)", as
     const records = allRecords(root);
     assert.equal(records.length, 1);
     assert.equal(records[0]?.gen_ai, undefined);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("untrustedContent off means a web fetch changes nothing", async () => {
+  const root = tempRoot();
+  try {
+    const outcome = await runHandler(
+      toolAfterHandler,
+      stdinOf(claudeToolAfter(root, { tool_name: "WebFetch" })),
+    );
+    assert.equal(outcome.decision.kind, "abstain");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("untrustedContent on frames the first fetch of the turn as data", async () => {
+  const root = tempRoot();
+  try {
+    writeUntrustedPolicy(root);
+    const outcome = await runHandler(
+      toolAfterHandler,
+      stdinOf(claudeToolAfter(root, { tool_name: "WebFetch" })),
+    );
+    assert.equal(outcome.decision.kind, "context");
+    if (outcome.decision.kind === "context") {
+      assert.match(outcome.decision.text, /UNTRUSTED CONTENT/);
+      assert.match(outcome.decision.text, /prompt-injection/);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a second fetch in the same turn stays silent", async () => {
+  const root = tempRoot();
+  try {
+    writeUntrustedPolicy(root);
+    const first = await runHandler(
+      toolAfterHandler,
+      stdinOf(claudeToolAfter(root, { tool_name: "WebFetch" })),
+    );
+    const second = await runHandler(
+      toolAfterHandler,
+      stdinOf(claudeToolAfter(root, { tool_name: "WebFetch" })),
+    );
+    assert.equal(first.decision.kind, "context");
+    assert.equal(second.decision.kind, "abstain");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an ordinary tool never triggers the framing", async () => {
+  const root = tempRoot();
+  try {
+    writeUntrustedPolicy(root);
+    const outcome = await runHandler(toolAfterHandler, stdinOf(claudeToolAfter(root, { tool_name: "Read" })));
+    assert.equal(outcome.decision.kind, "abstain");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

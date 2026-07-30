@@ -5,5 +5,6 @@ export function claudePolicyDefaults(): ProviderPolicyDefaults {
     allowedModels: ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5-20251001"],
     blockedPatterns: [],
     minEffort: null,
+    untrustedTools: ["WebFetch", "WebSearch"],
   };
 }

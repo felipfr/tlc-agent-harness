@@ -11,5 +11,6 @@ export function cursorPolicyDefaults(): ProviderPolicyDefaults {
     ],
     blockedPatterns: ["-fast(?:$|[^a-z0-9])", "/fast(?:$|[^a-z0-9])", "composer-2\\.5-fast"],
     minEffort: null,
+    untrustedTools: ["Fetch", "WebSearch"],
   };
 }
