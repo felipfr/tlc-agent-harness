@@ -232,3 +232,54 @@ describe("Bun/Node dual-runtime parity", () => {
     assert.equal(viaBun.stdout, viaNode.stdout);
   });
 });
+
+describe("resolveHarnessHome — install path preference", () => {
+  const resolver = (mapping: Record<string, string>) => (path: string) => {
+    const resolved = mapping[path];
+    if (!resolved) {
+      throw new Error(`ENOENT: ${path}`);
+    }
+    return resolved;
+  };
+
+  test("an explicit TLC_HOME wins over anything derived", () => {
+    assert.equal(
+      resolveHarnessHome("/ignored", { TLC_HOME: "/explicit" }, "/x/bin/tlc-exec.mjs"),
+      "/explicit",
+    );
+  });
+
+  // hazard: both wrappers collapse the symlink before invoking, so the candidate names the checkout. Every
+  // shim hook written from this value pointed at a directory that exists only on the machine that ran init.
+  test("the conventional install path wins when it resolves to the same runtime", () => {
+    const home = resolveHarnessHome("/ignored", {}, "/repo/checkout/bin/tlc-exec.mjs", {
+      realpath: resolver({ "/home/u/.tlc/harness": "/repo/checkout", "/repo/checkout": "/repo/checkout" }),
+      home: () => "/home/u",
+    });
+    assert.equal(home, join("/home/u", ".tlc", "harness"));
+  });
+
+  test("a deliberately relocated install is left alone", () => {
+    const home = resolveHarnessHome("/ignored", {}, "/other/place/bin/tlc-exec.mjs", {
+      realpath: resolver({ "/home/u/.tlc/harness": "/somewhere/else", "/other/place": "/other/place" }),
+      home: () => "/home/u",
+    });
+    assert.equal(home, "/other/place");
+  });
+
+  test("an absent conventional path falls back to the candidate instead of throwing", () => {
+    const home = resolveHarnessHome("/ignored", {}, "/other/place/bin/tlc-exec.mjs", {
+      realpath: resolver({ "/other/place": "/other/place" }),
+      home: () => "/home/u",
+    });
+    assert.equal(home, "/other/place");
+  });
+
+  test("binDir is used when the invocation is not the launcher itself", () => {
+    const home = resolveHarnessHome("/only/bin", {}, undefined, {
+      realpath: resolver({ "/only": "/only" }),
+      home: () => "/home/u",
+    });
+    assert.equal(home, join("/only", "bin", ".."));
+  });
+});

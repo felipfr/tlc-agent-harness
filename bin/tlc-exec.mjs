@@ -1,22 +1,46 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const MIN_NODE_MAJOR = 24;
 
-export function resolveHarnessHome(binDir, env = process.env, invoked = process.argv[1]) {
+export function conventionalHarnessHome(home = homedir()) {
+  return join(home, ".tlc", "harness");
+}
+
+function samePath(left, right, resolve) {
+  try {
+    return resolve(left) === resolve(right);
+  } catch {
+    return false;
+  }
+}
+
+// hazard: ESM resolves import.meta.url to the realpath, and the bash wrappers walk readlink before
+// invoking, so both binDir and argv[1] can name the checkout rather than the install path. Anything derived
+// from this value is written into hook files and compared by doctor, so the checkout leaking in here made
+// generated shims point at a directory that only exists on the machine that ran init.
+// invariant: the conventional path wins only when it resolves to the same runtime — verified, never assumed,
+// so a deliberately relocated install is left alone.
+export function resolveHarnessHome(
+  binDir,
+  env = process.env,
+  invoked = process.argv[1],
+  deps = { realpath: realpathSync, home: homedir },
+) {
   const fromEnv = env.TLC_HOME?.trim();
   if (fromEnv) {
     return fromEnv;
   }
-  // hazard: ESM resolves import.meta.url to the realpath, so binDir points at the checkout rather
-  // than the install path. argv[1] keeps the path the caller used, which is the stable one.
-  if (invoked?.endsWith("tlc-exec.mjs")) {
-    return join(dirname(invoked), "..");
+  const candidate = invoked?.endsWith("tlc-exec.mjs") ? join(dirname(invoked), "..") : join(binDir, "..");
+  const conventional = conventionalHarnessHome(deps.home());
+  if (conventional !== candidate && samePath(conventional, candidate, deps.realpath)) {
+    return conventional;
   }
-  return join(binDir, "..");
+  return candidate;
 }
 
 export function bunExecutableName(platform = process.platform) {
