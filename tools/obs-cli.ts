@@ -2,78 +2,129 @@ import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { coreFacade } from "../src/core/index.ts";
 import { readSignalEvents } from "../src/core/observability/observability.store.ts";
-import { DEFAULT_OBS } from "../src/core/observability/observability.types.ts";
+import { DEFAULT_OBS, type ObsEvent } from "../src/core/observability/observability.types.ts";
+import { emitJson, takeJsonFlag } from "../src/platform/cli-output.ts";
 import { projectStateDir } from "../src/platform/paths.ts";
 
-const root = process.env.TLC_PROJECT_DIR ?? process.cwd();
-const cmd = (process.argv[2] ?? "live").toLowerCase();
-const arg = process.argv[3];
+export const NO_EVENTS = "(no signal events yet)";
 
-if (cmd === "live") {
-  const n = Number(arg ?? 40);
-  const events = readSignalEvents(root, DEFAULT_OBS.signalPath, Number.isFinite(n) ? n : 40);
+export function liveText(events: readonly ObsEvent[]): string {
   const lines = events.map((e) => `${e.ts}\t${e.kind}\t${JSON.stringify(e.attrs).slice(0, 220)}`);
-  console.log(lines.join("\n") || "(no signal events yet)");
-  process.exit(0);
+  return lines.join("\n") || NO_EVENTS;
 }
 
-if (cmd === "events") {
-  const n = Number(arg ?? 50);
-  const events = readSignalEvents(root, DEFAULT_OBS.signalPath, Number.isFinite(n) ? n : 50);
-  for (const e of events) {
-    console.log(JSON.stringify(e));
+export function liveJson(events: readonly ObsEvent[]): { count: number; events: readonly ObsEvent[] } {
+  return { count: events.length, events };
+}
+
+export function limitFrom(raw: string | undefined, fallback: number): number {
+  const parsed = Number(raw ?? fallback);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+export function latestSessionId(root: string): string | null {
+  const sessions = join(projectStateDir(root), "sessions");
+  if (!existsSync(sessions)) {
+    return null;
   }
-  process.exit(0);
+  const last = readdirSync(sessions)
+    .filter((name) => name.endsWith(".json"))
+    .sort()
+    .at(-1);
+  return last ? last.replace(/\.json$/, "") : null;
 }
 
-if (cmd === "report") {
-  let conversationId = arg;
-  if (!conversationId) {
-    const sessions = join(projectStateDir(root), "sessions");
-    if (!existsSync(sessions)) {
-      console.error("no sessions yet");
+function main(argv: string[]): void {
+  const { json, rest } = takeJsonFlag(argv);
+  const root = process.env.TLC_PROJECT_DIR ?? process.cwd();
+  const cmd = (rest[0] ?? "live").toLowerCase();
+  const arg = rest[1];
+
+  if (cmd === "live") {
+    const events = readSignalEvents(root, DEFAULT_OBS.signalPath, limitFrom(arg, 40));
+    if (json) {
+      emitJson(liveJson(events));
+    } else {
+      console.log(liveText(events));
+    }
+    process.exit(0);
+  }
+
+  if (cmd === "events") {
+    const events = readSignalEvents(root, DEFAULT_OBS.signalPath, limitFrom(arg, 50));
+    // why: the flag's contract is one parseable value per invocation, so the stream of lines collapses
+    // into a single array. Without the flag this stays newline-delimited, as every existing caller expects.
+    if (json) {
+      emitJson(liveJson(events));
+    } else {
+      for (const event of events) {
+        console.log(JSON.stringify(event));
+      }
+    }
+    process.exit(0);
+  }
+
+  if (cmd === "report") {
+    const conversationId = arg ?? latestSessionId(root);
+    if (!conversationId) {
+      if (json) {
+        emitJson({ error: "no sessions yet" });
+      } else {
+        console.error("no sessions yet");
+      }
       process.exit(1);
     }
-    const files = readdirSync(sessions)
-      .filter((f) => f.endsWith(".json"))
-      .sort();
-    const last = files.at(-1);
-    if (!last) {
-      console.error("no sessions yet");
+    const rollup = coreFacade.observability.getRollup(root, conversationId);
+    if (!rollup) {
+      if (json) {
+        emitJson({ error: `no rollup for session: ${conversationId}`, session: conversationId });
+      } else {
+        console.error(`no rollup for session: ${conversationId}`);
+      }
       process.exit(1);
     }
-    conversationId = last.replace(/\.json$/, "");
+    const markdown = coreFacade.observability.sessionReportMarkdown(rollup);
+    const reportsDir = join(projectStateDir(root), "reports");
+    mkdirSync(reportsDir, { recursive: true });
+    const path = join(reportsDir, `${conversationId}.md`);
+    writeFileSync(path, markdown);
+    if (json) {
+      emitJson({ session: conversationId, path, rollup });
+    } else {
+      console.log(markdown);
+      console.log(`\nWrote ${path}`);
+    }
+    process.exit(0);
   }
-  const rollup = coreFacade.observability.getRollup(root, conversationId);
-  if (!rollup) {
-    console.error(`no rollup for session: ${conversationId}`);
-    process.exit(1);
+
+  if (cmd === "rollup") {
+    if (!arg) {
+      console.error("usage: tlc harness obs rollup <conversation_id>");
+      process.exit(1);
+    }
+    const rollup = coreFacade.observability.getRollup(root, arg);
+    if (json) {
+      emitJson({ session: arg, rollup });
+    } else {
+      console.log(JSON.stringify(rollup, null, 2));
+    }
+    process.exit(0);
   }
-  const markdown = coreFacade.observability.sessionReportMarkdown(rollup);
-  const reportsDir = join(projectStateDir(root), "reports");
-  mkdirSync(reportsDir, { recursive: true });
-  const path = join(reportsDir, `${conversationId}.md`);
-  writeFileSync(path, markdown);
-  console.log(markdown);
-  console.log(`\nWrote ${path}`);
-  process.exit(0);
+
+  if (cmd === "prune") {
+    coreFacade.observability.pruneObs(root, DEFAULT_OBS.retentionDays);
+    if (json) {
+      emitJson({ pruned: true, retentionDays: DEFAULT_OBS.retentionDays });
+    } else {
+      console.log("pruned old session rollups");
+    }
+    process.exit(0);
+  }
+
+  console.error("usage: tlc harness obs <live|events|report|rollup|prune> [arg] [--json]");
+  process.exit(1);
 }
 
-if (cmd === "rollup") {
-  const conversationId = arg;
-  if (!conversationId) {
-    console.error("usage: tlc harness obs rollup <conversation_id>");
-    process.exit(1);
-  }
-  console.log(JSON.stringify(coreFacade.observability.getRollup(root, conversationId), null, 2));
-  process.exit(0);
+if (import.meta.main) {
+  main(process.argv.slice(2));
 }
-
-if (cmd === "prune") {
-  coreFacade.observability.pruneObs(root, DEFAULT_OBS.retentionDays);
-  console.log("pruned old session rollups");
-  process.exit(0);
-}
-
-console.error("usage: tlc harness obs <live|events|report|rollup|prune> [arg]");
-process.exit(1);
