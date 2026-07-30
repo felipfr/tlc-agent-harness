@@ -10,7 +10,7 @@ import { existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync as rea
 import { dirname as dirname2, join as join3 } from "node:path";
 
 // src/providers/claude/claude.wiring.ts
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join as join2 } from "node:path";
 
 // src/platform/paths.ts
@@ -75,6 +75,16 @@ var LAUNCHER_MARKER = "tlc-exec.mjs";
 function isHarnessGroup(group) {
   return JSON.stringify(group ?? null).includes(LAUNCHER_MARKER);
 }
+function canonicalLauncherPath(path, resolve = realpathSync) {
+  try {
+    return resolve(path);
+  } catch {
+    return path;
+  }
+}
+function canonicalizeGroups(groups, resolve) {
+  return JSON.parse(JSON.stringify(groups ?? null, (_key, value) => typeof value === "string" && value.includes(LAUNCHER_MARKER) ? canonicalLauncherPath(value, resolve) : value));
+}
 function mergeClaudeSettings(existingText, entries) {
   const desired = desiredHooksFor(entries);
   let settings = {};
@@ -102,7 +112,7 @@ function mergeClaudeSettings(existingText, entries) {
     const existingGroups = mergedHooks[hookEvent] ?? [];
     const foreign = existingGroups.filter((group) => !isHarnessGroup(group));
     const nextGroups = [...foreign, ...groups];
-    if (!deepEqual(existingGroups, nextGroups)) {
+    if (!deepEqual(canonicalizeGroups(existingGroups), canonicalizeGroups(nextGroups))) {
       changed = true;
     }
     mergedHooks[hookEvent] = nextGroups;
