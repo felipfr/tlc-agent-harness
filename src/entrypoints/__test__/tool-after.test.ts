@@ -3,7 +3,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { coreFacade } from "../../core/index.ts";
 import { projectStateDir } from "../../platform/paths.ts";
+import { providers } from "../../providers/index.ts";
 import { runHandler } from "../run.ts";
 import { toolAfterHandler } from "../tool-after.ts";
 import { toolFailureHandler } from "../tool-failure.ts";
@@ -400,6 +402,41 @@ test("an ordinary tool never triggers the framing", async () => {
     writeUntrustedPolicy(root);
     const outcome = await runHandler(toolAfterHandler, stdinOf(claudeToolAfter(root, { tool_name: "Read" })));
     assert.equal(outcome.decision.kind, "abstain");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// hazard: the framing is only worth returning if the provider can carry it on this event. No degrade path
+// reads contextAtToolAfter, so the handler has to check it or the rail reports a protection it never gave.
+test("the framing is skipped when the provider cannot carry context on tool.after", async () => {
+  const root = tempRoot();
+  try {
+    writeUntrustedPolicy(root);
+    const provider = providers[0];
+    assert.ok(provider);
+    const capable = provider.capabilities();
+    // why: the tool has to be one this provider actually treats as untrusted, or the handler would abstain
+    // for the wrong reason and the test would pass with the capability check removed.
+    const untrustedTool = provider.policyDefaults().untrustedTools[0];
+    assert.ok(untrustedTool);
+    const decision = await toolAfterHandler(
+      {
+        provider: provider.name,
+        event: "tool.after",
+        sessionKey: "sess-1",
+        projectDir: root,
+        toolName: untrustedTool,
+        raw: {},
+      },
+      {
+        policy: coreFacade.policy.loadPolicy(root),
+        capabilities: { ...capable, contextAtToolAfter: false },
+        provider,
+        now: new Date(),
+      },
+    );
+    assert.equal(decision.kind, "abstain");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

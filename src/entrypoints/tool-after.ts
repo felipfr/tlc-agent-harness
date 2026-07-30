@@ -73,6 +73,13 @@ export const toolAfterHandler: Handler = (event: HarnessEvent, ctx: HandlerConte
     });
   }
 
+  // hazard: no degrade path consults contextAtToolAfter — the capability is declared but unread, so a
+  // provider that cannot carry context on this event would swallow the framing and leave the rail reporting
+  // a protection it never delivered. Abstaining keeps the marker unset, so a later event can still speak.
+  if (!ctx.capabilities.contextAtToolAfter) {
+    return { kind: "abstain" };
+  }
+
   return coreFacade.untrusted.evaluateUntrustedContent({
     root: event.projectDir,
     sessionKey: event.sessionKey,
