@@ -2422,7 +2422,11 @@ var DEFAULTS = {
     mode: "declared"
   },
   obs: {
-    globalSpool: false
+    globalSpool: false,
+    includePayloads: DEFAULT_OBS.includePayloads,
+    maxAttrChars: DEFAULT_OBS.maxAttrChars,
+    sessionCostAlertUsd: DEFAULT_OBS.sessionCostAlertUsd,
+    retentionDays: DEFAULT_OBS.retentionDays
   },
   untrustedContent: {
     enabled: false,
@@ -3988,10 +3992,11 @@ Wrote ${path}`);
     process.exit(0);
   }
   if (cmd === "prune") {
-    coreFacade.observability.pruneObs(root, DEFAULT_OBS.retentionDays);
-    const spoolDropped = coreFacade.observability.pruneSpool(DEFAULT_OBS.retentionDays);
+    const retentionDays = loadPolicy(root).obs.retentionDays;
+    coreFacade.observability.pruneObs(root, retentionDays);
+    const spoolDropped = coreFacade.observability.pruneSpool(retentionDays);
     if (json) {
-      emitJson({ pruned: true, retentionDays: DEFAULT_OBS.retentionDays, spoolDropped });
+      emitJson({ pruned: true, retentionDays, spoolDropped });
     } else {
       console.log(`pruned old session rollups; dropped ${spoolDropped} spool record(s)`);
     }

@@ -2433,7 +2433,11 @@ var DEFAULTS = {
     mode: "declared"
   },
   obs: {
-    globalSpool: false
+    globalSpool: false,
+    includePayloads: DEFAULT_OBS.includePayloads,
+    maxAttrChars: DEFAULT_OBS.maxAttrChars,
+    sessionCostAlertUsd: DEFAULT_OBS.sessionCostAlertUsd,
+    retentionDays: DEFAULT_OBS.retentionDays
   },
   untrustedContent: {
     enabled: false,

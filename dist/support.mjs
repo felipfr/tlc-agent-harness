@@ -2419,7 +2419,11 @@ var DEFAULTS = {
     mode: "declared"
   },
   obs: {
-    globalSpool: false
+    globalSpool: false,
+    includePayloads: DEFAULT_OBS.includePayloads,
+    maxAttrChars: DEFAULT_OBS.maxAttrChars,
+    sessionCostAlertUsd: DEFAULT_OBS.sessionCostAlertUsd,
+    retentionDays: DEFAULT_OBS.retentionDays
   },
   untrustedContent: {
     enabled: false,
@@ -3873,7 +3877,14 @@ var coreFacade = {
 var OBS_CONFIG = coreFacade.observability.DEFAULT_OBS;
 var OBS_CONFIG_AUDIT = { ...OBS_CONFIG, debugEnabled: true };
 function obsConfigFor(policy, base = OBS_CONFIG) {
-  return { ...base, globalSpool: policy.obs.globalSpool };
+  return {
+    ...base,
+    globalSpool: policy.obs.globalSpool,
+    includePayloads: policy.obs.includePayloads,
+    maxAttrChars: policy.obs.maxAttrChars,
+    sessionCostAlertUsd: policy.obs.sessionCostAlertUsd,
+    retentionDays: policy.obs.retentionDays
+  };
 }
 function sessionIdFromKey(event) {
   const prefix = `${event.provider}-`;

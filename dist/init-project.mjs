@@ -180,6 +180,51 @@ function applyCursorWiring(wiring, { force = false } = {}) {
 }
 if (false) {}
 
+// src/core/observability/observability.types.ts
+var DEFAULT_OBS = {
+  enabled: true,
+  signalPath: "obs.jsonl",
+  debugPath: "debug.jsonl",
+  debugEnabled: false,
+  includePayloads: false,
+  maxAttrChars: 500,
+  sessionCostAlertUsd: 5,
+  retentionDays: 14,
+  maxSignalEvents: 50000,
+  globalSpool: false
+};
+var SIGNAL_KINDS = new Set([
+  "session.start",
+  "session.end",
+  "generation.end",
+  "tool.fail",
+  "subagent.start",
+  "subagent.end",
+  "prompt.submit",
+  "compact",
+  "gate.outcome",
+  "cost.turn",
+  "cost.session_alert",
+  "ship.claim",
+  "policy.deny"
+]);
+var LIVE_ALLOWLIST = new Set([
+  "session.start",
+  "session.end",
+  "generation.end",
+  "tool.fail",
+  "shell.end",
+  "subagent.start",
+  "subagent.end",
+  "gate.outcome",
+  "cost.turn",
+  "cost.session_alert",
+  "ship.claim",
+  "policy.deny",
+  "compact",
+  "prompt.submit"
+]);
+
 // src/core/policy/policy.defaults.ts
 var DEFAULT_LESSONS_POLICY = {
   enabled: false,
@@ -236,7 +281,11 @@ var DEFAULTS = {
     mode: "declared"
   },
   obs: {
-    globalSpool: false
+    globalSpool: false,
+    includePayloads: DEFAULT_OBS.includePayloads,
+    maxAttrChars: DEFAULT_OBS.maxAttrChars,
+    sessionCostAlertUsd: DEFAULT_OBS.sessionCostAlertUsd,
+    retentionDays: DEFAULT_OBS.retentionDays
   },
   untrustedContent: {
     enabled: false,

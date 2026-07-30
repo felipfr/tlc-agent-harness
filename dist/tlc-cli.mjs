@@ -2424,7 +2424,11 @@ var DEFAULTS = {
     mode: "declared"
   },
   obs: {
-    globalSpool: false
+    globalSpool: false,
+    includePayloads: DEFAULT_OBS.includePayloads,
+    maxAttrChars: DEFAULT_OBS.maxAttrChars,
+    sessionCostAlertUsd: DEFAULT_OBS.sessionCostAlertUsd,
+    retentionDays: DEFAULT_OBS.retentionDays
   },
   untrustedContent: {
     enabled: false,
@@ -3930,38 +3934,39 @@ function pairedFlagPath(root) {
 function ensureFlagsDir(root) {
   mkdirSync13(flagsDir(root), { recursive: true });
 }
-function readMode(root) {
+function modeOrigin(root) {
   const modeFile = modeFilePath(root);
   if (existsSync18(modeFile)) {
     const raw = readFileSync18(modeFile, "utf8").trim().toLowerCase();
-    if (raw === "heads-down") {
-      return "focus";
-    }
-    if (raw === "solo" || raw === "paired") {
-      return raw;
+    if (raw === "solo" || raw === "paired" || raw === "heads-down") {
+      return "file";
     }
   }
-  if (existsSync18(headsDownFlagPath(root))) {
-    return "focus";
+  if (existsSync18(headsDownFlagPath(root)) || existsSync18(pairedFlagPath(root))) {
+    return "flag";
   }
-  if (existsSync18(pairedFlagPath(root))) {
-    return "paired";
-  }
-  return "solo";
+  return "config";
+}
+function operatorLabel(mode) {
+  return mode === "heads-down" ? "focus" : mode;
+}
+function readMode(root) {
+  return operatorLabel(coreFacade.policy.loadPolicy(root).mode);
 }
 function grindOn(root) {
-  return existsSync18(grindFlagPath(root)) || readMode(root) === "focus";
+  return coreFacade.policy.loadPolicy(root).grind.enabled;
 }
 function gatesPaused(root) {
   return existsSync18(skipFlagPath(root));
 }
 function statusText(root) {
-  const mode = readMode(root);
+  const report = statusJson(root);
+  const mode = report.mode;
   return [
     `harness @ ${root}`,
-    `  mode:   ${mode}${mode === "focus" ? " (max autonomy + grind)" : ""}`,
-    `  grind:  ${grindOn(root) ? "ON  — stop hook re-runs lint/tests and auto-retries on fail" : "OFF — no auto fix loops"}`,
-    `  gates:  ${gatesPaused(root) ? "PAUSED — stop checks disabled" : "active"}`,
+    `  mode:   ${mode}${mode === "focus" ? " (max autonomy + grind)" : ""} [from ${report.modeOrigin}]`,
+    `  grind:  ${report.grind ? "ON  — stop hook re-runs lint/tests and auto-retries on fail" : "OFF — no auto fix loops"}`,
+    `  gates:  ${report.gatesPaused ? "PAUSED — stop checks disabled" : "active"}`,
     "",
     "Quick help:",
     "  grind ON  = after each agent turn, lint/test changed files; if fail → agent must fix",
@@ -3973,10 +3978,12 @@ function statusText(root) {
 `);
 }
 function statusJson(root) {
+  const policy = coreFacade.policy.loadPolicy(root);
   return {
     root,
-    mode: readMode(root),
-    grind: grindOn(root),
+    mode: operatorLabel(policy.mode),
+    modeOrigin: modeOrigin(root),
+    grind: policy.grind.enabled,
     gatesPaused: gatesPaused(root)
   };
 }
@@ -4401,6 +4408,8 @@ export {
   readMode,
   pricesHelpText,
   pairedFlagPath,
+  operatorLabel,
+  modeOrigin,
   modeFilePath,
   helpText,
   headsDownFlagPath,

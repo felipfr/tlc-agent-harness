@@ -7,7 +7,7 @@ import { homedir as homedir3, platform as osPlatform } from "node:os";
 import { dirname as dirname8, join as join22 } from "node:path";
 
 // bin/tlc-exec.mjs
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 function bunExecutableName(platform = process.platform) {
   return platform === "win32" ? "bun.exe" : "bun";
@@ -43,7 +43,7 @@ if (false) {}
 import { existsSync as existsSync4, mkdirSync as mkdirSync4, readFileSync as readFileSync4, writeFileSync as writeFileSync3 } from "node:fs";
 
 // src/providers/claude/claude.wiring.ts
-import { existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync as readFileSync2, realpathSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync as readFileSync2, realpathSync as realpathSync2, writeFileSync as writeFileSync2 } from "node:fs";
 import { dirname as dirname2, join as join3 } from "node:path";
 
 // src/platform/paths.ts
@@ -161,7 +161,7 @@ var LAUNCHER_MARKER = "tlc-exec.mjs";
 function isHarnessGroup(group) {
   return JSON.stringify(group ?? null).includes(LAUNCHER_MARKER);
 }
-function canonicalLauncherPath(path, resolve = realpathSync) {
+function canonicalLauncherPath(path, resolve = realpathSync2) {
   try {
     return resolve(path);
   } catch {
@@ -3263,7 +3263,11 @@ var DEFAULTS = {
     mode: "declared"
   },
   obs: {
-    globalSpool: false
+    globalSpool: false,
+    includePayloads: DEFAULT_OBS.includePayloads,
+    maxAttrChars: DEFAULT_OBS.maxAttrChars,
+    sessionCostAlertUsd: DEFAULT_OBS.sessionCostAlertUsd,
+    retentionDays: DEFAULT_OBS.retentionDays
   },
   untrustedContent: {
     enabled: false,
