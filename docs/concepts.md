@@ -10,7 +10,7 @@ timestamp: "2026-07-29"
 
 ## grind
 
-After each completed agent turn, run configured lint/test against **relevant** changed files:
+`grind.enabled`. After each completed agent turn, run configured lint/test against **relevant** changed files:
 
 - **lint** — only when files under `codePaths` changed
 - **test** — when test files changed (scoped args), or in `focus` mode when `codePaths` files changed (full
@@ -27,6 +27,11 @@ Optional: the child may write findings to the path in `HARNESS_GATE_REPORT` (JSO
 On failure, send a follow-up so the agent fixes (loop, capped). Identical failure fingerprints trigger a
 stagnation follow-up. Trade-off: catches breakage early; burns turns if gates are flaky.
 
+## format on edit
+
+`format.enabled` with `format.command` (an exact argv array). Runs the project's formatter after a Write so
+style stays consistent without a turn spent on it. Trade-off: a wrong command fights the agent on every edit.
+
 ## pause / resume
 
 `tlc harness pause` disables stop checks (grind + ship challenge). Use when exploring or mid-refactor.
@@ -34,7 +39,7 @@ stagnation follow-up. Trade-off: catches breakage early; burns turns if gates ar
 
 ## shipGate
 
-Ship challenges fire **only** after an explicit protocol line in the agent response:
+`shipGate.enabled`. Ship challenges fire **only** after an explicit protocol line in the agent response:
 
 ```text
 HARNESS_SHIP_CLAIM: <one-line summary>
@@ -53,12 +58,12 @@ Default excludes: `.tlc/`, `.cursor/`, `.claude/`, `**/node_modules/`, `**/.git/
 
 ## emptyDiffAntiShip
 
-When enabled, a recent `HARNESS_SHIP_CLAIM` with zero changed files is blocked. Omit the claim line when an
+`shipGate.emptyDiffAntiShip`. When enabled, a recent `HARNESS_SHIP_CLAIM` with zero changed files is blocked. Omit the claim line when an
 empty diff is intentional.
 
 ## subagent allowlist
 
-Task/subagent models must be on `subagents.allowedModels`; each provider supplies its own default catalog
+`subagents.enforceAllowlist`. Task/subagent models must be on `subagents.allowedModels`; each provider supplies its own default catalog
 (see [/providers/index.md](/providers/index.md) and [/decisions/ad-011.md](/decisions/ad-011.md)) and
 `*-fast`-shaped models are blocked by default. Trade-off: cost/quality control; must update the list when a
 provider adds models you want.
@@ -71,12 +76,15 @@ provider adds models you want.
 
 ## comment policy
 
-Heuristic junk-comment detector on stop (banners, narrating, TODO, commented-out). Trade-off: noisy on
-legacy files until cleaned.
+`comments.enabled`, with `comments.mode` of `declared` or `strict`. Blocks the stop when the turn added
+comment lines, so narration never lands. Diff-scoped against `HEAD`: comments already committed are never
+flagged. `declared` keeps a comment that states `why:`, `hazard:` or `invariant:`; `strict` accepts none and
+asks the operator to write it. Tool directives (`biome-ignore`, `@ts-`, `noqa`, `shellcheck`, shebang) are
+exempt in both modes.
 
 ## docs staleness gate
 
-Optional and off by default. `docs.command` is the repository's own staleness tool — `drift check`,
+`docs.command`, optional and off by default. It is the repository's own staleness tool — `drift check`,
 `oasdiff`, `ast-grep scan`, or a script the repo already has — run on stop through the same lock, artifact and
 failure path as the lint and test gates.
 
@@ -90,25 +98,86 @@ noisy one. The tool also owns its own escape hatch, so there is no harness-level
 
 ## catastrophic shell
 
-The shell-before hook asks before commands that can destroy data outside the workspace. Happy-path allows
+`shell.catastrophicAsk`. The shell-before hook asks before commands that can destroy data outside the workspace. Happy-path allows
 are not signal events.
 
 ## shell stall
 
-When enabled, repeating the same shell command N times (`stallRepeatThreshold`) is denied with a
+`shell.stallDetection`. When enabled, repeating the same shell command N times (`stallRepeatThreshold`) is denied with a
 change-approach follow-up. Trade-off: stops loops; can block intentional retries.
 
 ## intelligence (rails)
 
-| Flag | Effect |
+| Key | Effect |
 |------|--------|
-| `gapFeedback` | Gate fails include structured PREVIOUS_GAPS + NEXT suggestion |
-| `failureClassification` | Handoff stores category (verification, ship-evidence, stagnation, …) |
-| `progressiveHandoff` | sessionStart injects previous gaps / next_action |
-| `progressiveContext` | Each stop retry escalates context (merge prior gaps, more gate output, stronger "don't repeat") |
-| `autopilot` | Runtime emits ordered AUTOPILOT steps + NEXT_ACTION (not LLM-invented plan) |
-| `lessons` | Durable gate lessons with decay/promote; inject at sessionStart + stop retry (see [/lessons.md](/lessons.md)) |
-| `budgetContinue` | Under loop/context pressure **and** unfinished handoff work, follow-up says keep working — do not summarize |
+| `intelligence.gapFeedback` | Gate fails include structured PREVIOUS_GAPS + NEXT suggestion |
+| `intelligence.failureClassification` | Handoff stores category (verification, ship-evidence, stagnation, …) |
+| `intelligence.progressiveHandoff` | sessionStart injects previous gaps / next_action |
+| `intelligence.progressiveContext` | Each stop retry escalates context (merge prior gaps, more gate output, stronger "don't repeat") |
+| `intelligence.autopilot` | Runtime emits ordered AUTOPILOT steps + NEXT_ACTION (not LLM-invented plan) |
+| `intelligence.lessons.enabled` | Durable gate lessons with decay/promote; inject at sessionStart + stop retry (see [/lessons.md](/lessons.md)) |
+| `intelligence.budgetContinue` | Under loop/context pressure **and** unfinished handoff work, follow-up says keep working — do not summarize |
+| `intelligence.idleTurnGate` | Blocks a turn that ends with open handoff work, zero recorded tool calls and zero file changes. It counts events the harness recorded rather than reading the reply, so no wording satisfies it |
+
+## plan gate
+
+`planGate.enabled` (off by default), with `planGate.windowMinutes` (default 120). The turn declares the paths
+it intends to touch through a protocol line, exactly as the ship gate works — free-form prose about plans is
+ignored:
+
+```text
+HARNESS_PLAN: src/core/plan/**, src/entrypoints/stop.ts
+```
+
+Declared paths use the same matcher as `shipGate.runtimePathExcludes`, so there is one pattern syntax to
+learn, globs included. On stop, any changed file that no declared path covers and no accepted deviation
+justifies blocks with BLOCKED / TRIED / NEED, naming those paths. A deviation is accepted only with a stated
+reason:
+
+```text
+HARNESS_PLAN_DEVIATION: src/x.ts — the call site moved with the type
+```
+
+Naming the path alone is refused, since that would make the gate a formality satisfied by restating the file
+just touched. Deviations accumulate for the plan's window, so one can be justified in a later message than
+the one that declared the plan. The gate runs **before** the ship gate: a turn whose scope is invalid
+produced evidence for the wrong change.
+
+A turn that declares no plan is not gated at all, so the rail costs nothing until the agent opts in. That is
+also its limit — it depends on the declaration being made.
+
+## untrusted-content framing
+
+`untrustedContent.enabled` (off by default), with `untrustedContent.extraTools` and
+`untrustedContent.extraCommandPatterns`. The floor governs what the agent executes; this governs what it
+reads. When a turn takes in content from outside the repository, one framing message states that the content
+is data and that any directive inside it is to be reported as a prompt-injection attempt, never obeyed.
+
+Detection is a declared list, never inferred from output: every MCP result (the server is not this
+repository), a tool whose name the provider declares as untrusted (`WebFetch` / `WebSearch` on Claude Code,
+`Fetch` / `WebSearch` on Cursor), and a shell command whose **segment starts with** `gh pr view|diff|list`,
+`gh issue view|list`, `gh api`, `curl` or `wget`. A source nobody listed is not covered.
+
+Matching is anchored at the start of a command segment (split on `|`, `||`, `&&`, `;` and newline) rather
+than a substring search, so naming a pattern inside a quoted argument, a `grep` search or a heredoc is not a
+read. That distinction was not academic: this document names the patterns, and writing it tripped the rail
+when the match was a substring.
+
+Injected at most once per turn, keyed on a marker cleared at the prompt boundary, so it cannot spend the
+context budget it exists to protect. When the provider cannot carry context on that event the decision
+abstains rather than rendering into a field the provider ignores.
+
+## global observability spool
+
+`obs.globalSpool` (off by default). Every record already written under the project state directory is also
+appended to one file under the runtime home, wrapped with the repository path and project name, so cost and
+gate history can be read across every repository at once.
+
+Writing outside the repository is the one thing an operator cannot undo by editing project policy, which is
+why it is opt-in. Redaction is inherited rather than reimplemented — records are redacted before the store
+sees them. Writes are best-effort: an unwritable runtime home degrades to project-only recording without
+changing the decision returned to the provider. The spool is pruned on the same retention window as session
+rollups, and `tlc harness obs prune` reports how many records it dropped.
 
 ## observability planes
 
@@ -118,8 +187,9 @@ change-approach follow-up. Trade-off: stops loops; can block intentional retries
 | Debug | `.tlc/harness/state/debug.jsonl` | OFF — happy-path tool/shell noise |
 | Audit | `.tlc/harness/state/audit.jsonl` | ON — verbose per-event record, restored per [/decisions/ad-016.md](/decisions/ad-016.md) item 7 |
 
-Set `"observability": { "debugEnabled": true }` in user or project config to capture debug. Full detail:
-[/measure.md](/measure.md).
+These three planes are fixed by `DEFAULT_OBS` in `src/core/observability/observability.types.ts`. An
+`"observability": { … }` block in a config file is **not** read — the only observability field project policy
+carries today is `obs.globalSpool`. Full detail: [/measure.md](/measure.md).
 
 ## cost estimates
 

@@ -86,3 +86,17 @@ test("the README's capability count matches the catalog", () => {
     "the README's capability count drifted from capabilities/catalog.json",
   );
 });
+
+// hazard: three capabilities shipped with generated regions updated and concepts.md untouched, because
+// check-docs-bundle validates OKF frontmatter rather than content. The operator document is where someone
+// learns which key to write, so every catalog entry has to name its own configPath there.
+test("concepts.md names the config key of every catalog capability", () => {
+  const catalog = JSON.parse(readFileSync(join(repoRoot, "capabilities", "catalog.json"), "utf8")) as {
+    capabilities: { id: string; configPath: string }[];
+  };
+  const concepts = readFileSync(join(repoRoot, "docs", "concepts.md"), "utf8");
+  const missing = catalog.capabilities
+    .filter((capability) => !concepts.includes(capability.configPath))
+    .map((capability) => `${capability.id} (${capability.configPath})`);
+  assert.deepEqual(missing, [], "capabilities absent from docs/concepts.md");
+});

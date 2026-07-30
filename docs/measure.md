@@ -51,6 +51,41 @@ tlc harness obs prune
 `rollup` prints the raw JSON rollup for one session; `prune` deletes rollups older than
 `retentionDays` (default 14).
 
+## Machine-readable output
+
+Every read command accepts `--json` and then writes exactly one JSON value to stdout and no prose, so a CI
+step or an agent can parse it instead of scraping text:
+
+```bash
+tlc harness status --json
+tlc harness doctor --json          # { ok, failed, warned, checks: [{ id, name, status, detail }] }
+tlc harness obs live --json        # { count, events: [...] }
+tlc harness obs report --json      # { session, path, rollup }
+tlc harness lessons list --json
+tlc harness prices lookup <model> --json
+```
+
+Without the flag, output is byte-identical to what it has always been. Exit codes do not change either: a
+failing `doctor --json` still exits 1 and still emits a parseable value, with `ok: false`, so a caller can
+branch on the code or on the payload.
+
+## Global spool
+
+`obs.globalSpool` (off by default) mirrors every obs and audit record into a single file under the runtime
+home — `~/.tlc/harness/state/obs-spool.jsonl` — wrapping each one with the repository path and project name:
+
+```json
+{"repo":"/work/my-repo","project":"my-repo","stream":"obs","record":{...}}
+```
+
+That is what makes cost and gate history readable across every repository at once; per-repo files stay
+authoritative and untouched. Writes are best-effort — an unwritable runtime home degrades to project-only
+recording rather than failing a hook. `tlc harness obs prune` prunes the spool on the same retention window
+as session rollups and reports how many records it dropped.
+
+When the runtime home is itself a checkout reached through a symlink, the spool lands in that checkout's
+`state/` directory, which `.gitignore` already covers for exactly this case.
+
 ## Observability planes
 
 Every record carries a `provider` field (`"cursor" | "claude"`) so signal, debug, and audit records from a

@@ -68,6 +68,23 @@ Re-run the platform installer, or ensure the CLI shim is on PATH:
 3. Confirm `.tlc/harness/state/` is writable in the project.
 4. `tlc harness obs live` after a prompt submit / stop / denial.
 
+## Grind blocked by a lock nobody holds
+
+`BLOCKED: the grind lock is held by …` when no session is running means the holder died without releasing
+`.tlc/harness/state/grind.lock`. The runtime reclaims it: past `GATE_LOCK_STALE_MS` (30 minutes) by age, and
+after a five-second grace window when the body cannot be read or names no holder — a truncated write, a
+zero-length file, or JSON that parses to something without `provider` / `session` / `pid`. Deleting the file
+by hand is no longer necessary.
+
+If it persists, read the file: a body naming a live pid is a real holder, and the wait is correct.
+
+## Doctor says a provider is "detected but not wired" while hooks fire
+
+The launcher path is compared by the file it resolves to, not by the string. If this warning appears while
+hooks demonstrably run, check that the path recorded in the provider's config still exists — a moved or
+deleted checkout is a real break, whereas reaching the same file through a symlink is not and no longer
+warns.
+
 ## Grind not looping
 
 1. `tlc harness status` — grind must be ON.
