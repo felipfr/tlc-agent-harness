@@ -217,8 +217,16 @@ describe("E2E — CG-03: obs fields reach the runtime", () => {
     writePolicy(root, { obs: { globalSpool: true } });
     submit();
     const appended = readFileSync(spoolPath, "utf8").slice(lengthBefore);
-    assert.match(appended, /"stream":"obs"/);
-    assert.ok(appended.includes(root), "the appended record names the repository it came from");
+    // hazard: a Windows path is escaped inside JSON, so a substring check against the raw path fails there.
+    // Parsing the envelope compares the value the writer stored, on every platform.
+    const records = appended
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line) as { stream: string; repo: string });
+    assert.ok(records.length > 0, "the opted-in hook appended at least one record");
+    assert.equal(records[0]?.stream, "obs");
+    assert.equal(records[0]?.repo, root);
   });
 });
 
