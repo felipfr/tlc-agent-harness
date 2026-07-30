@@ -1853,6 +1853,7 @@ import {
 import { dirname as dirname6, join as join9 } from "node:path";
 var GATE_LOCK_WAIT_MS = 120000;
 var GATE_LOCK_STALE_MS = 30 * 60 * 1000;
+var GATE_LOCK_UNREADABLE_GRACE_MS = 5000;
 
 class GateLockTimeoutError extends Error {
   constructor(message = "gate lock timeout") {
@@ -1890,6 +1891,23 @@ function isLockStale(path, args) {
   const age = lockAgeMs(path, args.now);
   return age !== null && age >= args.staleMs;
 }
+function isUsableLockBody(value) {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const body = value;
+  return typeof body.provider === "string" && typeof body.session === "string" && typeof body.pid === "number";
+}
+function isLockUnreadable(path, args) {
+  const age = lockAgeMs(path, args.now);
+  if (age === null || age < args.graceMs) {
+    return false;
+  }
+  return !isUsableLockBody(readLockBody(path));
+}
+function isLockReclaimable(path, args) {
+  return isLockStale(path, { now: args.now, staleMs: args.staleMs }) || isLockUnreadable(path, { now: args.now, graceMs: args.graceMs });
+}
 function describeHolder(root, options = {}) {
   const path = gateLockPath(root);
   const now = options.now ?? Date.now();
@@ -1898,7 +1916,7 @@ function describeHolder(root, options = {}) {
     return null;
   }
   const body = readLockBody(path);
-  if (!body) {
+  if (!isUsableLockBody(body)) {
     return null;
   }
   return `${body.provider} session ${body.session} (pid ${body.pid})`;
@@ -1917,8 +1935,8 @@ function tryAcquire(path, body) {
     return false;
   }
 }
-function stealIfStale(path, staleMs, now, body) {
-  if (!isLockStale(path, { now, staleMs })) {
+function stealIfReclaimable(path, args, body) {
+  if (!isLockReclaimable(path, args)) {
     return { stolen: false, previousHolder: null };
   }
   const previousHolder = readLockBody(path);
@@ -1940,6 +1958,7 @@ function releaseLock(path, pid) {
 async function withGateLock(root, provider, session, fn, options = {}) {
   const waitMs = options.waitMs ?? GATE_LOCK_WAIT_MS;
   const staleMs = options.staleMs ?? GATE_LOCK_STALE_MS;
+  const graceMs = options.unreadableGraceMs ?? GATE_LOCK_UNREADABLE_GRACE_MS;
   const nowFn = options.now ?? Date.now;
   const sleep = options.sleep ?? defaultSleep2;
   const random = options.random ?? Math.random;
@@ -1955,7 +1974,7 @@ async function withGateLock(root, provider, session, fn, options = {}) {
     if (tryAcquire(path, body)) {
       return runUnderLock(path, pid, fn);
     }
-    const steal = stealIfStale(path, staleMs, now, body);
+    const steal = stealIfReclaimable(path, { staleMs, graceMs, now }, body);
     if (steal.stolen) {
       if (steal.previousHolder) {
         options.onSteal?.(steal.previousHolder);
