@@ -1,6 +1,28 @@
 import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
+// src/platform/cli-output.ts
+var JSON_FLAG = "--json";
+function takeJsonFlag(args) {
+  const rest = [];
+  let json = false;
+  for (const arg of args) {
+    if (arg === JSON_FLAG) {
+      json = true;
+      continue;
+    }
+    rest.push(arg);
+  }
+  return { json, rest };
+}
+function emitJson(value, write = writeStdout) {
+  write(`${JSON.stringify(value)}
+`);
+}
+function writeStdout(text) {
+  process.stdout.write(text);
+}
+
 // src/platform/pricing.ts
 import { existsSync, readFileSync } from "node:fs";
 import { join as join2 } from "node:path";
@@ -170,14 +192,19 @@ function lookupPrice(args) {
   return { model: args.model, provider: args.provider, resolved, per1M };
 }
 function main() {
-  const args = parsePriceLookupArgs(process.argv.slice(2));
+  const { json, rest } = takeJsonFlag(process.argv.slice(2));
+  const args = parsePriceLookupArgs(rest);
   if (!args) {
     console.error("usage: tlc harness prices lookup <model-id> [provider]");
     console.error("   or: node --experimental-strip-types tools/price-lookup.ts <model-id> [provider]  (dev)");
     process.exit(1);
   }
   const result = lookupPrice(args);
-  console.log(JSON.stringify(result, null, 2));
+  if (json) {
+    emitJson(result);
+  } else {
+    console.log(JSON.stringify(result, null, 2));
+  }
   if (!result.resolved) {
     process.exit(2);
   }

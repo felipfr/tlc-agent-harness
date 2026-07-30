@@ -225,6 +225,18 @@ var DEFAULTS = {
     onViolation: "followup",
     mode: "declared"
   },
+  obs: {
+    globalSpool: false
+  },
+  untrustedContent: {
+    enabled: false,
+    extraTools: [],
+    extraCommandPatterns: []
+  },
+  planGate: {
+    enabled: false,
+    windowMinutes: 120
+  },
   shell: {
     catastrophicAsk: true,
     stallDetection: false,
