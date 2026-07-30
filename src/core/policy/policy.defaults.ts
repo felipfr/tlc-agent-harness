@@ -1,3 +1,4 @@
+import { DEFAULT_OBS } from "../observability/observability.types.ts";
 import type { Policy } from "./policy.types.ts";
 
 export const DEFAULT_LESSONS_POLICY: Policy["intelligence"]["lessons"] = {
@@ -57,6 +58,10 @@ export const DEFAULTS: Policy = {
   },
   obs: {
     globalSpool: false,
+    includePayloads: DEFAULT_OBS.includePayloads,
+    maxAttrChars: DEFAULT_OBS.maxAttrChars,
+    sessionCostAlertUsd: DEFAULT_OBS.sessionCostAlertUsd,
+    retentionDays: DEFAULT_OBS.retentionDays,
   },
   untrustedContent: {
     enabled: false,

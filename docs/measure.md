@@ -86,6 +86,12 @@ as session rollups and reports how many records it dropped.
 When the runtime home is itself a checkout reached through a symlink, the spool lands in that checkout's
 `state/` directory, which `.gitignore` already covers for exactly this case.
 
+## Retention
+
+`tlc harness obs prune` reads `obs.retentionDays` from project policy (default 14) and applies it to session
+rollups and to the spool, reporting how many spool records it dropped. The other tunables — `includePayloads`,
+`maxAttrChars`, `sessionCostAlertUsd` — are described in [/concepts.md](/concepts.md).
+
 ## Observability planes
 
 Every record carries a `provider` field (`"cursor" | "claude"`) so signal, debug, and audit records from a

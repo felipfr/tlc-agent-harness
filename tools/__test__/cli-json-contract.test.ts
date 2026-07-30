@@ -105,6 +105,48 @@ describe("obs prune", () => {
   });
 });
 
+describe("obs prune honours project retention", () => {
+  function seedSpool(home: string, project: string, ageDays: number): void {
+    const spool = join(home, "state", "obs-spool.jsonl");
+    mkdirSync(dirname(spool), { recursive: true });
+    const ts = new Date(Date.now() - ageDays * 24 * 60 * 60 * 1000).toISOString();
+    writeFileSync(
+      spool,
+      `${JSON.stringify({ repo: project, project: "p", stream: "obs", record: { ts } })}\n`,
+    );
+  }
+
+  function writeObsPolicy(project: string, obs: Record<string, unknown>): void {
+    mkdirSync(join(project, ".tlc", "harness"), { recursive: true });
+    writeFileSync(join(project, ".tlc", "harness", "config.json"), JSON.stringify({ version: 1, obs }));
+  }
+
+  // hazard: retention was read from the module default, so a project asking for a shorter window was
+  // ignored. A mutation restoring that default survived every other test in this suite.
+  test("a two-day-old record survives the default window", () => {
+    const home = newDir("tlc-retain-home-");
+    const project = newDir("tlc-retain-project-");
+    mkdirSync(projectStateDir(project), { recursive: true });
+    seedSpool(home, project, 2);
+    const result = run("tools/obs-cli.ts", ["prune", "--json"], { TLC_HOME: home, TLC_PROJECT_DIR: project });
+    const report = JSON.parse(result.stdout) as { retentionDays: number; spoolDropped: number };
+    assert.equal(report.retentionDays, 14);
+    assert.equal(report.spoolDropped, 0);
+  });
+
+  test("the same record is dropped when the project sets a one-day window", () => {
+    const home = newDir("tlc-retain-home-");
+    const project = newDir("tlc-retain-project-");
+    mkdirSync(projectStateDir(project), { recursive: true });
+    writeObsPolicy(project, { retentionDays: 1 });
+    seedSpool(home, project, 2);
+    const result = run("tools/obs-cli.ts", ["prune", "--json"], { TLC_HOME: home, TLC_PROJECT_DIR: project });
+    const report = JSON.parse(result.stdout) as { retentionDays: number; spoolDropped: number };
+    assert.equal(report.retentionDays, 1);
+    assert.equal(report.spoolDropped, 1);
+  });
+});
+
 describe("the routing eval runner", () => {
   test("exits 0 and says why when no API key is present", () => {
     const result = spawnSync(process.execPath, [join(repoRoot, "tools", "eval-skill-triggers.ts")], {

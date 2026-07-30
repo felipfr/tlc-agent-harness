@@ -241,3 +241,25 @@ test("obs.globalSpool on mirrors the record to the runtime home, tagged with its
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+function debugRecords(root: string): Array<Record<string, unknown>> {
+  const path = join(projectStateDir(root), "debug.jsonl");
+  if (!existsSync(path)) {
+    return [];
+  }
+  return readFileSync(path, "utf8")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+test("debug records stay absent, since debugEnabled is not a project field", async () => {
+  const root = tempRoot();
+  try {
+    await runHandler(promptSubmitHandler, stdinOf(cursorPromptSubmit(root, { prompt: "x" })));
+    assert.equal(debugRecords(root).length, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

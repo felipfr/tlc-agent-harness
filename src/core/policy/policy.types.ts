@@ -75,6 +75,10 @@ export type Policy = {
   };
   obs: {
     globalSpool: boolean;
+    includePayloads: boolean;
+    maxAttrChars: number;
+    sessionCostAlertUsd: number | null;
+    retentionDays: number;
   };
   untrustedContent: {
     enabled: boolean;

@@ -50,7 +50,8 @@
     "mode": "declared"
   },
   "obs": {
-    "globalSpool": true
+    "globalSpool": true,
+    "retentionDays": 14
   },
   "untrustedContent": {
     "enabled": true
@@ -85,15 +86,6 @@
       "syncRulesFile": false,
       "gardenOnSessionEnd": true
     }
-  },
-  "observability": {
-    "enabled": true,
-    "debugEnabled": false,
-    "includePayloads": false,
-    "estimateCost": true,
-    "sessionCostAlertUsd": 5,
-    "retentionDays": 14,
-    "maxAttrChars": 500
   },
   "bootstrapExtra": [
     "This repository is the harness itself. A gate that misfires here is a defect in the product: fix the rule, do not work around it."

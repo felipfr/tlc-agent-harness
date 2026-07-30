@@ -41,6 +41,10 @@ function auditRecords(root: string): Array<Record<string, unknown>> {
   return readJsonl(join(projectStateDir(root), "audit.jsonl"));
 }
 
+function debugRecords(root: string): Array<Record<string, unknown>> {
+  return readJsonl(join(projectStateDir(root), "debug.jsonl"));
+}
+
 function cursorToolAfter(root: string, overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
     hook_event_name: "postToolUse",
@@ -439,5 +443,33 @@ test("the framing is skipped when the provider cannot carry context on tool.afte
     assert.equal(decision.kind, "abstain");
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// hazard: the dead "observability" section advertised maxAttrChars for months while nothing read it. This
+// drives the replacement through a real hook, so a field that fails to reach the runtime fails here.
+test("obs.maxAttrChars from project policy truncates what the hook records", async () => {
+  const wide = tempRoot();
+  const narrow = tempRoot();
+  try {
+    const command = `echo ${"z".repeat(400)}`;
+    await runHandler(toolAfterHandler, stdinOf(cursorShellAfter(wide, command)));
+
+    mkdirSync(join(narrow, ".tlc", "harness"), { recursive: true });
+    writeFileSync(
+      join(narrow, ".tlc", "harness", "config.json"),
+      JSON.stringify({ version: 1, obs: { maxAttrChars: 30 } }),
+    );
+    await runHandler(toolAfterHandler, stdinOf(cursorShellAfter(narrow, command)));
+
+    // why: audit.jsonl records the raw payload and never passes through truncateAttrs, so the assertion has
+    // to read the plane recordObs writes — shell.end resolves to debug level on an allowed command.
+    const wideLength = JSON.stringify(debugRecords(wide)[0]?.attrs ?? {}).length;
+    const narrowLength = JSON.stringify(debugRecords(narrow)[0]?.attrs ?? {}).length;
+    assert.ok(wideLength > 0 && narrowLength > 0, "both hooks recorded something");
+    assert.ok(narrowLength < wideLength, `expected ${narrowLength} < ${wideLength}`);
+  } finally {
+    rmSync(wide, { recursive: true, force: true });
+    rmSync(narrow, { recursive: true, force: true });
   }
 });

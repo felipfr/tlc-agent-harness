@@ -78,6 +78,20 @@ by hand is no longer necessary.
 
 If it persists, read the file: a body naming a live pid is a real holder, and the wait is correct.
 
+## `status` disagrees with what a hook does
+
+It no longer can: `status` reads `loadPolicy`, the same resolution a hook performs, and prints where the mode
+came from — `[from config]`, `[from file]` or `[from flag]`. If the origin is `flag` or `file` and you expected
+`config`, a leftover `tlc harness mode` or `grind on` is winning; clear it with `tlc harness mode solo` or
+`tlc harness grind off`.
+
+## A shim hook points at a path that does not exist
+
+`tlc harness init` writes the install path (`~/.tlc/harness/bin/tlc-exec.mjs`), not the checkout behind its
+symlink. A shim naming a checkout directory was written by an older runtime — re-run `tlc harness init` to
+regenerate it. These files stay untracked on purpose: they carry an absolute path that is only valid on the
+machine that generated them.
+
 ## Doctor says a provider is "detected but not wired" while hooks fire
 
 The launcher path is compared by the file it resolves to, not by the string. If this warning appears while

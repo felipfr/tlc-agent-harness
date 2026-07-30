@@ -1,7 +1,7 @@
 ---
 type: Aggregate
 title: "Decisions index"
-description: "Index of every architectural decision (AD-001…AD-019) made while building the multi-provider harness."
+description: "Index of every architectural decision (AD-001…AD-020) made while building the multi-provider harness."
 tags: [decisions, index]
 timestamp: "2026-07-29"
 ---
@@ -34,5 +34,6 @@ Handoff section and a link back to this index.
 | [AD-017](/decisions/ad-017.md) | The docs gate delegates to the project's tool, and the catalog is the only source of capability metadata | active |
 | [AD-018](/decisions/ad-018.md) | Three rails adopted from an external review, each off by default and declared rather than inferred | active |
 | [AD-019](/decisions/ad-019.md) | A resource is identified by what it resolves to, and a declared capability must be read where it matters | active |
+| [AD-020](/decisions/ad-020.md) | One resolution for the install path, one source for posture, and a config that only advertises what it reads | active |
 
 Related: [/architecture.md](/architecture.md), [/concepts.md](/concepts.md), [/providers/index.md](/providers/index.md).

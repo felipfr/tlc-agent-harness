@@ -187,9 +187,22 @@ rollups, and `tlc harness obs prune` reports how many records it dropped.
 | Debug | `.tlc/harness/state/debug.jsonl` | OFF — happy-path tool/shell noise |
 | Audit | `.tlc/harness/state/audit.jsonl` | ON — verbose per-event record, restored per [/decisions/ad-016.md](/decisions/ad-016.md) item 7 |
 
-These three planes are fixed by `DEFAULT_OBS` in `src/core/observability/observability.types.ts`. An
-`"observability": { … }` block in a config file is **not** read — the only observability field project policy
-carries today is `obs.globalSpool`. Full detail: [/measure.md](/measure.md).
+Which plane an event lands on is fixed by its kind. What a project can tune is the `obs` block:
+
+| Key | Effect |
+|-----|--------|
+| `obs.globalSpool` | Mirror every record into the cross-repository spool (see above) |
+| `obs.includePayloads` | Keep tool payloads in `attrs` instead of stripping them |
+| `obs.maxAttrChars` | Truncation budget for `attrs` on every recorded event |
+| `obs.sessionCostAlertUsd` | Threshold for the session cost alert; `null` disables it |
+| `obs.retentionDays` | Window used by `tlc harness obs prune`, for rollups and the spool |
+
+`debugEnabled` is deliberately **not** a project field: every event that resolves to debug level is emitted
+with the audit configuration, which forces debug on so the audit trail persists
+([/decisions/ad-016.md](/decisions/ad-016.md) item 7). There would be nothing for a project to switch.
+
+An `"observability": { … }` block is not read at all — it never was. It was removed rather than honoured,
+per [/decisions/ad-003.md](/decisions/ad-003.md). Full detail: [/measure.md](/measure.md).
 
 ## cost estimates
 

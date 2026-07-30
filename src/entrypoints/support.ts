@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { EffortLevel, HarnessEvent } from "../contracts/index.ts";
-import { coreFacade, type HarnessLesson, type ObservabilityConfig } from "../core/index.ts";
+import { coreFacade, type HarnessLesson, type ObservabilityConfig, type Policy } from "../core/index.ts";
 import { runProcess } from "../platform/process.ts";
 import type { ProviderPort } from "../providers/index.ts";
 
@@ -16,10 +16,20 @@ export const OBS_CONFIG_AUDIT = { ...OBS_CONFIG, debugEnabled: true };
 // why: the base configs are module constants, so the one operator-controlled field has to be layered on
 // per call rather than baked in at import time.
 export function obsConfigFor(
-  policy: { obs: { globalSpool: boolean } },
+  policy: { obs: Policy["obs"] },
   base: ObservabilityConfig = OBS_CONFIG,
 ): ObservabilityConfig {
-  return { ...base, globalSpool: policy.obs.globalSpool };
+  return {
+    ...base,
+    globalSpool: policy.obs.globalSpool,
+    // why: debugEnabled is deliberately absent from Policy.obs. The only events that resolve to debug level
+    // are emitted with OBS_CONFIG_AUDIT, which forces it on for the audit trail (AD-016 item 7), so there is
+    // nothing a project could switch. Exposing it would repeat the dead-section mistake this replaces.
+    includePayloads: policy.obs.includePayloads,
+    maxAttrChars: policy.obs.maxAttrChars,
+    sessionCostAlertUsd: policy.obs.sessionCostAlertUsd,
+    retentionDays: policy.obs.retentionDays,
+  };
 }
 
 export function sessionIdFromKey(event: HarnessEvent): string {

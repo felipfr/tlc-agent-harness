@@ -100,3 +100,24 @@ test("concepts.md names the config key of every catalog capability", () => {
     .map((capability) => `${capability.id} (${capability.configPath})`);
   assert.deepEqual(missing, [], "capabilities absent from docs/concepts.md");
 });
+
+// hazard: the section this replaces advertised fields nothing read. Every field a project may now set has to
+// be described where an operator looks, or the config is lying again in a new spelling.
+test("concepts.md names every tunable obs field, and no more", () => {
+  const concepts = readFileSync(join(repoRoot, "docs", "concepts.md"), "utf8");
+  const defaults = readFileSync(join(repoRoot, "src", "core", "policy", "policy.defaults.ts"), "utf8");
+  const block = defaults.slice(defaults.indexOf("obs: {"), defaults.indexOf("}", defaults.indexOf("obs: {")));
+  const fields = [...block.matchAll(/^\s{4}([a-zA-Z]+):/gm)].map((match) => match[1] as string);
+  assert.ok(fields.length >= 5, `expected the obs defaults block, parsed ${fields.length}`);
+  const missing = fields.filter((field) => !concepts.includes(`obs.${field}`));
+  assert.deepEqual(missing, [], "obs fields absent from docs/concepts.md");
+});
+
+// hazard: honouring the legacy key would have been back-compat this project refuses (AD-003), and leaving it
+// in an example invites an operator to write something nothing reads.
+test("no shipped config advertises the removed observability section", () => {
+  for (const file of ["config.example.json", join(".tlc", "harness", "config.json")]) {
+    const parsed = JSON.parse(readFileSync(join(repoRoot, file), "utf8")) as Record<string, unknown>;
+    assert.equal("observability" in parsed, false, `${file} still carries the dead section`);
+  }
+});

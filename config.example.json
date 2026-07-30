@@ -19,6 +19,10 @@
     "onViolation": "followup",
     "mode": "declared"
   },
+  "obs": {
+    "globalSpool": false,
+    "retentionDays": 14
+  },
   "shell": {
     "catastrophicAsk": true,
     "stallDetection": true,
@@ -43,14 +47,5 @@
       "projectBoost": 1.5,
       "gardenOnSessionEnd": true
     }
-  },
-  "observability": {
-    "enabled": true,
-    "debugEnabled": false,
-    "includePayloads": false,
-    "estimateCost": true,
-    "sessionCostAlertUsd": 5,
-    "retentionDays": 14,
-    "maxAttrChars": 500
   }
 }

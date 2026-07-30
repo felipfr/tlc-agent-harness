@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { coreFacade } from "../src/core/index.ts";
 import { readSignalEvents } from "../src/core/observability/observability.store.ts";
 import { DEFAULT_OBS, type ObsEvent } from "../src/core/observability/observability.types.ts";
+import { loadPolicy } from "../src/core/policy/policy.loader.ts";
 import { emitJson, takeJsonFlag } from "../src/platform/cli-output.ts";
 import { projectStateDir } from "../src/platform/paths.ts";
 
@@ -112,10 +113,12 @@ function main(argv: string[]): void {
   }
 
   if (cmd === "prune") {
-    coreFacade.observability.pruneObs(root, DEFAULT_OBS.retentionDays);
-    const spoolDropped = coreFacade.observability.pruneSpool(DEFAULT_OBS.retentionDays);
+    // why: retention is a project decision now, so prune reads the policy rather than the module default.
+    const retentionDays = loadPolicy(root).obs.retentionDays;
+    coreFacade.observability.pruneObs(root, retentionDays);
+    const spoolDropped = coreFacade.observability.pruneSpool(retentionDays);
     if (json) {
-      emitJson({ pruned: true, retentionDays: DEFAULT_OBS.retentionDays, spoolDropped });
+      emitJson({ pruned: true, retentionDays, spoolDropped });
     } else {
       console.log(`pruned old session rollups; dropped ${spoolDropped} spool record(s)`);
     }
