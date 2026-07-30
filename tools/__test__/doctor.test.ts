@@ -7,7 +7,9 @@ import type { ProviderWiring } from "../../src/contracts/index.ts";
 import { mergeClaudeSettings } from "../../src/providers/claude/claude.wiring.ts";
 import type { ProviderPort } from "../../src/providers/provider.port.ts";
 import {
+  type Check,
   checkHookRuntime,
+  checkId,
   checkNodeVersion,
   checkProjectPolicy,
   checkProviders,
@@ -15,6 +17,7 @@ import {
   formatReport,
   providerWiringStatus,
   runChecks,
+  toReport,
 } from "../doctor.ts";
 
 function fixtureRoot(): string {
@@ -229,6 +232,52 @@ describe("exitCodeFor / formatReport", () => {
     assert.match(report, /WARN.*b — meh/);
     assert.match(report, /FAIL.*c — broken/);
     assert.match(report, /1 issue\(s\)/);
+  });
+});
+
+describe("toReport", () => {
+  const sample: Check[] = [
+    { level: "ok", name: "Node.js runtime", detail: "v24.4.0 (>= 24)" },
+    { level: "warn", name: "hook runtime", detail: "Node + dist/" },
+    { level: "fail", name: "dist bundles", detail: "missing — run: tlc harness build" },
+  ];
+
+  test("carries an id, a status and a detail per check", () => {
+    const report = toReport(sample);
+    assert.deepEqual(report.checks, [
+      { id: "node-js-runtime", name: "Node.js runtime", status: "OK", detail: "v24.4.0 (>= 24)" },
+      { id: "hook-runtime", name: "hook runtime", status: "WARN", detail: "Node + dist/" },
+      {
+        id: "dist-bundles",
+        name: "dist bundles",
+        status: "FAIL",
+        detail: "missing — run: tlc harness build",
+      },
+    ]);
+  });
+
+  test("ok is false when any check fails, and the counts agree with the levels", () => {
+    const report = toReport(sample);
+    assert.equal(report.ok, false);
+    assert.equal(report.failed, 1);
+    assert.equal(report.warned, 1);
+  });
+
+  test("a warning alone leaves ok true, matching the exit code", () => {
+    const warnOnly: Check[] = [{ level: "warn", name: "hook runtime", detail: "Node + dist/" }];
+    const report = toReport(warnOnly);
+    assert.equal(report.ok, true);
+    assert.equal(report.ok, exitCodeFor(warnOnly) === 0);
+  });
+
+  test("the report survives a JSON round trip, which is the whole point of the flag", () => {
+    assert.deepEqual(JSON.parse(JSON.stringify(toReport(sample))), toReport(sample));
+  });
+
+  test("checkId slugs a name without leaving separators at either end", () => {
+    assert.equal(checkId("CLI on PATH"), "cli-on-path");
+    assert.equal(checkId("capability shipGate"), "capability-shipgate");
+    assert.equal(checkId("Node.js runtime"), "node-js-runtime");
   });
 });
 

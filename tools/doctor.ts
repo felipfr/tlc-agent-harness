@@ -6,6 +6,7 @@ import { findBunOnPath, writeRuntimeCache } from "../bin/tlc-exec.mjs";
 import { isCursorWired } from "../bin/write-user-hooks.mjs";
 import type { ProviderWiring } from "../src/contracts/index.ts";
 import { coreFacade } from "../src/core/index.ts";
+import { emitJson, takeJsonFlag } from "../src/platform/cli-output.ts";
 import { projectConfigPath, projectStateDir, runtimeHome } from "../src/platform/paths.ts";
 import { mergeClaudeSettings } from "../src/providers/claude/claude.wiring.ts";
 import { providers } from "../src/providers/index.ts";
@@ -185,6 +186,44 @@ export function exitCodeFor(checks: readonly Check[]): number {
   return checks.some((c) => c.level === "fail") ? 1 : 0;
 }
 
+export type CheckStatus = "OK" | "WARN" | "FAIL";
+
+export type CheckReport = {
+  id: string;
+  name: string;
+  status: CheckStatus;
+  detail: string;
+};
+
+export type DoctorReport = {
+  ok: boolean;
+  failed: number;
+  warned: number;
+  checks: CheckReport[];
+};
+
+export function checkId(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+export function toReport(checks: readonly Check[]): DoctorReport {
+  const statuses: Record<CheckLevel, CheckStatus> = { ok: "OK", warn: "WARN", fail: "FAIL" };
+  return {
+    ok: exitCodeFor(checks) === 0,
+    failed: checks.filter((check) => check.level === "fail").length,
+    warned: checks.filter((check) => check.level === "warn").length,
+    checks: checks.map((check) => ({
+      id: checkId(check.name),
+      name: check.name,
+      status: statuses[check.level],
+      detail: check.detail,
+    })),
+  };
+}
+
 export function formatReport(checks: readonly Check[]): string {
   const marks: Record<CheckLevel, string> = { ok: "OK  ", warn: "WARN", fail: "FAIL" };
   const lines = checks.map((c) => `${marks[c.level]}  ${c.name} — ${c.detail}`);
@@ -210,7 +249,12 @@ function realContext(): DoctorContext {
 }
 
 if (import.meta.main) {
+  const { json } = takeJsonFlag(process.argv.slice(2));
   const checks = runChecks(realContext());
-  console.log(formatReport(checks));
+  if (json) {
+    emitJson(toReport(checks));
+  } else {
+    console.log(formatReport(checks));
+  }
   process.exit(exitCodeFor(checks));
 }
