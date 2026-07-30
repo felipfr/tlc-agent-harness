@@ -36,6 +36,7 @@ assume Cursor — check what Step 1 detected).
 | 16 | Autopilot | `intelligence.autopilot` | **on** | Adds ordered AUTOPILOT steps on gate failure. | Agent must follow the block; more directive follow-ups. | — |
 | 17 | Idle-turn gate (asked instead of acting) | `intelligence.idleTurnGate` | off | Blocks a turn that ends with open work, zero tool calls and zero file changes. Counts recorded tool events rather than reading the reply, so it cannot be talked around. | A turn that legitimately only answers a question is blocked while handoff work is open — clear the handoff or turn this off for conversational repos. | — |
 | 18 | Docs staleness gate | `docs.command` | off | Runs the repository's own documentation staleness tool on stop, so a stale document fails like a failing test. | Needs such a tool in the repository; without one there is nothing to run. | `command (exact argv array)`, `severity: warn \| deny` |
+| 19 | Global observability spool | `obs.globalSpool` | off | Mirrors this repo's obs and audit records into one file under the runtime home, so cost and gate history can be read across every repository at once. | Writes outside the repository. Records carry the repo path and project name, and the spool is pruned on the same retention window as session rollups. | — |
 
 <!-- /generated -->
 

@@ -13,6 +13,15 @@ export const OBS_CONFIG = coreFacade.observability.DEFAULT_OBS;
 // re-declared per entrypoint.
 export const OBS_CONFIG_AUDIT = { ...OBS_CONFIG, debugEnabled: true };
 
+// why: the base configs are module constants, so the one operator-controlled field has to be layered on
+// per call rather than baked in at import time.
+export function obsConfigFor(
+  policy: { obs: { globalSpool: boolean } },
+  base: ObservabilityConfig = OBS_CONFIG,
+): ObservabilityConfig {
+  return { ...base, globalSpool: policy.obs.globalSpool };
+}
+
 export function sessionIdFromKey(event: HarnessEvent): string {
   const prefix = `${event.provider}-`;
   return event.sessionKey.startsWith(prefix) ? event.sessionKey.slice(prefix.length) : event.sessionKey;

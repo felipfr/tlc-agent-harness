@@ -55,6 +55,9 @@ export const DEFAULTS: Policy = {
     onViolation: "followup",
     mode: "declared",
   },
+  obs: {
+    globalSpool: false,
+  },
   shell: {
     catastrophicAsk: true,
     stallDetection: false,

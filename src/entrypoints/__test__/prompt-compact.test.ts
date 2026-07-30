@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { projectStateDir } from "../../platform/paths.ts";
+import { projectStateDir, runtimeSpoolPath } from "../../platform/paths.ts";
 import { compactBeforeHandler } from "../compact-before.ts";
 import { promptSubmitHandler } from "../prompt-submit.ts";
 import { runHandler } from "../run.ts";
@@ -179,5 +179,65 @@ test("an unwritable state dir does not fail prompt.submit or compact.before", as
     assert.equal(compactOutcome.rendered.exitCode, 0);
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+function spoolRecords(): Array<Record<string, unknown>> {
+  const path = runtimeSpoolPath();
+  if (!existsSync(path)) {
+    return [];
+  }
+  return readFileSync(path, "utf8")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+test("obs.globalSpool off leaves the runtime home untouched", async () => {
+  const root = tempRoot();
+  const home = tempRoot();
+  const previousHome = process.env.TLC_HOME;
+  process.env.TLC_HOME = home;
+  try {
+    await runHandler(promptSubmitHandler, stdinOf(cursorPromptSubmit(root)));
+    assert.ok(obsRecords(root).length > 0);
+    assert.deepEqual(spoolRecords(), []);
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.TLC_HOME;
+    } else {
+      process.env.TLC_HOME = previousHome;
+    }
+    rmSync(root, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("obs.globalSpool on mirrors the record to the runtime home, tagged with its repo", async () => {
+  const root = tempRoot();
+  const home = tempRoot();
+  const previousHome = process.env.TLC_HOME;
+  process.env.TLC_HOME = home;
+  try {
+    mkdirSync(join(root, ".tlc", "harness"), { recursive: true });
+    writeFileSync(
+      join(root, ".tlc", "harness", "config.json"),
+      JSON.stringify({ version: 1, obs: { globalSpool: true } }),
+    );
+    await runHandler(promptSubmitHandler, stdinOf(cursorPromptSubmit(root)));
+    assert.ok(obsRecords(root).length > 0);
+    const spooled = spoolRecords();
+    assert.equal(spooled.length, 1);
+    assert.equal(spooled[0]?.repo, root);
+    assert.equal(spooled[0]?.stream, "obs");
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.TLC_HOME;
+    } else {
+      process.env.TLC_HOME = previousHome;
+    }
+    rmSync(root, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
   }
 });

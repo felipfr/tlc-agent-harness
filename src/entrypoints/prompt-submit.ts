@@ -1,11 +1,11 @@
 import type { HarnessEvent } from "../contracts/index.ts";
 import { coreFacade } from "../core/index.ts";
-import type { Handler } from "./run.ts";
+import type { Handler, HandlerContext } from "./run.ts";
 import { main } from "./run.ts";
-import { OBS_CONFIG } from "./support.ts";
+import { obsConfigFor } from "./support.ts";
 
-export const promptSubmitHandler: Handler = (event: HarnessEvent) => {
-  coreFacade.observability.recordFromEvent(event.projectDir, OBS_CONFIG, event);
+export const promptSubmitHandler: Handler = (event: HarnessEvent, ctx: HandlerContext) => {
+  coreFacade.observability.recordFromEvent(event.projectDir, obsConfigFor(ctx.policy), event);
   return { kind: "abstain" };
 };
 

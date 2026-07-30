@@ -73,6 +73,9 @@ export type Policy = {
     onViolation: "followup" | "off";
     mode: CommentMode;
   };
+  obs: {
+    globalSpool: boolean;
+  };
   shell: {
     catastrophicAsk: boolean;
     stallDetection: boolean;
@@ -100,6 +103,7 @@ export type PartialPolicy = Partial<Policy> & {
   subagents?: Partial<Policy["subagents"]>;
   docs?: Partial<Policy["docs"]>;
   comments?: Partial<Policy["comments"]>;
+  obs?: Partial<Policy["obs"]>;
   shell?: Partial<Policy["shell"]>;
   intelligence?: Partial<Policy["intelligence"]> & {
     lessons?: Partial<LessonsPolicyConfig>;

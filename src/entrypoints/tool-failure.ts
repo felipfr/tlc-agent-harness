@@ -1,13 +1,13 @@
 import type { HarnessEvent } from "../contracts/index.ts";
 import { coreFacade, type ObservabilityConfig } from "../core/index.ts";
-import type { Handler } from "./run.ts";
+import type { Handler, HandlerContext } from "./run.ts";
 import { main } from "./run.ts";
-import { OBS_CONFIG_AUDIT } from "./support.ts";
+import { OBS_CONFIG_AUDIT, obsConfigFor } from "./support.ts";
 
-export const toolFailureHandler: Handler = (event: HarnessEvent) => {
-  coreFacade.observability.recordAudit(event.projectDir, event.event, event.raw);
+export const toolFailureHandler: Handler = (event: HarnessEvent, ctx: HandlerContext) => {
+  coreFacade.observability.recordAudit(event.projectDir, event.event, event.raw, ctx.policy.obs.globalSpool);
 
-  coreFacade.observability.recordObs(event.projectDir, OBS_CONFIG_AUDIT, {
+  coreFacade.observability.recordObs(event.projectDir, obsConfigFor(ctx.policy, OBS_CONFIG_AUDIT), {
     provider: event.provider,
     kind: "tool.fail",
     sessionKey: event.sessionKey,

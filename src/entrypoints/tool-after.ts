@@ -4,7 +4,7 @@ import { estimateCostUsd, mapPoolToNeutral } from "../platform/pricing.ts";
 import { readClaudeUsage } from "../providers/index.ts";
 import type { Handler, HandlerContext } from "./run.ts";
 import { main } from "./run.ts";
-import { OBS_CONFIG_AUDIT } from "./support.ts";
+import { OBS_CONFIG_AUDIT, obsConfigFor } from "./support.ts";
 
 const OBS_KIND_BY_EVENT: Partial<Record<HarnessEventKind, ObsKind>> = {
   "tool.after": "tool.end",
@@ -49,7 +49,7 @@ function usageGenAi(event: HarnessEvent, ctx: HandlerContext): Record<string, un
 }
 
 export const toolAfterHandler: Handler = (event: HarnessEvent, ctx: HandlerContext) => {
-  coreFacade.observability.recordAudit(event.projectDir, event.event, event.raw);
+  coreFacade.observability.recordAudit(event.projectDir, event.event, event.raw, ctx.policy.obs.globalSpool);
 
   const kind = OBS_KIND_BY_EVENT[event.event];
   if (kind) {
@@ -63,7 +63,7 @@ export const toolAfterHandler: Handler = (event: HarnessEvent, ctx: HandlerConte
       attrs.sandbox = rawBoolean(event.raw, "sandbox");
     }
 
-    coreFacade.observability.recordObs(event.projectDir, OBS_CONFIG_AUDIT, {
+    coreFacade.observability.recordObs(event.projectDir, obsConfigFor(ctx.policy, OBS_CONFIG_AUDIT), {
       provider: event.provider,
       kind,
       sessionKey: event.sessionKey,

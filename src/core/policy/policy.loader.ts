@@ -25,6 +25,7 @@ function deepMerge(base: Policy, patch: PartialPolicy): Policy {
     subagents: { ...base.subagents, ...patch.subagents },
     docs: { ...base.docs, ...patch.docs },
     comments: { ...base.comments, ...patch.comments },
+    obs: { ...base.obs, ...patch.obs },
     shell: { ...base.shell, ...patch.shell },
     intelligence: {
       ...base.intelligence,

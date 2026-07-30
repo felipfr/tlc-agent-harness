@@ -41,7 +41,7 @@ import {
   recordFromEvent,
   recordObs,
 } from "./observability/observability.service.ts";
-import { getRollup, pruneObs } from "./observability/observability.store.ts";
+import { getRollup, pruneObs, pruneSpool } from "./observability/observability.store.ts";
 import { guardPolicySurface } from "./policy/policy.guard.ts";
 import { isUnderCodePaths, loadPolicy } from "./policy/policy.loader.ts";
 import { operatorBootstrapLines } from "./policy/policy.operator.ts";
@@ -153,6 +153,7 @@ export const coreFacade = {
     sessionReportMarkdown,
     getRollup,
     pruneObs,
+    pruneSpool,
   },
   policy: {
     guardPolicySurface,

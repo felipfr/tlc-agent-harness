@@ -113,10 +113,11 @@ function main(argv: string[]): void {
 
   if (cmd === "prune") {
     coreFacade.observability.pruneObs(root, DEFAULT_OBS.retentionDays);
+    const spoolDropped = coreFacade.observability.pruneSpool(DEFAULT_OBS.retentionDays);
     if (json) {
-      emitJson({ pruned: true, retentionDays: DEFAULT_OBS.retentionDays });
+      emitJson({ pruned: true, retentionDays: DEFAULT_OBS.retentionDays, spoolDropped });
     } else {
-      console.log("pruned old session rollups");
+      console.log(`pruned old session rollups; dropped ${spoolDropped} spool record(s)`);
     }
     process.exit(0);
   }

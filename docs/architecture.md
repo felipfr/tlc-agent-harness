@@ -209,6 +209,7 @@ Each denial names its rule, so `rule=secret-access` in a message maps to a row h
 | Autopilot | Adds ordered AUTOPILOT steps on gate failure. | `intelligence.autopilot` |
 | Idle-turn gate (asked instead of acting) | Blocks a turn that ends with open work, zero tool calls and zero file changes. Counts recorded tool events rather than reading the reply, so it cannot be talked around. | `intelligence.idleTurnGate` |
 | Docs staleness gate | Runs the repository's own documentation staleness tool on stop, so a stale document fails like a failing test. | `docs.command` |
+| Global observability spool | Mirrors this repo's obs and audit records into one file under the runtime home, so cost and gate history can be read across every repository at once. | `obs.globalSpool` |
 
 <!-- /generated -->
 

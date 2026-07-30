@@ -1,5 +1,5 @@
 {
-  "catalogVersion": 5,
+  "catalogVersion": 6,
   "capabilities": [
     {
       "id": "format",
@@ -107,7 +107,7 @@
       "id": "catastrophicShell",
       "configPath": "shell.catastrophicAsk",
       "title": "Catastrophic shell ask",
-      "benefit": "Asks before destructive shell commands (rm -rf, drop db, force push, \u2026).",
+      "benefit": "Asks before destructive shell commands (rm -rf, drop db, force push, …).",
       "tradeOff": "Extra prompts on risky commands.",
       "defaultOn": true,
       "sinceCatalogVersion": 1,
@@ -196,7 +196,7 @@
       "configPath": "intelligence.idleTurnGate",
       "title": "Idle-turn gate (asked instead of acting)",
       "benefit": "Blocks a turn that ends with open work, zero tool calls and zero file changes. Counts recorded tool events rather than reading the reply, so it cannot be talked around.",
-      "tradeOff": "A turn that legitimately only answers a question is blocked while handoff work is open \u2014 clear the handoff or turn this off for conversational repos.",
+      "tradeOff": "A turn that legitimately only answers a question is blocked while handoff work is open — clear the handoff or turn this off for conversational repos.",
       "defaultOn": false,
       "sinceCatalogVersion": 3
     },
@@ -212,6 +212,16 @@
         "command (exact argv array)",
         "severity: warn | deny"
       ]
+    },
+    {
+      "id": "globalSpool",
+      "configPath": "obs.globalSpool",
+      "title": "Global observability spool",
+      "benefit": "Mirrors this repo's obs and audit records into one file under the runtime home, so cost and gate history can be read across every repository at once.",
+      "tradeOff": "Writes outside the repository. Records carry the repo path and project name, and the spool is pruned on the same retention window as session rollups.",
+      "defaultOn": false,
+      "sinceCatalogVersion": 6,
+      "asks": []
     }
   ]
 }
