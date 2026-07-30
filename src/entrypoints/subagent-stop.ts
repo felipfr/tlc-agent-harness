@@ -1,0 +1,32 @@
+import type { Decision, HarnessEvent } from "../contracts/index.ts";
+import { coreFacade } from "../core/index.ts";
+import type { Handler, HandlerContext } from "./run.ts";
+import { main } from "./run.ts";
+
+// why: no legacy predecessor covers subagent.stop verification — this reuses the same unfinished-work
+// signal (blockers/pending/in_progress/previous_gaps) already carried on the handoff slice.
+export const subagentStopHandler: Handler = (event: HarnessEvent, _ctx: HandlerContext): Decision => {
+  const handoff = coreFacade.handoff.readHandoff(event.projectDir, event.provider);
+  const unfinishedWork =
+    Boolean(handoff.blockers) ||
+    Boolean(handoff.previous_gaps?.length) ||
+    Boolean(handoff.pending?.length) ||
+    Boolean(handoff.in_progress?.length);
+
+  if (!unfinishedWork) {
+    return { kind: "abstain" };
+  }
+
+  return {
+    kind: "continue",
+    text: [
+      "BLOCKED: unfinished work remains before this subagent stops.",
+      `TRIED: subagent (${event.spawnSubagentType ?? "unknown"}) reported stop.`,
+      `NEED: ${handoff.next_action ?? "resolve the open blockers before ending this subagent turn."}`,
+    ].join("\n"),
+  };
+};
+
+if (import.meta.main) {
+  await main(subagentStopHandler);
+}

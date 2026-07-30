@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "somethingCursorAddsLater",
+  "conversation_id": "conv-abc",
+  "session_id": "sess-1",
+  "workspace_roots": ["/repo"]
+}

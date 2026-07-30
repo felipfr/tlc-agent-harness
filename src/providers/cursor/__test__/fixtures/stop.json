@@ -1,0 +1,9 @@
+{
+  "hook_event_name": "stop",
+  "conversation_id": "conv-abc",
+  "session_id": "sess-1",
+  "workspace_roots": ["/repo"],
+  "status": "completed",
+  "loop_count": 2,
+  "context_usage_percent": 42
+}

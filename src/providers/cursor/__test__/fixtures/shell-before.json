@@ -1,0 +1,9 @@
+{
+  "hook_event_name": "beforeShellExecution",
+  "conversation_id": "conv-abc",
+  "session_id": "sess-1",
+  "workspace_roots": ["/repo"],
+  "command": "rm -rf /",
+  "cwd": "/repo",
+  "sandbox": false
+}

@@ -1,0 +1,1 @@
+{"permission":"deny","user_message":"Blocked subagent model \"gpt-5-fast\" (matches -fast(?:$|[^a-z0-9])). Fast variants are forbidden unless you explicitly override.","agent_message":"Do not use *-fast models. Use composer-2.5, cursor-grok-4.5-high, or glm-5.2-high. Pattern hit: -fast(?:$|[^a-z0-9])."}

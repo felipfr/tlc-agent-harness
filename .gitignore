@@ -1,0 +1,40 @@
+# Local working specs (not published with the product tree)
+.specs/
+
+# Local / generated — never commit secrets or machine state.
+# Anchored to the root: a bare `config.json` matches at any depth and swallowed
+# .tlc/harness/config.json, which the rule below says is tracked on purpose.
+/config.json
+*.log
+.DS_Store
+
+# Harness runtime state. Project policy (.tlc/harness/config.json) and the
+# lessons source of truth (.tlc/harness/lessons.md) are tracked on purpose.
+.tlc/harness/state/
+
+# Runtime state written here when this checkout is itself the install target
+# (TLC_HOME pointing at a dev clone, e.g. via install.sh's existing-checkout link).
+/state/
+
+# Predecessor state directory, still written by an older installed runtime.
+# The Cursor adapter itself (.cursor/hooks.json, .cursor/rules/) is tracked.
+.cursor/harness-state/
+.cursor/grind-on
+.cursor/skip-verify
+.cursor/harness-mode
+.cursor/heads-down
+.cursor/paired
+
+# Regenerable LiteLLM fallback catalog (~1MB): tlc harness prices refresh litellm
+model-prices.litellm.json
+
+# Optional local price overrides
+model-prices.local.json
+
+# Build tooling caches
+.cache/
+node_modules/
+
+# Editor / OS
+*.swp
+*~

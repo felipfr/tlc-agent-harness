@@ -1,0 +1,8 @@
+{
+  "hook_event_name": "postToolUseFailure",
+  "conversation_id": "conv-abc",
+  "session_id": "sess-1",
+  "workspace_roots": ["/repo"],
+  "tool_name": "Edit",
+  "failure_type": "exception"
+}

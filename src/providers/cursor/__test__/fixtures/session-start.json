@@ -1,0 +1,8 @@
+{
+  "hook_event_name": "sessionStart",
+  "conversation_id": "conv-abc",
+  "session_id": "sess-1",
+  "workspace_roots": ["/repo"],
+  "model": "composer-2.5",
+  "is_background_agent": false
+}

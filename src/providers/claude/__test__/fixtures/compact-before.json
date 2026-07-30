@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "PreCompact",
+  "session_id": "sess-abc",
+  "cwd": "/repo",
+  "context_usage_percent": 88
+}

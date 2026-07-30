@@ -1,0 +1,9 @@
+{
+  "hook_event_name": "preToolUse",
+  "conversation_id": "conv-abc",
+  "session_id": "sess-1",
+  "workspace_roots": ["/repo"],
+  "tool_name": "Task",
+  "tool_input": { "model": "composer-2.5", "prompt": "explore the repo" },
+  "subagent_type": "explore"
+}

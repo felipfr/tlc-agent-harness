@@ -1,0 +1,7 @@
+{
+  "hook_event_name": "SubagentStart",
+  "session_id": "sess-abc",
+  "cwd": "/repo",
+  "subagent_type": "worker",
+  "model": "claude-sonnet-5"
+}

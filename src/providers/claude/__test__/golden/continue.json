@@ -1,0 +1,1 @@
+{"decision":"block","reason":"Run the lint fixer, then re-run until the gate passes."}

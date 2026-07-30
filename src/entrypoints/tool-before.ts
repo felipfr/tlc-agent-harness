@@ -1,0 +1,121 @@
+import type { Decision, HarnessEvent } from "../contracts/index.ts";
+import { coreFacade } from "../core/index.ts";
+import type { Handler, HandlerContext } from "./run.ts";
+import { main } from "./run.ts";
+import {
+  effectiveAllowedModels,
+  effectiveBlockedPatterns,
+  effectiveMinEffort,
+  readModelFromToolInput,
+} from "./support.ts";
+
+const READONLY_BLOCKED_TOOLS = new Set(["Write", "Delete", "Shell"]);
+
+function handleShellBefore(event: HarnessEvent, ctx: HandlerContext): Decision {
+  const { policy } = ctx;
+  return coreFacade.shellPolicy.evaluateShellCommand({
+    command: event.command ?? "",
+    sessionKey: event.sessionKey,
+    projectDir: event.projectDir,
+    catastrophicAsk: policy.shell.catastrophicAsk,
+    stallDetection: policy.shell.stallDetection,
+    stallRepeatThreshold: policy.shell.stallRepeatThreshold,
+  });
+}
+
+function filePathOf(event: HarnessEvent): string | undefined {
+  if (event.filePath) {
+    return event.filePath;
+  }
+  const fromInput = event.toolInput?.file_path;
+  return typeof fromInput === "string" ? fromInput : undefined;
+}
+
+async function handleToolBefore(event: HarnessEvent, ctx: HandlerContext): Promise<Decision> {
+  const { policy, provider } = ctx;
+
+  const isReadOnlySubagent =
+    event.subagentType !== undefined && policy.subagents.readOnlyTypes.includes(event.subagentType);
+  if (isReadOnlySubagent && event.toolName !== undefined && READONLY_BLOCKED_TOOLS.has(event.toolName)) {
+    return {
+      kind: "deny",
+      reason: `Explore/read-only subagents cannot use ${event.toolName}. Return findings to the parent agent.`,
+    };
+  }
+
+  if (event.toolName === "Task") {
+    const model = event.spawnModel ?? readModelFromToolInput(event.toolInput);
+    const spawnDecision = coreFacade.subagentPolicy.evaluateSubagentSpawn({
+      provider: provider.name,
+      sessionKey: event.sessionKey,
+      projectDir: event.projectDir,
+      model,
+      effort: event.effort,
+      allowedModels: effectiveAllowedModels(policy.subagents.allowedModels, provider),
+      blockedPatterns: effectiveBlockedPatterns(policy.subagents.blockedPatterns, provider),
+      minEffort: effectiveMinEffort(policy.subagents.minEffort, provider),
+      requireModel: policy.subagents.requireModel,
+      enforceAllowlist: policy.subagents.enforceAllowlist,
+      blockParentFast: policy.subagents.blockParentFast,
+      blockMode: policy.subagents.blockMode,
+    });
+    if (spawnDecision.kind !== "allow") {
+      return spawnDecision;
+    }
+  }
+
+  if (event.toolName === "Edit" || event.toolName === "Write") {
+    const filePath = filePathOf(event);
+    if (filePath) {
+      const collision = coreFacade.presence.checkCollision(event.projectDir, filePath, event.sessionKey);
+      if (collision.kind !== "allow") {
+        return collision;
+      }
+    }
+  }
+
+  return { kind: "allow" };
+}
+
+export const toolBeforeHandler: Handler = (
+  event: HarnessEvent,
+  ctx: HandlerContext,
+): Decision | Promise<Decision> => {
+  // invariant: the floor runs first and reads no policy, so no config value and no agent edit can
+  // reach a decision before it.
+  const floor = coreFacade.floor.evaluateFloor({
+    projectDir: event.projectDir,
+    toolName: event.toolName,
+    filePath: filePathOf(event),
+    command: event.command,
+    isReadEvent: event.event === "read.before",
+  });
+  if (floor.kind !== "allow") {
+    return floor;
+  }
+
+  switch (event.event) {
+    case "shell.before":
+      return handleShellBefore(event, ctx);
+    case "mcp.before":
+    case "read.before":
+      return { kind: "allow" };
+    case "tool.before": {
+      const guard = coreFacade.policy.guardPolicySurface({
+        projectDir: event.projectDir,
+        toolName: event.toolName,
+        filePath: filePathOf(event),
+      });
+      if (guard.kind !== "allow") {
+        return guard;
+      }
+      return handleToolBefore(event, ctx);
+    }
+    default:
+      return { kind: "allow" };
+  }
+};
+
+if (import.meta.main) {
+  await main(toolBeforeHandler);
+}

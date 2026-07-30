@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "projectName": "tlc-agent-harness",
+  "mode": "heads-down",
+  "codePaths": [
+    "src",
+    "tools",
+    "bin"
+  ],
+  "format": {
+    "enabled": true,
+    "command": [
+      "npx",
+      "biome",
+      "check",
+      "--write"
+    ]
+  },
+  "grind": {
+    "enabled": true,
+    "maxLoops": 3,
+    "lintCommand": [
+      "npx",
+      "biome",
+      "check",
+      "."
+    ],
+    "testCommand": [
+      "node",
+      "--test",
+      "src/**/__test__/*.test.ts"
+    ]
+  },
+  "shipGate": {
+    "enabled": false
+  },
+  "subagents": {
+    "enforceAllowlist": true,
+    "requireModel": true,
+    "blockMode": "deny",
+    "blockParentFast": false,
+    "readOnlyTypes": [
+      "explore",
+      "Explore"
+    ]
+  },
+  "comments": {
+    "enabled": true,
+    "onViolation": "followup",
+    "mode": "declared"
+  },
+  "shell": {
+    "catastrophicAsk": true,
+    "stallDetection": true,
+    "stallRepeatThreshold": 3
+  },
+  "intelligence": {
+    "gapFeedback": true,
+    "failureClassification": true,
+    "progressiveHandoff": true,
+    "progressiveContext": true,
+    "autopilot": true,
+    "idleTurnGate": true,
+    "budgetContinue": false,
+    "budgetContinueAfterLoops": 3,
+    "lessons": {
+      "enabled": true,
+      "maxInjectSession": 5,
+      "maxInjectRetry": 8,
+      "maxCharsSession": 900,
+      "maxCharsRetry": 1400,
+      "promoteHitCount": 2,
+      "decayLambda": 0.02,
+      "projectBoost": 1.5,
+      "syncRulesFile": false,
+      "gardenOnSessionEnd": true
+    }
+  },
+  "observability": {
+    "enabled": true,
+    "debugEnabled": false,
+    "includePayloads": false,
+    "estimateCost": true,
+    "sessionCostAlertUsd": 5,
+    "retentionDays": 14,
+    "maxAttrChars": 500
+  },
+  "bootstrapExtra": [
+    "This repository is the harness itself. A gate that misfires here is a defect in the product: fix the rule, do not work around it."
+  ]
+}

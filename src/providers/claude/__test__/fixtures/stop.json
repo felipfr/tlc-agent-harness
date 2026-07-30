@@ -1,0 +1,7 @@
+{
+  "hook_event_name": "Stop",
+  "session_id": "sess-abc",
+  "cwd": "/repo",
+  "status": "completed",
+  "context_usage_percent": 42
+}

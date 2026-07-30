@@ -1,0 +1,8 @@
+# Biome and the golden-file tests compare byte for byte, so a CRLF checkout fails every one of them.
+# Normalise on commit and check out LF on every platform, Windows included.
+* text=auto eol=lf
+
+# Binary-ish or generated payloads that must never be touched.
+*.png binary
+*.jpg binary
+*.ico binary

@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "UserPromptSubmit",
+  "session_id": "sess-abc",
+  "cwd": "/repo",
+  "prompt": "add a login form"
+}

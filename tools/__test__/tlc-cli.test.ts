@@ -1,0 +1,356 @@
+import assert from "node:assert/strict";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, test } from "node:test";
+import {
+  buildTestSteps,
+  gatesPaused,
+  grindFlagPath,
+  grindOn,
+  headsDownFlagPath,
+  helpText,
+  modeFilePath,
+  pairedFlagPath,
+  pricesHelpText,
+  readMode,
+  resolveProjectRoot,
+  route,
+  runTestSteps,
+  setGrind,
+  setMode,
+  setPaused,
+  skipFlagPath,
+  statusText,
+  UsageError,
+} from "../../bin/tlc-cli.ts";
+import { flagsDir, projectStateDir } from "../../src/platform/paths.ts";
+
+function fixtureRoot(): string {
+  return mkdtempSync(join(tmpdir(), "tlc-cli-"));
+}
+
+const cleanupRoots: string[] = [];
+
+function newRoot(): string {
+  const root = fixtureRoot();
+  cleanupRoots.push(root);
+  return root;
+}
+
+afterEach(() => {
+  while (cleanupRoots.length > 0) {
+    const root = cleanupRoots.pop();
+    if (root) {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+describe("resolveProjectRoot", () => {
+  const original = process.env.TLC_PROJECT_DIR;
+
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env.TLC_PROJECT_DIR;
+    } else {
+      process.env.TLC_PROJECT_DIR = original;
+    }
+  });
+
+  test("honors TLC_PROJECT_DIR when set", () => {
+    process.env.TLC_PROJECT_DIR = "/some/project";
+    assert.equal(resolveProjectRoot(), "/some/project");
+  });
+
+  test("falls back to process.cwd() when unset", () => {
+    delete process.env.TLC_PROJECT_DIR;
+    assert.equal(resolveProjectRoot(), process.cwd());
+  });
+});
+
+describe("flag file paths", () => {
+  test("grindFlagPath lands under state/flags/grind-on", () => {
+    const root = newRoot();
+    assert.equal(grindFlagPath(root), join(flagsDir(root), "grind-on"));
+    assert.ok(grindFlagPath(root).includes(join("state", "flags", "grind-on")));
+  });
+
+  test("skipFlagPath lands under state/flags/skip-verify", () => {
+    const root = newRoot();
+    assert.equal(skipFlagPath(root), join(flagsDir(root), "skip-verify"));
+  });
+
+  test("headsDownFlagPath and pairedFlagPath land under state/flags", () => {
+    const root = newRoot();
+    assert.equal(headsDownFlagPath(root), join(flagsDir(root), "heads-down"));
+    assert.equal(pairedFlagPath(root), join(flagsDir(root), "paired"));
+  });
+
+  test("modeFilePath lands under state/ but not state/flags/", () => {
+    const root = newRoot();
+    assert.equal(modeFilePath(root), join(projectStateDir(root), "harness-mode"));
+    assert.equal(modeFilePath(root).includes(join("state", "flags")), false);
+  });
+});
+
+describe("setGrind", () => {
+  test("on writes grind-on flag file under state/flags/", () => {
+    const root = newRoot();
+    setGrind(root, true);
+    assert.ok(existsSync(grindFlagPath(root)));
+  });
+
+  test("off removes an existing grind-on flag file", () => {
+    const root = newRoot();
+    setGrind(root, true);
+    setGrind(root, false);
+    assert.equal(existsSync(grindFlagPath(root)), false);
+  });
+
+  test("off is a no-op when no flag file exists", () => {
+    const root = newRoot();
+    assert.doesNotThrow(() => setGrind(root, false));
+    assert.equal(existsSync(grindFlagPath(root)), false);
+  });
+});
+
+describe("setPaused", () => {
+  test("on writes the skip-verify flag file", () => {
+    const root = newRoot();
+    setPaused(root, true);
+    assert.ok(existsSync(skipFlagPath(root)));
+  });
+
+  test("off removes the skip-verify flag file", () => {
+    const root = newRoot();
+    setPaused(root, true);
+    setPaused(root, false);
+    assert.equal(existsSync(skipFlagPath(root)), false);
+  });
+});
+
+describe("setMode", () => {
+  test("solo writes 'solo' to the mode file", () => {
+    const root = newRoot();
+    setMode(root, "solo");
+    assert.equal(readFileSync(modeFilePath(root), "utf8").trim(), "solo");
+  });
+
+  test("paired writes 'paired' to the mode file", () => {
+    const root = newRoot();
+    setMode(root, "paired");
+    assert.equal(readFileSync(modeFilePath(root), "utf8").trim(), "paired");
+  });
+
+  test("focus alias maps to 'heads-down' in the mode file", () => {
+    const root = newRoot();
+    setMode(root, "focus");
+    assert.equal(readFileSync(modeFilePath(root), "utf8").trim(), "heads-down");
+  });
+
+  test("heads alias maps to 'heads-down' in the mode file", () => {
+    const root = newRoot();
+    setMode(root, "heads");
+    assert.equal(readFileSync(modeFilePath(root), "utf8").trim(), "heads-down");
+  });
+
+  test("an invalid mode throws UsageError and writes nothing", () => {
+    const root = newRoot();
+    assert.throws(() => setMode(root, "bogus"), UsageError);
+    assert.equal(existsSync(modeFilePath(root)), false);
+  });
+});
+
+describe("readMode", () => {
+  test("defaults to 'solo' with no mode file or flags", () => {
+    const root = newRoot();
+    assert.equal(readMode(root), "solo");
+  });
+
+  test("reads 'paired' from the mode file", () => {
+    const root = newRoot();
+    setMode(root, "paired");
+    assert.equal(readMode(root), "paired");
+  });
+
+  test("maps a 'heads-down' mode file to 'focus'", () => {
+    const root = newRoot();
+    setMode(root, "focus");
+    assert.equal(readMode(root), "focus");
+  });
+
+  test("falls back to the heads-down flag file when no mode file exists", () => {
+    const root = newRoot();
+    setGrind(root, false);
+    mkdirSync(flagsDir(root), { recursive: true });
+    writeFileSync(headsDownFlagPath(root), "");
+    assert.equal(readMode(root), "focus");
+  });
+
+  test("falls back to the paired flag file when no mode file exists", () => {
+    const root = newRoot();
+    mkdirSync(flagsDir(root), { recursive: true });
+    writeFileSync(pairedFlagPath(root), "");
+    assert.equal(readMode(root), "paired");
+  });
+});
+
+describe("grindOn / gatesPaused", () => {
+  test("grindOn is true once the grind-on flag is set", () => {
+    const root = newRoot();
+    assert.equal(grindOn(root), false);
+    setGrind(root, true);
+    assert.equal(grindOn(root), true);
+  });
+
+  test("grindOn is true when mode is focus even without the grind flag", () => {
+    const root = newRoot();
+    setMode(root, "focus");
+    assert.equal(grindOn(root), true);
+  });
+
+  test("gatesPaused reflects the skip-verify flag", () => {
+    const root = newRoot();
+    assert.equal(gatesPaused(root), false);
+    setPaused(root, true);
+    assert.equal(gatesPaused(root), true);
+  });
+});
+
+describe("statusText / help text", () => {
+  test("statusText names the project root and current mode", () => {
+    const root = newRoot();
+    const text = statusText(root);
+    assert.ok(text.includes(root));
+    assert.ok(text.includes("mode:   solo"));
+  });
+
+  test("helpText names 'tlc harness', never bare 'harness'", () => {
+    const text = helpText();
+    assert.ok(text.includes("tlc harness"));
+    const bareHarness = text.match(/(?<!tlc )\bharness\b/);
+    assert.equal(bareHarness, null);
+  });
+
+  test("pricesHelpText names 'tlc harness', never bare 'harness'", () => {
+    const text = pricesHelpText();
+    assert.ok(text.includes("tlc harness"));
+    const bareHarness = text.match(/(?<!tlc )\bharness\b/);
+    assert.equal(bareHarness, null);
+  });
+});
+
+describe("route — dispatch table", () => {
+  test("defaults to status when no subcommand is given", () => {
+    assert.deepEqual(route([]), { kind: "status" });
+  });
+
+  test("routes doctor, build, update, and test", () => {
+    assert.deepEqual(route(["doctor"]), { kind: "entry", entry: "doctor", args: [] });
+    assert.deepEqual(route(["build"]), { kind: "build" });
+    assert.deepEqual(route(["update"]), { kind: "update" });
+    assert.deepEqual(route(["test"]), { kind: "test" });
+  });
+
+  test("routes grind on/off and rejects a bad argument", () => {
+    assert.deepEqual(route(["grind", "on"]), { kind: "grind", on: true });
+    assert.deepEqual(route(["grind", "off"]), { kind: "grind", on: false });
+    assert.throws(() => route(["grind", "sideways"]), UsageError);
+  });
+
+  test("routes pause and resume", () => {
+    assert.deepEqual(route(["pause"]), { kind: "pause" });
+    assert.deepEqual(route(["resume"]), { kind: "resume" });
+  });
+
+  test("mode requires an argument", () => {
+    assert.throws(() => route(["mode"]), UsageError);
+    assert.deepEqual(route(["mode", "paired"]), { kind: "mode", value: "paired" });
+  });
+
+  test("routes prices help/refresh/lookup and rejects a missing model id", () => {
+    assert.deepEqual(route(["prices"]), { kind: "prices-help" });
+    assert.deepEqual(route(["prices", "refresh"]), { kind: "prices-refresh", scope: "all" });
+    assert.deepEqual(route(["prices", "refresh", "cursor"]), {
+      kind: "prices-refresh",
+      scope: "cursor",
+    });
+    assert.deepEqual(route(["prices", "lookup", "gpt-5"]), {
+      kind: "prices-lookup",
+      modelId: "gpt-5",
+    });
+    assert.throws(() => route(["prices", "lookup"]), UsageError);
+  });
+
+  test("routes obs, lessons, and init to their tool entries with remaining args forwarded", () => {
+    assert.deepEqual(route(["obs", "live"]), { kind: "entry", entry: "obs-cli", args: ["live"] });
+    assert.deepEqual(route(["lessons", "list"]), {
+      kind: "entry",
+      entry: "lessons-cli",
+      args: ["list"],
+    });
+    assert.deepEqual(route(["init", "--minimal"]), {
+      kind: "entry",
+      entry: "init-project",
+      args: ["--minimal"],
+    });
+  });
+
+  test("help with no topic returns the built-in help; with a topic routes to help-topic", () => {
+    assert.deepEqual(route(["help"]), { kind: "help" });
+    assert.deepEqual(route(["help", "prices"]), {
+      kind: "entry",
+      entry: "help-topic",
+      args: ["prices"],
+    });
+  });
+
+  test("an unrecognized subcommand routes to 'unknown'", () => {
+    assert.deepEqual(route(["nonsense"]), { kind: "unknown", cmd: "nonsense" });
+  });
+});
+
+describe("harness test — step plan and runner", () => {
+  test("buildTestSteps runs build check, boundaries, docs-bundle, and every __test__ suite in order", () => {
+    const steps = buildTestSteps();
+    assert.deepEqual(
+      steps.map((s) => s.label),
+      [
+        "biome check",
+        "tsc --noEmit",
+        "src suite",
+        "tools suite",
+        "check-boundaries",
+        "check-docs-bundle",
+        "capabilities in sync",
+      ],
+    );
+    assert.deepEqual(steps[2]?.args, ["--test", "src/**/__test__/*.test.ts"]);
+    assert.deepEqual(steps[3]?.args, ["--test", "tools/__test__/*.test.ts"]);
+    assert.deepEqual(steps[4]?.args, ["tools/check-boundaries.ts"]);
+    assert.deepEqual(steps[5]?.args, ["tools/check-docs-bundle.ts"]);
+    assert.deepEqual(steps[6]?.args, ["tools/render-capabilities.ts", "--check"]);
+  });
+
+  test("stops at the first failing step and does not run the rest", () => {
+    const calls: string[] = [];
+    const status = runTestSteps(buildTestSteps(), "/repo", (bin, args, cwd) => {
+      calls.push(`${bin} ${args.join(" ")}`);
+      assert.equal(cwd, "/repo");
+      return { status: calls.length === 2 ? 1 : 0 };
+    });
+    assert.equal(status, 1);
+    assert.deepEqual(calls, ["npx biome check", "npx tsc --noEmit"]);
+  });
+
+  test("runs every step and returns 0 when all pass", () => {
+    const calls: string[] = [];
+    const status = runTestSteps(buildTestSteps(), "/repo", (bin) => {
+      calls.push(bin);
+      return { status: 0 };
+    });
+    assert.equal(status, 0);
+    assert.equal(calls.length, buildTestSteps().length);
+  });
+});

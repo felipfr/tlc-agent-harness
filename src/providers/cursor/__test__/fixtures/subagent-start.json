@@ -1,0 +1,9 @@
+{
+  "hook_event_name": "subagentStart",
+  "conversation_id": "conv-abc",
+  "session_id": "sess-1",
+  "workspace_roots": ["/repo"],
+  "subagent_type": "worker",
+  "subagent_model": "composer-2.5",
+  "is_parallel_worker": false
+}

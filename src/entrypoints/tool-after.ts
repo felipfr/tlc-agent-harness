@@ -1,0 +1,80 @@
+import type { HarnessEvent, HarnessEventKind } from "../contracts/index.ts";
+import { coreFacade, type ObservabilityConfig, type ObsKind } from "../core/index.ts";
+import { estimateCostUsd, mapPoolToNeutral } from "../platform/pricing.ts";
+import { readClaudeUsage } from "../providers/index.ts";
+import type { Handler, HandlerContext } from "./run.ts";
+import { main } from "./run.ts";
+import { OBS_CONFIG_AUDIT } from "./support.ts";
+
+const OBS_KIND_BY_EVENT: Partial<Record<HarnessEventKind, ObsKind>> = {
+  "tool.after": "tool.end",
+  "shell.after": "shell.end",
+  "mcp.after": "mcp.end",
+  "edit.after": "file.edit",
+};
+
+function rawString(raw: Record<string, unknown>, key: string): string | undefined {
+  const value = raw[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function rawBoolean(raw: Record<string, unknown>, key: string): boolean | undefined {
+  const value = raw[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function usageGenAi(event: HarnessEvent, ctx: HandlerContext): Record<string, unknown> | undefined {
+  if (ctx.capabilities.usageInPayload || !event.transcriptPath) {
+    return undefined;
+  }
+  const usage = readClaudeUsage(event.transcriptPath);
+  if (!usage) {
+    return undefined;
+  }
+  const cost = estimateCostUsd(event.provider, event.model, {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.cacheReadTokens,
+    cacheWriteTokens: usage.cacheWriteTokens,
+  });
+  return {
+    input_tokens: usage.inputTokens,
+    output_tokens: usage.outputTokens,
+    cache_read_tokens: usage.cacheReadTokens,
+    cache_write_tokens: usage.cacheWriteTokens,
+    cost_usd: cost.costUsd,
+    cost_source: cost.source,
+    cost_pool: mapPoolToNeutral(cost.pool),
+  };
+}
+
+export const toolAfterHandler: Handler = (event: HarnessEvent, ctx: HandlerContext) => {
+  coreFacade.observability.recordAudit(event.projectDir, event.event, event.raw);
+
+  const kind = OBS_KIND_BY_EVENT[event.event];
+  if (kind) {
+    const attrs: Record<string, unknown> = {
+      tool_name: event.toolName,
+      command: event.command,
+      file_path: event.filePath,
+    };
+    if (event.event === "shell.after") {
+      attrs.cwd = rawString(event.raw, "cwd");
+      attrs.sandbox = rawBoolean(event.raw, "sandbox");
+    }
+
+    coreFacade.observability.recordObs(event.projectDir, OBS_CONFIG_AUDIT, {
+      provider: event.provider,
+      kind,
+      sessionKey: event.sessionKey,
+      model: event.model,
+      attrs,
+      gen_ai: usageGenAi(event, ctx),
+    });
+  }
+  return { kind: "abstain" };
+};
+
+if (import.meta.main) {
+  await main(toolAfterHandler);
+}

@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "MessageDisplay",
+  "session_id": "sess-abc",
+  "cwd": "/repo",
+  "text": "HARNESS_SHIP_CLAIM: shipped the login form."
+}

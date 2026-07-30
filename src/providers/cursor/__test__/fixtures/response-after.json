@@ -1,0 +1,7 @@
+{
+  "hook_event_name": "afterAgentResponse",
+  "conversation_id": "conv-abc",
+  "session_id": "sess-1",
+  "workspace_roots": ["/repo"],
+  "text": "HARNESS_SHIP_CLAIM: shipped the login form."
+}

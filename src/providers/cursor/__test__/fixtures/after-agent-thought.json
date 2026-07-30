@@ -1,0 +1,7 @@
+{
+  "hook_event_name": "afterAgentThought",
+  "conversation_id": "conv-abc",
+  "session_id": "sess-1",
+  "workspace_roots": ["/repo"],
+  "thought": "considering next step"
+}

@@ -1,0 +1,221 @@
+---
+type: Concept
+title: "Harness architecture"
+description: "Ports-and-adapters shape of the harness: contracts, core, providers, entrypoints, and how the tlc CLI and runtime home fit together."
+tags: [architecture, core, providers, contracts]
+timestamp: "2026-07-29"
+---
+
+# Harness architecture
+
+## Two layers
+
+| Layer | Where | Role |
+|-------|--------|------|
+| **Global runtime** | `~/.tlc/harness/` + provider hook wiring | Hooks, policy engine, observability, CLI |
+| **Project policy** | `<repo>/.tlc/harness/config.json` + provider shim hooks | Per-repo lint/test/ship/subagent choices |
+
+Global does the work. Project only configures *this* repo. Do not copy `~/.tlc/harness/src` into projects.
+
+```mermaid
+graph LR
+    subgraph one["One machine"]
+        R["~/.tlc/harness<br/><i>runtime, CLI, hooks</i>"]
+        CU["cursor config<br/><i>hooks.json</i>"]
+        CL["claude config<br/><i>settings.json</i>"]
+    end
+    subgraph repo["One repository, shared by both"]
+        PC["config.json<br/><i>policy, tracked</i>"]
+        ST["state/<br/><i>handoff, lessons, obs</i>"]
+    end
+    CU --> R
+    CL --> R
+    R --> PC
+    R --> ST
+```
+
+Both providers read the same policy and write the same state, so two people on one repository in different
+tools see one handoff.
+
+See [/decisions/ad-002.md](/decisions/ad-002.md) for why the CLI is `tlc harness …` and the runtime home is
+`~/.tlc/harness/`, not `~/.cursor/agent-harness/`.
+
+## Module layout (ports and adapters)
+
+```
+src/
+├── contracts/    shared vocabulary: HarnessEvent, Decision, ProviderCapabilities, EffortLevel, ProviderWiring
+├── core/         provider-agnostic steering logic, organized flat-by-aggregate
+├── providers/    one anti-corruption-layer adapter per provider (cursor/, claude/)
+├── platform/     OS-portable primitives (paths, atomic fs, git, process, pricing)
+└── entrypoints/  one file per hook handler, composing core + the resolved provider
+```
+
+Arrows are imports, and every one of them is checked mechanically:
+
+```mermaid
+graph TD
+    E["entrypoints/<br/><i>one file per hook handler</i>"]
+    C["core/<br/><i>steering logic, provider-agnostic</i>"]
+    P["providers/<br/><i>one ACL adapter per provider</i>"]
+    K["contracts/<br/><i>shared vocabulary</i>"]
+    L["platform/<br/><i>OS primitives</i>"]
+
+    E --> C
+    E --> P
+    C --> K
+    P --> K
+    C --> L
+    P --> L
+    C -.->|forbidden| P
+    P -.->|forbidden| C
+
+    style K fill:#eef,stroke:#557
+    style C fill:#efe,stroke:#575
+    style P fill:#fee,stroke:#755
+```
+
+`core/` never imports `providers/`; `providers/` never imports `core/`; `contracts/` imports neither and is
+imported by both. `tools/check-boundaries.ts` enforces this mechanically, plus a scan that forbids vendor
+identifiers (`cursor`, `claude`, `codex`, `composer`, `anthropic`) anywhere under `src/core/` or
+`src/contracts/`. See [/decisions/ad-004.md](/decisions/ad-004.md) and
+[/decisions/ad-010.md](/decisions/ad-010.md).
+
+Each provider adapter implements the same port (`ProviderPort` in `src/providers/provider.port.ts`):
+`detect`, `capabilities`, `policyDefaults`, `toEvent`, `render`, `wiring`. Core receives a `HarnessEvent`
+and a `ProviderCapabilities` descriptor as plain data — it never branches on a provider's name. See
+[/providers/index.md](/providers/index.md) for the full port shape and the two registered adapters.
+
+## One event, end to end
+
+```mermaid
+sequenceDiagram
+    participant Ed as Editor
+    participant Hk as Hook file
+    participant Lx as tlc-exec
+    participant Ad as Provider adapter
+    participant Fl as Floor
+    participant Co as Core
+    participant Dg as degrade
+
+    Ed->>Hk: tool call, shell, read or stop
+    Hk->>Lx: provider-shaped JSON on stdin
+    Lx->>Ad: resolve provider by payload shape
+    Ad->>Fl: HarnessEvent
+    Fl-->>Ad: deny, reading no config
+    Fl->>Co: allow, carry on
+    Co->>Dg: Decision + ProviderCapabilities
+    Dg->>Ad: Decision the provider can express
+    Ad->>Hk: provider-shaped JSON on stdout
+    Hk->>Ed: allow, deny, ask or injected context
+```
+
+The adapter is the only layer that speaks the provider's dialect. The floor decides before any policy is
+loaded, and `degrade` guarantees the answer fits what the provider can actually do.
+
+## Degradation, not detection
+
+When a core `Decision` (`allow | deny | ask | context | continue | rewriteInput | abstain`) cannot be
+expressed on a given provider, `src/providers/provider.degrade.ts` degrades it based on the capability
+descriptor:
+
+- Provider cannot enforce hooks at all → any enforcing decision becomes an `ADVISORY —` context message.
+- `ask` where `askSupportedOn` does not include the current event → becomes `deny` (a provider that cannot
+  ask must not silently allow).
+- `rewriteInput` where `toolInputRewrite` is false → becomes `ask`, carrying the proposed input in the
+  reason text.
+- `context` truncates to a caller-supplied character budget, dropping `env` if `sessionEnv` is false.
+
+This is what lets a hookless or partially-capable provider be a new adapter file rather than a core
+refactor.
+
+## Runtime (Bun-first, Node-guaranteed)
+
+| Piece | Rule |
+|-------|------|
+| **Preferred** | Bun on `PATH` — every hook runs the TypeScript source directly, no compile step, ~1 ms per invocation |
+| **Fallback** | Node.js **24+** running `dist/*.mjs` — ~27 ms per invocation |
+| **Launcher** | `bin/tlc-exec.mjs` (Node, all platforms); `bin/tlc-exec` (Unix), `bin/tlc-exec.cmd` (Windows) |
+| **Build** | `tlc harness build` / `bin/tlc-build` (needs Bun or esbuild once to compile `dist/`) |
+| **Forbidden** | Requiring Bun to *use* the harness; flooring on EOL Node |
+
+The measured numbers and the full trade-off are recorded in [/decisions/ad-012.md](/decisions/ad-012.md).
+Provider hooks only need a command on PATH plus JSON stdin/stdout — neither provider requires Bun.
+
+## Load order
+
+`DEFAULTS` → `~/.tlc/harness/config.json` → `<repo>/.tlc/harness/config.json`
+
+## Shim
+
+Project hooks call `tlc-exec shim <handler>`. If `TLC_ACTIVE=1` (set by the user-level `sessionStart`
+hook), the shim no-ops so hooks do not double-fire. Cloud agents without a user-level install run the real
+handler via the shim path.
+
+## Modes
+
+| Mode | Meaning |
+|------|---------|
+| `solo` | Normal day-to-day; agent decides; grind optional |
+| `paired` | More explanation; check in before large moves |
+| `focus` | Max autonomy + grind forced ON |
+
+## Day-to-day vs grind
+
+Grind is **off by default**. Enable with `tlc harness grind`. Focus mode forces grind on.
+
+## Steering pillars (product core)
+
+Observability and cost are support. The product is **stop → followup → handoff → policy**.
+
+### Floor — no configuration reaches it
+
+Evaluated before any policy is loaded, so no setting and no agent edit can clear it
+([/decisions/ad-016.md](/decisions/ad-016.md)).
+
+Each denial names its rule, so `rule=secret-access` in a message maps to a row here.
+
+| Rule | Effect |
+|------|--------|
+| `outside-project-destruction` | Target resolves outside the repo and outside the OS temp directory |
+| `unprovable-destruction` | A destructive verb's target is a variable, a substitution, or built at runtime |
+| `secret-access` | A read would pull `.env`, `~/.ssh`, `~/.aws`, `*.pem` or similar into the transcript |
+| `history-rewrite` | `git push --force`. `--force-with-lease` is allowed, since it refuses when the remote moved |
+| `machine-control` | `shutdown`, `reboot`, `halt`, `poweroff` |
+| policy surface | Agent writes to `.tlc/harness/config.json`, `flags/` and `state/` |
+| edit collision | Two agents editing the same file in one working tree are told, not silently merged |
+
+### Tunable rails
+
+<!-- generated:rails -->
+
+| Rail | Effect | Status |
+|------|--------|--------|
+| Format on edit | Runs your format command after Write so style stays consistent. | `format.enabled` |
+| Grind (lint/test on stop) | Re-checks lint/test after each completed turn and follow-ups until gates pass. | `grind.enabled` |
+| Ship gate | Blocks false done after an explicit HARNESS_SHIP_CLAIM when evidence is missing. | `shipGate.enabled` |
+| Empty-diff anti-ship | Blocks a ship claim when the working tree has zero changes. | `shipGate.emptyDiffAntiShip` |
+| Comment gate (agent-added comments) | Blocks the stop when this turn added comment lines, so narration never lands. Diff-scoped: comments you already committed are never flagged. | `comments.enabled` |
+| Subagent allowlist | Restricts Task models and blocks *-fast by default. | `subagents.enforceAllowlist` |
+| Block parent Fast mode for Task spawns | Denies Task/subagentStart while the parent chat is in Fast mode (sticky from hooks), closing the gap where Task slugs omit *-fast. | `subagents.blockParentFast` |
+| Shell stall detection | Blocks repeating the exact same shell command too many times. | `shell.stallDetection` |
+| Catastrophic shell ask | Asks before destructive shell commands (rm -rf, drop db, force push, …). | `shell.catastrophicAsk` |
+| Lessons | Records compact lessons on gate stagnation and reinjects them ranked under a char budget. | `intelligence.lessons.enabled` |
+| Budget continue | Pushes the agent to keep working under context pressure instead of wrapping up early. | `intelligence.budgetContinue` |
+| Gap feedback | Injects PREVIOUS_GAPS on gate failure so retries fix listed items. | `intelligence.gapFeedback` |
+| Failure classification | Stores failure categories on the handoff for clearer next actions. | `intelligence.failureClassification` |
+| Progressive handoff | Carries gaps into the next session bootstrap. | `intelligence.progressiveHandoff` |
+| Progressive context | Escalates gate follow-up detail on each stop retry. | `intelligence.progressiveContext` |
+| Autopilot | Adds ordered AUTOPILOT steps on gate failure. | `intelligence.autopilot` |
+| Idle-turn gate (asked instead of acting) | Blocks a turn that ends with open work, zero tool calls and zero file changes. Counts recorded tool events rather than reading the reply, so it cannot be talked around. | `intelligence.idleTurnGate` |
+| Docs staleness gate | Runs the repository's own documentation staleness tool on stop, so a stale document fails like a failing test. | `docs.command` |
+
+<!-- /generated -->
+
+Operator mode (`mode`: `solo`, `paired`, `heads-down`) is posture rather than a capability, so it is not in the generated table.
+
+## See also
+
+- [/concepts.md](/concepts.md) — the same rails described from the operator's side
+- [/providers/index.md](/providers/index.md)
+- [/decisions/index.md](/decisions/index.md)

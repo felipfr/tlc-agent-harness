@@ -1,0 +1,27 @@
+{
+  "name": "tlc-agent-harness",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Multi-provider agent steering: gates, follow-up, handoff, policy",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "tlc": "./bin/tlc"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/felipfr/tlc-agent-harness.git"
+  },
+  "bugs": {
+    "url": "https://github.com/felipfr/tlc-agent-harness/issues"
+  },
+  "homepage": "https://github.com/felipfr/tlc-agent-harness#readme",
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.6",
+    "@types/node": "^24.13.3",
+    "typescript": "^7.0.2"
+  }
+}

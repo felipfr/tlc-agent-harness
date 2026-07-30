@@ -1,0 +1,104 @@
+import type { Decision, HarnessEvent, ProviderCapabilities } from "../contracts/index.ts";
+
+export type DegradeOptions = {
+  /** Character budget for `context` text. Undefined means no truncation. */
+  contextBudgetChars?: number;
+};
+
+const ESCALATION_PREFIX = "Escalation unavailable on this provider — ";
+const NO_HUMAN_PREFIX = "No operator is answering prompts in this permission mode — ";
+
+// hazard: these modes exist to stop prompting the operator, so an `ask` raised under them reaches
+// nobody. Whether the provider drops it or silently allows the call is undocumented, and a gate
+// whose outcome depends on undocumented behaviour is not a gate — deny and say why instead.
+const NO_HUMAN_MODES = new Set(["bypassPermissions", "dontAsk"]);
+const ADVISORY_PREFIX = "ADVISORY — this provider cannot enforce: ";
+const TRUNCATION_MARKER = "\n…(truncated — over context budget)";
+
+function isEnforcing(decision: Decision): boolean {
+  return (
+    decision.kind === "deny" ||
+    decision.kind === "ask" ||
+    decision.kind === "continue" ||
+    decision.kind === "rewriteInput"
+  );
+}
+
+function describeDecision(decision: Decision): string {
+  switch (decision.kind) {
+    case "deny":
+    case "ask":
+      return decision.reason;
+    case "continue":
+      return decision.text;
+    case "rewriteInput":
+      return `${decision.reason} (proposed input: ${JSON.stringify(decision.input)})`;
+    default:
+      return "";
+  }
+}
+
+export function truncateContext(text: string, budgetChars: number): string {
+  if (text.length <= budgetChars) {
+    return text;
+  }
+  if (budgetChars <= 0) {
+    return "";
+  }
+  const marker =
+    TRUNCATION_MARKER.length <= budgetChars ? TRUNCATION_MARKER : TRUNCATION_MARKER.slice(0, budgetChars);
+  const keep = Math.max(0, budgetChars - marker.length);
+  return `${text.slice(0, keep)}${marker}`;
+}
+
+function applyContextBudget(decision: Decision, budgetChars: number | undefined): Decision {
+  if (decision.kind !== "context" || budgetChars === undefined) {
+    return decision;
+  }
+  const truncated = truncateContext(decision.text, budgetChars);
+  if (truncated === decision.text) {
+    return decision;
+  }
+  return { ...decision, text: truncated };
+}
+
+export function degrade(
+  decision: Decision,
+  event: HarnessEvent,
+  capabilities: ProviderCapabilities,
+  options: DegradeOptions = {},
+): Decision {
+  if (!capabilities.enforcesHooks && isEnforcing(decision)) {
+    return applyContextBudget(
+      { kind: "context", text: `${ADVISORY_PREFIX}${describeDecision(decision)}` },
+      options.contextBudgetChars,
+    );
+  }
+
+  if (decision.kind === "ask") {
+    if (!capabilities.askSupportedOn.includes(event.event)) {
+      return { kind: "deny", reason: `${ESCALATION_PREFIX}${decision.reason}`, userNote: decision.userNote };
+    }
+    if (event.permissionMode !== undefined && NO_HUMAN_MODES.has(event.permissionMode)) {
+      return { kind: "deny", reason: `${NO_HUMAN_PREFIX}${decision.reason}`, userNote: decision.userNote };
+    }
+    return decision;
+  }
+
+  if (decision.kind === "rewriteInput" && !capabilities.toolInputRewrite) {
+    return {
+      kind: "ask",
+      reason: `Input rewrite unavailable on this provider — proposed input: ${JSON.stringify(decision.input)}. ${decision.reason}`,
+    };
+  }
+
+  if (decision.kind === "context") {
+    if (decision.env && !capabilities.sessionEnv) {
+      const { env: _droppedEnv, ...withoutEnv } = decision;
+      return applyContextBudget(withoutEnv, options.contextBudgetChars);
+    }
+    return applyContextBudget(decision, options.contextBudgetChars);
+  }
+
+  return decision;
+}

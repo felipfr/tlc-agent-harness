@@ -1,0 +1,176 @@
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { test } from "node:test";
+import { fileURLToPath } from "node:url";
+import {
+  formatCapabilityDigest,
+  formatDoctorWarn,
+  isAvailableNotEnabled,
+  listAvailableNotEnabled,
+  listNewlyAnnounceable,
+  resolveConfigPath,
+} from "../capability.service.ts";
+import { loadCatalog, readProjectPolicyRaw, readRuntimeSeen, writeRuntimeSeen } from "../capability.store.ts";
+import { type CapabilityCatalog, type CatalogCapability, ENABLE_HINT } from "../capability.types.ts";
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
+
+function tempProject(): string {
+  return mkdtempSync(join(tmpdir(), "capability-"));
+}
+
+function writePolicy(dir: string, policy: unknown): void {
+  mkdirSync(join(dir, ".tlc", "harness"), { recursive: true });
+  writeFileSync(join(dir, ".tlc", "harness", "config.json"), JSON.stringify(policy));
+}
+
+function capability(overrides: Partial<CatalogCapability> = {}): CatalogCapability {
+  return {
+    id: "cap",
+    configPath: "grind.enabled",
+    title: "Cap",
+    benefit: "b",
+    tradeOff: "t",
+    defaultOn: false,
+    sinceCatalogVersion: 1,
+    ...overrides,
+  };
+}
+
+test("the shipped catalog loads and every entry is well formed", () => {
+  const catalog = loadCatalog(REPO_ROOT);
+  assert.ok(catalog, "catalog must load from the runtime root");
+  assert.ok(catalog.catalogVersion >= 1);
+  assert.ok(Array.isArray(catalog.capabilities) && catalog.capabilities.length > 0);
+  for (const cap of catalog.capabilities) {
+    assert.equal(typeof cap.id, "string");
+    assert.equal(typeof cap.configPath, "string");
+    assert.equal(typeof cap.title, "string");
+    assert.equal(typeof cap.benefit, "string");
+    assert.equal(typeof cap.tradeOff, "string");
+    assert.equal(typeof cap.defaultOn, "boolean");
+    assert.ok(cap.sinceCatalogVersion >= 1);
+  }
+});
+
+test("catalog copy stays stack-agnostic", () => {
+  const catalog = loadCatalog(REPO_ROOT);
+  assert.ok(catalog);
+  for (const cap of catalog.capabilities) {
+    assert.equal(/biome|vitest|pytest|npm |bun /i.test(`${cap.benefit} ${cap.tradeOff}`), false);
+  }
+});
+
+test("loadCatalog returns null when the catalog is absent", () => {
+  const dir = tempProject();
+  try {
+    assert.equal(loadCatalog(dir), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("readProjectPolicyRaw returns null when no policy exists", () => {
+  const dir = tempProject();
+  try {
+    assert.equal(readProjectPolicyRaw(dir), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("resolveConfigPath walks a nested path and tolerates a missing branch", () => {
+  const policy = { intelligence: { lessons: { enabled: true } } };
+  assert.equal(resolveConfigPath(policy, "intelligence.lessons.enabled"), true);
+  assert.equal(resolveConfigPath(policy, "intelligence.missing.enabled"), undefined);
+  assert.equal(resolveConfigPath(policy, "grind.enabled"), undefined);
+});
+
+test("a default-off capability counts as not enabled unless explicitly true", () => {
+  const cap = capability({ defaultOn: false, configPath: "grind.enabled" });
+  assert.equal(isAvailableNotEnabled({}, cap), true);
+  assert.equal(isAvailableNotEnabled({ grind: { enabled: false } }, cap), true);
+  assert.equal(isAvailableNotEnabled({ grind: { enabled: true } }, cap), false);
+});
+
+test("a default-on capability counts as not enabled only when explicitly false", () => {
+  const cap = capability({ defaultOn: true, configPath: "intelligence.gapFeedback" });
+  assert.equal(isAvailableNotEnabled({}, cap), false);
+  assert.equal(isAvailableNotEnabled({ intelligence: { gapFeedback: false } }, cap), true);
+  assert.equal(isAvailableNotEnabled({ intelligence: { gapFeedback: true } }, cap), false);
+});
+
+test("listAvailableNotEnabled keeps the off ones and drops the enabled one", () => {
+  const grind = capability({ id: "grind", configPath: "grind.enabled", defaultOn: false });
+  const ship = capability({ id: "shipGate", configPath: "shipGate.enabled", defaultOn: false });
+  const catalog: CapabilityCatalog = { catalogVersion: 1, capabilities: [grind, ship] };
+  const off = listAvailableNotEnabled({ shipGate: { enabled: true } }, catalog);
+  assert.deepEqual(
+    off.map((c) => c.id),
+    ["grind"],
+  );
+});
+
+test("listNewlyAnnounceable only surfaces capabilities newer than what was seen", () => {
+  const older = capability({ id: "older", sinceCatalogVersion: 1 });
+  const newer = capability({ id: "newer", configPath: "shipGate.enabled", sinceCatalogVersion: 3 });
+  const catalog: CapabilityCatalog = { catalogVersion: 3, capabilities: [older, newer] };
+  assert.deepEqual(
+    listNewlyAnnounceable({}, catalog, 0).map((c) => c.id),
+    ["older", "newer"],
+  );
+  assert.deepEqual(
+    listNewlyAnnounceable({}, catalog, 2).map((c) => c.id),
+    ["newer"],
+  );
+  assert.equal(listNewlyAnnounceable({}, catalog, 3).length, 0);
+});
+
+test("the digest names each capability with its benefit, trade-off and the enable hint", () => {
+  const digest = formatCapabilityDigest([capability({ title: "Grind (lint/test on stop)" })]);
+  assert.match(digest, /Grind \(lint\/test on stop\)/);
+  assert.match(digest, /Benefit:/);
+  assert.match(digest, /Trade-off:/);
+  assert.ok(digest.includes(ENABLE_HINT));
+});
+
+test("the doctor warning is non-failing and carries the trade-off and the hint", () => {
+  const cap = capability({ title: "Grind", tradeOff: "slower stops" });
+  const warn = formatDoctorWarn(cap);
+  assert.ok(warn.startsWith("WARN:"));
+  assert.ok(warn.includes("Grind"));
+  assert.ok(warn.includes("slower stops"));
+  assert.ok(warn.includes(ENABLE_HINT));
+});
+
+test("runtime-seen starts at zero, survives a corrupt file, and round-trips", async () => {
+  const dir = tempProject();
+  try {
+    writePolicy(dir, {});
+    assert.equal(readRuntimeSeen(dir).catalogVersion, 0);
+
+    mkdirSync(join(dir, ".tlc", "harness", "state"), { recursive: true });
+    writeFileSync(join(dir, ".tlc", "harness", "state", "runtime-seen.json"), "{not-json");
+    assert.equal(readRuntimeSeen(dir).catalogVersion, 0);
+
+    await writeRuntimeSeen(dir, 7);
+    assert.equal(readRuntimeSeen(dir).catalogVersion, 7);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("announcing once per catalog bump: after recording the version nothing is new", async () => {
+  const dir = tempProject();
+  try {
+    writePolicy(dir, {});
+    const catalog: CapabilityCatalog = { catalogVersion: 2, capabilities: [capability()] };
+    assert.equal(listNewlyAnnounceable({}, catalog, readRuntimeSeen(dir).catalogVersion).length, 1);
+    await writeRuntimeSeen(dir, catalog.catalogVersion);
+    assert.equal(listNewlyAnnounceable({}, catalog, readRuntimeSeen(dir).catalogVersion).length, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

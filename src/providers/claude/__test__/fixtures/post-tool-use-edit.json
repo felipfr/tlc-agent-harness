@@ -1,0 +1,7 @@
+{
+  "hook_event_name": "PostToolUse",
+  "session_id": "sess-abc",
+  "cwd": "/repo",
+  "tool_name": "Edit",
+  "tool_input": { "file_path": "src/index.ts" }
+}

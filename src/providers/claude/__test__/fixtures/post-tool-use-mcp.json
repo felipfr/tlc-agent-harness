@@ -1,0 +1,7 @@
+{
+  "hook_event_name": "PostToolUse",
+  "session_id": "sess-abc",
+  "cwd": "/repo",
+  "tool_name": "mcp__search__query",
+  "tool_input": { "q": "harness" }
+}

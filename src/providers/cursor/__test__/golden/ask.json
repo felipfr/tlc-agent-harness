@@ -1,0 +1,1 @@
+{"permission":"ask","user_message":"This shell command can destroy data outside the workspace. Approve only if you intend it.","agent_message":"The command was flagged as potentially catastrophic. Prefer scoped paths inside the repo or reversible operations."}

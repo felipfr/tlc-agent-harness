@@ -1,0 +1,7 @@
+{
+  "hook_event_name": "SessionStart",
+  "session_id": "sess-abc",
+  "cwd": "/repo",
+  "transcript_path": "/tmp/transcript.jsonl",
+  "model": "claude-opus-5"
+}

@@ -1,0 +1,7 @@
+{
+  "hook_event_name": "beforeSubmitPrompt",
+  "conversation_id": "conv-abc",
+  "session_id": "sess-1",
+  "workspace_roots": ["/repo"],
+  "prompt": "add a login form"
+}

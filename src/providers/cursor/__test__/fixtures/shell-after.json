@@ -1,0 +1,8 @@
+{
+  "hook_event_name": "afterShellExecution",
+  "conversation_id": "conv-abc",
+  "session_id": "sess-1",
+  "workspace_roots": ["/repo"],
+  "command": "npm test",
+  "cwd": "/repo"
+}

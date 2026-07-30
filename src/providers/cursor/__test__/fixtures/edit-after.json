@@ -1,0 +1,7 @@
+{
+  "hook_event_name": "afterFileEdit",
+  "conversation_id": "conv-abc",
+  "session_id": "sess-1",
+  "workspace_roots": ["/repo"],
+  "file_path": "src/index.ts"
+}

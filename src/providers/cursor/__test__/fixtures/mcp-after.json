@@ -1,0 +1,9 @@
+{
+  "hook_event_name": "afterMCPExecution",
+  "conversation_id": "conv-abc",
+  "session_id": "sess-1",
+  "workspace_roots": ["/repo"],
+  "tool_name": "mcp__search__query",
+  "tool_input": { "q": "harness" },
+  "url": "https://example.com/mcp"
+}

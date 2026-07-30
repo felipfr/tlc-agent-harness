@@ -1,0 +1,8 @@
+{
+  "hook_event_name": "sessionEnd",
+  "conversation_id": "conv-abc",
+  "session_id": "sess-1",
+  "workspace_roots": ["/repo"],
+  "reason": "completed",
+  "duration_ms": 12345
+}

@@ -1,0 +1,5 @@
+{
+  "hook_event_name": "Notification",
+  "session_id": "sess-abc",
+  "cwd": "/repo"
+}
