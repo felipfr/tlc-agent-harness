@@ -51,6 +51,16 @@ export function truncateContext(text: string, budgetChars: number): string {
   return `${text.slice(0, keep)}${marker}`;
 }
 
+function canCarryContext(event: HarnessEvent, capabilities: ProviderCapabilities): boolean {
+  if (event.event === "tool.before") {
+    return capabilities.contextAtToolBefore;
+  }
+  if (event.event === "tool.after") {
+    return capabilities.contextAtToolAfter;
+  }
+  return true;
+}
+
 function applyContextBudget(decision: Decision, budgetChars: number | undefined): Decision {
   if (decision.kind !== "context" || budgetChars === undefined) {
     return decision;
@@ -93,6 +103,13 @@ export function degrade(
   }
 
   if (decision.kind === "context") {
+    // hazard: contextAtToolBefore and contextAtToolAfter were declared by every adapter and read by
+    // nothing. A provider that cannot carry context on the current event would have had the text rendered
+    // into a field it ignores, leaving the caller believing it was delivered. Abstaining is the honest
+    // answer: context is informative, so there is nothing to escalate to.
+    if (!canCarryContext(event, capabilities)) {
+      return { kind: "abstain" };
+    }
     if (decision.env && !capabilities.sessionEnv) {
       const { env: _droppedEnv, ...withoutEnv } = decision;
       return applyContextBudget(withoutEnv, options.contextBudgetChars);

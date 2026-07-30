@@ -190,3 +190,41 @@ test("abstain decision needing no degradation is returned by identity", () => {
   const result = degrade(decision, eventAt("stop"), caps({ enforcesHooks: false }));
   assert.equal(result, decision);
 });
+
+// hazard: both capabilities were declared by every adapter and read by nothing, so a context returned on an
+// event the provider cannot carry was rendered into a field it ignores and silently lost.
+test("context on tool.after abstains when the provider cannot carry it there", () => {
+  const decision = degrade(
+    { kind: "context", text: "framing" },
+    eventAt("tool.after"),
+    caps({ contextAtToolAfter: false }),
+  );
+  assert.equal(decision.kind, "abstain");
+});
+
+test("context on tool.before abstains when the provider cannot carry it there", () => {
+  const decision = degrade(
+    { kind: "context", text: "framing" },
+    eventAt("tool.before"),
+    caps({ contextAtToolBefore: false }),
+  );
+  assert.equal(decision.kind, "abstain");
+});
+
+test("context survives on tool.after when the provider can carry it", () => {
+  const decision = degrade(
+    { kind: "context", text: "framing" },
+    eventAt("tool.after"),
+    caps({ contextAtToolAfter: true }),
+  );
+  assert.equal(decision.kind, "context");
+});
+
+test("an event with no per-event context capability is unaffected", () => {
+  const decision = degrade(
+    { kind: "context", text: "framing" },
+    eventAt("session.start"),
+    caps({ contextAtToolAfter: false, contextAtToolBefore: false }),
+  );
+  assert.equal(decision.kind, "context");
+});
