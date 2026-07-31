@@ -63,6 +63,16 @@ test("proven readers on the policy surface are allowed", () => {
   assertAllowed(`stat ${CONFIG}`);
 });
 
+test("echo and printf name the surface without being able to touch it", () => {
+  // hazard: this rule denied its own end-to-end verification — `printf '{...config.json...}' | node hook`
+  // has printf as a head verb that names the path. Neither echo nor printf can modify a file on its own;
+  // only a redirect can, and redirects are judged separately, as the next assertions show.
+  assertAllowed(`printf '{"file":"${CONFIG}"}' | node dist/tool-before.mjs`);
+  assertAllowed(`echo "see ${CONFIG}"`);
+  assertDenied(`echo '{}' > ${CONFIG}`);
+  assertDenied(`printf '{}' >> ${CONFIG}`);
+});
+
 test("git is a reader only for subcommands that cannot write", () => {
   assertAllowed(`git show HEAD:${CONFIG}`);
   assertAllowed(`git diff HEAD -- ${CONFIG}`);
