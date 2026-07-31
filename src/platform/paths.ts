@@ -43,6 +43,12 @@ export function bootDir(root: string): string {
   return join(projectStateDir(root), "boot");
 }
 
+// why: inside the state directory on purpose — the baseline that proves the policy was not switched off
+// inherits the same protection as the policy itself.
+export function policyBaselineDir(root: string): string {
+  return join(projectStateDir(root), "policy-baseline");
+}
+
 export function claudeConfigDir(): string {
   const custom = process.env.CLAUDE_CONFIG_DIR?.trim();
   return custom && custom.length > 0 ? custom : join(homedir(), ".claude");
