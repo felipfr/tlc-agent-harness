@@ -3,9 +3,9 @@ var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/tlc-cli.ts
 import { spawnSync } from "node:child_process";
-import { existsSync as existsSync18, mkdirSync as mkdirSync13, readFileSync as readFileSync18, realpathSync, rmSync as rmSync4, writeFileSync as writeFileSync12 } from "node:fs";
+import { existsSync as existsSync19, mkdirSync as mkdirSync14, readFileSync as readFileSync19, realpathSync, rmSync as rmSync4, writeFileSync as writeFileSync13 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { join as join19 } from "node:path";
+import { delimiter, join as join20 } from "node:path";
 
 // src/core/capability/capability.types.ts
 var ENABLE_HINT = 'Enable: ask the agent "setup harness" (harness-init skill) or edit .tlc/harness/config.json';
@@ -216,6 +216,9 @@ function loopsDir(root) {
 }
 function bootDir(root) {
   return join(projectStateDir(root), "boot");
+}
+function policyBaselineDir(root) {
+  return join(projectStateDir(root), "policy-baseline");
 }
 
 // src/core/capability/capability.store.ts
@@ -603,6 +606,13 @@ function isInside(parent, child) {
 function isScratch(target, tmp = tmpdir()) {
   return isInside(tmp, target);
 }
+function isPolicySurface(projectDir, filePath) {
+  const target = normalizeSeparators(relative(projectDir, filePath) || filePath);
+  const config = normalizeSeparators(relative(projectDir, projectConfigPath(projectDir)));
+  const flags = normalizeSeparators(relative(projectDir, flagsDir(projectDir)));
+  const state = normalizeSeparators(relative(projectDir, projectStateDir(projectDir)));
+  return target === config || target.startsWith(`${flags}/`) || target.startsWith(`${state}/`);
+}
 var SECRET_HOME_DIRS = [".ssh", ".aws", ".kube", ".gnupg", ".docker", ".config/gh", ".config/gcloud"];
 var SECRET_BASENAMES = new Set([
   ".git-credentials",
@@ -634,12 +644,48 @@ function isSecretPath(target, home = homedir2()) {
   return SECRET_HOME_DIRS.some((dir) => isInside(resolve(home, dir), target));
 }
 
+// src/core/floor/floor.policy-surface.ts
+import { relative as relative2, resolve as resolve2 } from "node:path";
+
 // src/core/floor/floor.tokenize.ts
 var SEPARATORS = new Set([";", "|", "&", `
 `]);
 var ESCAPABLE = new Set([" ", "\t", '"', "'", "$", "`", "\\", ";", "|", "&", "(", ")"]);
 function isExpansion(text) {
   return text.includes("$") || text.includes("`");
+}
+function splitHeredocs(command) {
+  const heredoc = /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/;
+  const heredocs = [];
+  let rest = command;
+  let stripped = "";
+  for (;; ) {
+    const match = heredoc.exec(rest);
+    if (!match) {
+      stripped += rest;
+      break;
+    }
+    const bodyStart = rest.indexOf(`
+`, match.index + match[0].length);
+    const prefix = stripped + rest.slice(0, match.index);
+    stripped += rest.slice(0, match.index);
+    if (bodyStart === -1) {
+      break;
+    }
+    const terminator = new RegExp(`^\\s*${match[2]}\\s*$`, "m");
+    const body = rest.slice(bodyStart + 1);
+    const end = terminator.exec(body);
+    if (!end) {
+      heredocs.push({ body, prefix });
+      break;
+    }
+    heredocs.push({ body: body.slice(0, end.index), prefix });
+    rest = body.slice(end.index + end[0].length);
+  }
+  return { stripped, heredocs };
+}
+function heredocChunks(command) {
+  return splitHeredocs(command).heredocs;
 }
 function tokenizeShell(command) {
   const segments = [];
@@ -663,29 +709,7 @@ function tokenizeShell(command) {
     }
     words2 = [];
   }
-  const heredoc = /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/;
-  let rest = command;
-  let stripped = "";
-  for (;; ) {
-    const match = heredoc.exec(rest);
-    if (!match) {
-      stripped += rest;
-      break;
-    }
-    const bodyStart = rest.indexOf(`
-`, match.index + match[0].length);
-    stripped += rest.slice(0, match.index);
-    if (bodyStart === -1) {
-      break;
-    }
-    const terminator = new RegExp(`^\\s*${match[2]}\\s*$`, "m");
-    const body = rest.slice(bodyStart + 1);
-    const end = terminator.exec(body);
-    if (!end) {
-      break;
-    }
-    rest = body.slice(end.index + end[0].length);
-  }
+  const { stripped } = splitHeredocs(command);
   for (let index = 0;index < stripped.length; index += 1) {
     const char = stripped[index];
     if (quote !== null) {
@@ -738,11 +762,200 @@ function tokenizeShell(command) {
   return unbalanced ? segments.map((segment) => ({ ...segment, opaque: true })) : segments;
 }
 
+// src/core/floor/floor.verb.ts
+var WRAPPERS = new Set(["command", "doas", "env", "nice", "nohup", "sudo", "time", "xargs"]);
+function verbOf(words2) {
+  let index = 0;
+  while (index < words2.length) {
+    const word = words2[index];
+    if (!word) {
+      return null;
+    }
+    if (WRAPPERS.has(word.text) || word.text.startsWith("-") || word.text.includes("=")) {
+      index += 1;
+      continue;
+    }
+    return { verb: word.text.split("/").pop() ?? word.text, args: words2.slice(index + 1) };
+  }
+  return null;
+}
+function firstOperand(args) {
+  return args.find((word) => !word.text.startsWith("-") && word.text !== "") ?? null;
+}
+
+// src/core/floor/floor.policy-surface.ts
+var ALLOW = { kind: "allow" };
+var PROVEN_READERS = new Set([
+  "cat",
+  "cmp",
+  "diff",
+  "file",
+  "grep",
+  "head",
+  "jq",
+  "less",
+  "ls",
+  "md5sum",
+  "more",
+  "od",
+  "rg",
+  "sha256sum",
+  "stat",
+  "strings",
+  "tail",
+  "wc",
+  "xxd"
+]);
+var GIT_READERS = new Set(["show", "diff", "log", "status", "ls-files", "cat-file", "blame"]);
+var EXECUTES_STDIN = new Set([
+  "ash",
+  "awk",
+  "bash",
+  "bun",
+  "dash",
+  "deno",
+  "ed",
+  "ex",
+  "fish",
+  "gawk",
+  "ksh",
+  "lua",
+  "node",
+  "perl",
+  "php",
+  "python",
+  "python2",
+  "python3",
+  "ruby",
+  "sed",
+  "sh",
+  "tclsh",
+  "zsh"
+]);
+var HARNESS_BINS = new Set(["tlc", "tlc.cmd"]);
+var MUTATING_SUBCOMMANDS = new Set(["pause", "resume", "grind", "mode", "init", "gate"]);
+function deny(detail, note) {
+  return { kind: "deny", detail, note };
+}
+function harnessPrefix(projectDir) {
+  const state = normalizeSeparators(relative2(projectDir, projectStateDir(projectDir)));
+  return state.slice(0, state.lastIndexOf("/"));
+}
+function namesSurface(projectDir, segment) {
+  const text = normalizeSeparators(segment.words.map((word) => word.text).join(" "));
+  return text.includes(harnessPrefix(projectDir));
+}
+function overlapsSurface(projectDir, resolved) {
+  if (resolved === resolve2(projectDir)) {
+    return false;
+  }
+  if (isPolicySurface(projectDir, resolved)) {
+    return true;
+  }
+  return [projectConfigPath(projectDir), projectStateDir(projectDir)].some((surface) => isInside(surface, resolved) || isInside(resolved, surface));
+}
+function referencesSurface(projectDir, word) {
+  if (word.text === "") {
+    return false;
+  }
+  if (word.unresolved) {
+    return normalizeSeparators(word.text).includes(harnessPrefix(projectDir));
+  }
+  return overlapsSurface(projectDir, resolveTarget(projectDir, word.text));
+}
+function redirectTargets(words2) {
+  const targets = [];
+  for (let index = 0;index < words2.length; index += 1) {
+    const word = words2[index];
+    if (!word) {
+      continue;
+    }
+    const match = /^(.*?)>{1,2}\|?(.*)$/s.exec(word.text);
+    if (!match) {
+      continue;
+    }
+    const attached = match[2] ?? "";
+    if (attached !== "") {
+      targets.push({ text: attached, unresolved: word.unresolved });
+      continue;
+    }
+    const next = words2[index + 1];
+    if (next) {
+      targets.push(next);
+      index += 1;
+    }
+  }
+  return targets;
+}
+function harnessSubcommand(args) {
+  const operands = args.filter((word) => !word.text.startsWith("-") && word.text !== "");
+  if (operands[0]?.text.toLowerCase() !== "harness") {
+    return null;
+  }
+  return (operands[1]?.text ?? "status").toLowerCase();
+}
+function checkSegment(projectDir, segment) {
+  for (const target of redirectTargets(segment.words)) {
+    if (referencesSurface(projectDir, target)) {
+      return deny("a redirect in this command writes into the harness policy surface.", "redirect into the policy surface");
+    }
+  }
+  const head = verbOf(segment.words);
+  if (head && HARNESS_BINS.has(head.verb)) {
+    const subcommand = harnessSubcommand(head.args);
+    if (subcommand !== null && MUTATING_SUBCOMMANDS.has(subcommand)) {
+      return deny(`\`tlc harness ${subcommand}\` changes harness policy, and policy is the operator's to change.`, `tlc harness ${subcommand}`);
+    }
+  }
+  const references = segment.words.filter((word) => referencesSurface(projectDir, word));
+  if (references.length === 0 && !namesSurface(projectDir, segment)) {
+    return ALLOW;
+  }
+  if (segment.opaque) {
+    return deny("this command names the harness policy surface inside a segment this gate cannot split, so what it does to it cannot be established.", "unprovable policy-surface access");
+  }
+  if (!head) {
+    return deny("the harness policy surface is named in a command with no resolvable verb.", "policy-surface access with no verb");
+  }
+  if (PROVEN_READERS.has(head.verb)) {
+    return ALLOW;
+  }
+  if (head.verb === "git") {
+    const subcommand = firstOperand(head.args)?.text.toLowerCase() ?? "";
+    return GIT_READERS.has(subcommand) ? ALLOW : deny(`\`git ${subcommand}\` can write the working tree, so it cannot be proven to only read the harness policy surface.`, `git ${subcommand} on the policy surface`);
+  }
+  if (references.some((word) => word.unresolved)) {
+    return deny("this command builds a harness policy path at runtime, so the file it would touch cannot be established.", "unresolvable policy-surface path");
+  }
+  return deny(`\`${head.verb}\` is not a proven reader, so this command cannot be shown to only read the harness policy surface.`, `${head.verb} on the policy surface`);
+}
+function checkHeredocs(projectDir, heredocs) {
+  const prefix = harnessPrefix(projectDir);
+  for (const chunk of heredocs) {
+    if (!normalizeSeparators(chunk.body).includes(prefix)) {
+      continue;
+    }
+    const owner = verbOf(tokenizeShell(chunk.prefix).at(-1)?.words ?? []);
+    if (owner !== null && EXECUTES_STDIN.has(owner.verb)) {
+      return deny(`a heredoc fed to \`${owner.verb}\` names the harness policy surface, so the body is a program rather than a document.`, "heredoc program naming the policy surface");
+    }
+  }
+  return ALLOW;
+}
+function checkPolicySurface(projectDir, command, segments) {
+  for (const segment of segments) {
+    const verdict = checkSegment(projectDir, segment);
+    if (verdict.kind === "deny") {
+      return verdict;
+    }
+  }
+  return checkHeredocs(projectDir, heredocChunks(command));
+}
+
 // src/core/floor/floor.service.ts
 var DESTRUCTIVE_VERBS = new Set(["dd", "rm", "rmdir", "shred", "truncate"]);
 var MACHINE_VERBS = new Set(["halt", "poweroff", "reboot", "shutdown"]);
 var READER_VERBS = new Set(["base64", "cat", "head", "less", "more", "od", "strings", "tail", "xxd"]);
-var WRAPPERS = new Set(["command", "doas", "env", "nice", "nohup", "sudo", "time", "xargs"]);
 var READING_TOOLS = new Set(["Read", "Edit", "MultiEdit", "NotebookEdit"]);
 var EXPANDING_VERBS = new Set([".", "eval", "source"]);
 var SHELLS = new Set(["ash", "bash", "dash", "fish", "ksh", "sh", "zsh"]);
@@ -760,21 +973,6 @@ function reason(rule, detail) {
 }
 function denial(rule, detail, note) {
   return { kind: "deny", reason: reason(rule, detail), userNote: `Floor rule ${rule}: ${note}` };
-}
-function verbOf(words2) {
-  let index = 0;
-  while (index < words2.length) {
-    const word = words2[index];
-    if (!word) {
-      return null;
-    }
-    if (WRAPPERS.has(word.text) || word.text.startsWith("-") || word.text.includes("=")) {
-      index += 1;
-      continue;
-    }
-    return { verb: word.text.split("/").pop() ?? word.text, args: words2.slice(index + 1) };
-  }
-  return null;
 }
 function isMkfs(verb) {
   return verb === "mkfs" || verb.startsWith("mkfs.");
@@ -827,6 +1025,10 @@ function checkShell(input) {
         return denial("outside-project-destruction", `\`${verb}\` targets ${resolved}, which is outside the project and outside scratch space.`, `${verb} outside project`);
       }
     }
+  }
+  const surface = checkPolicySurface(input.projectDir, command, segments);
+  if (surface.kind === "deny") {
+    return denial("policy-surface-write", `${surface.detail} Set a gate command with \`tlc harness gate test-command\` or \`gate lint-command\`, and run policy changes from your own terminal rather than from inside this session.`, surface.note);
   }
   return checkShellSecrets(segments, input.projectDir);
 }
@@ -1046,7 +1248,7 @@ function gateLockPath(root) {
   return join6(projectStateDir(root), "grind.lock");
 }
 function defaultSleep2(ms) {
-  return new Promise((resolve2) => setTimeout(resolve2, ms));
+  return new Promise((resolve3) => setTimeout(resolve3, ms));
 }
 function readLockBody(path) {
   if (!existsSync5(path)) {
@@ -2770,15 +2972,7 @@ function planVerdict(args) {
 }
 
 // src/core/policy/policy.guard.ts
-import { relative as relative2 } from "node:path";
 var WRITE_TOOLS = new Set(["Edit", "Write", "Delete", "MultiEdit", "NotebookEdit"]);
-function isPolicySurface(projectDir, filePath) {
-  const target = normalizeSeparators(relative2(projectDir, filePath) || filePath);
-  const config = normalizeSeparators(relative2(projectDir, projectConfigPath(projectDir)));
-  const flags = normalizeSeparators(relative2(projectDir, flagsDir(projectDir)));
-  const state = normalizeSeparators(relative2(projectDir, projectStateDir(projectDir)));
-  return target === config || target.startsWith(`${flags}/`) || target.startsWith(`${state}/`);
-}
 function guardPolicySurface(args) {
   if (!args.toolName || !WRITE_TOOLS.has(args.toolName) || !args.filePath) {
     return { kind: "allow" };
@@ -2790,11 +2984,108 @@ function guardPolicySurface(args) {
     kind: "deny",
     reason: [
       "Harness policy and state are not agent-writable — a gate an agent can switch off is not a gate.",
-      "Change policy through the CLI instead: tlc harness grind | pause | resume | mode | init.",
+      "Change policy through the CLI instead: tlc harness grind | pause | resume | mode | init, or tlc harness gate test-command | gate lint-command.",
       "If a gate is wrong, say so and let the operator decide; do not edit around it."
     ].join(" "),
     userNote: `Blocked an agent write to ${args.filePath}.`
   };
+}
+
+// src/core/policy/policy.integrity.ts
+import { createHash as createHash4 } from "node:crypto";
+import { existsSync as existsSync12, mkdirSync as mkdirSync7, readdirSync as readdirSync3, readFileSync as readFileSync13, writeFileSync as writeFileSync6 } from "node:fs";
+import { join as join13 } from "node:path";
+var ABSENT = "absent";
+var SCHEMA = "harness.policy-baseline.v1";
+var MODE_FILE = "harness-mode";
+var FLAG_FILES = ["grind-on", "skip-verify", "heads-down", "paired"];
+function hashOf(path) {
+  if (!existsSync12(path)) {
+    return ABSENT;
+  }
+  try {
+    return createHash4("sha256").update(readFileSync13(path)).digest("hex");
+  } catch {
+    return "unreadable";
+  }
+}
+function policySourceFingerprint(root) {
+  const paths = [
+    projectConfigPath(root),
+    join13(runtimeHome(), "config.json"),
+    join13(projectStateDir(root), MODE_FILE),
+    ...FLAG_FILES.map((flag) => join13(flagsDir(root), flag))
+  ];
+  return paths.map((path) => ({ path, hash: hashOf(path) }));
+}
+function baselinePath(root, sessionKey) {
+  return join13(policyBaselineDir(root), `${sanitizeSegment(sessionKey)}.json`);
+}
+function recordPolicyBaseline(root, sessionKey) {
+  try {
+    mkdirSync7(policyBaselineDir(root), { recursive: true });
+    writeFileSync6(baselinePath(root, sessionKey), `${JSON.stringify({ schema: SCHEMA, sources: policySourceFingerprint(root) }, null, 2)}
+`, "utf8");
+  } catch {}
+}
+function readBaseline(root, sessionKey) {
+  const path = baselinePath(root, sessionKey);
+  if (!existsSync12(path)) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(readFileSync13(path, "utf8"));
+    return Array.isArray(parsed.sources) ? parsed.sources : null;
+  } catch {
+    return null;
+  }
+}
+function firstDivergence(baseline, current) {
+  const recorded = new Map(baseline.map((source) => [source.path, source.hash]));
+  for (const source of current) {
+    const was = recorded.get(source.path);
+    if (was === undefined || was !== source.hash) {
+      return source.path;
+    }
+  }
+  return null;
+}
+function checkPolicyBaseline(root, sessionKey) {
+  const baseline = readBaseline(root, sessionKey);
+  if (!baseline) {
+    recordPolicyBaseline(root, sessionKey);
+    return { kind: "allow" };
+  }
+  const diverged = firstDivergence(baseline, policySourceFingerprint(root));
+  if (diverged === null) {
+    return { kind: "allow" };
+  }
+  return {
+    kind: "deny",
+    reason: [
+      `HARNESS: ${diverged} changed during this session, and no harness command changed it.`,
+      "The gates are now running a policy the operator did not set, so what they check cannot be trusted.",
+      "Tell the operator what changed and why; the harness commands re-record the baseline when they write."
+    ].join(`
+`),
+    userNote: `Harness policy changed out of band during this session: ${diverged}`
+  };
+}
+function refreshPolicyBaselines(root) {
+  const dir = policyBaselineDir(root);
+  if (!existsSync12(dir)) {
+    return;
+  }
+  const sources = policySourceFingerprint(root);
+  for (const entry of readdirSync3(dir)) {
+    if (!entry.endsWith(".json")) {
+      continue;
+    }
+    try {
+      writeFileSync6(join13(dir, entry), `${JSON.stringify({ schema: SCHEMA, sources }, null, 2)}
+`, "utf8");
+    } catch {}
+  }
 }
 
 // src/core/policy/policy.operator.ts
@@ -2842,29 +3133,29 @@ function forProvider(scoped, provider) {
 }
 
 // src/core/presence/presence.store.ts
-import { existsSync as existsSync12, mkdirSync as mkdirSync7, readdirSync as readdirSync3, readFileSync as readFileSync13, rmSync as rmSync2, writeFileSync as writeFileSync6 } from "node:fs";
-import { join as join13 } from "node:path";
+import { existsSync as existsSync13, mkdirSync as mkdirSync8, readdirSync as readdirSync4, readFileSync as readFileSync14, rmSync as rmSync2, writeFileSync as writeFileSync7 } from "node:fs";
+import { join as join14 } from "node:path";
 function presenceSessionKey(provider, session) {
   return `${provider}-${session}`;
 }
 function presencePath(root, provider, session) {
-  return join13(presenceDir(root), `${sanitizeSegment(presenceSessionKey(provider, session))}.json`);
+  return join14(presenceDir(root), `${sanitizeSegment(presenceSessionKey(provider, session))}.json`);
 }
 function readPresenceRecord(root, provider, session) {
   const path = presencePath(root, provider, session);
-  if (!existsSync12(path)) {
+  if (!existsSync13(path)) {
     return null;
   }
   try {
-    return JSON.parse(readFileSync13(path, "utf8"));
+    return JSON.parse(readFileSync14(path, "utf8"));
   } catch {
     return null;
   }
 }
 function writePresenceRecord(root, record) {
   try {
-    mkdirSync7(presenceDir(root), { recursive: true });
-    writeFileSync6(presencePath(root, record.provider, record.session), `${JSON.stringify(record, null, 2)}
+    mkdirSync8(presenceDir(root), { recursive: true });
+    writeFileSync7(presencePath(root, record.provider, record.session), `${JSON.stringify(record, null, 2)}
 `, "utf8");
   } catch {}
 }
@@ -2875,16 +3166,16 @@ function deletePresenceRecord(root, provider, session) {
 }
 function listPresenceRecords(root) {
   const dir = presenceDir(root);
-  if (!existsSync12(dir)) {
+  if (!existsSync13(dir)) {
     return [];
   }
   const records = [];
-  for (const entry of readdirSync3(dir)) {
+  for (const entry of readdirSync4(dir)) {
     if (!entry.endsWith(".json")) {
       continue;
     }
     try {
-      records.push(JSON.parse(readFileSync13(join13(dir, entry), "utf8")));
+      records.push(JSON.parse(readFileSync14(join14(dir, entry), "utf8")));
     } catch {}
   }
   return records;
@@ -2968,26 +3259,26 @@ function release(root, provider, session) {
 }
 
 // src/core/shell-policy/shell-policy.stall.ts
-import { existsSync as existsSync13, mkdirSync as mkdirSync8, readFileSync as readFileSync14, writeFileSync as writeFileSync7 } from "node:fs";
-import { join as join14 } from "node:path";
+import { existsSync as existsSync14, mkdirSync as mkdirSync9, readFileSync as readFileSync15, writeFileSync as writeFileSync8 } from "node:fs";
+import { join as join15 } from "node:path";
 function storePath(root) {
-  return join14(projectStateDir(root), "shell-stall.json");
+  return join15(projectStateDir(root), "shell-stall.json");
 }
 function readStore(root) {
   const path = storePath(root);
-  if (!existsSync13(path)) {
+  if (!existsSync14(path)) {
     return {};
   }
   try {
-    return JSON.parse(readFileSync14(path, "utf8"));
+    return JSON.parse(readFileSync15(path, "utf8"));
   } catch {
     return {};
   }
 }
 function writeStore(root, store) {
   try {
-    mkdirSync8(projectStateDir(root), { recursive: true });
-    writeFileSync7(storePath(root), `${JSON.stringify(store, null, 2)}
+    mkdirSync9(projectStateDir(root), { recursive: true });
+    writeFileSync8(storePath(root), `${JSON.stringify(store, null, 2)}
 `, "utf8");
   } catch {}
 }
@@ -3105,7 +3396,7 @@ function evaluateShellCommand(args) {
 }
 
 // src/core/stagnation/stagnation.service.ts
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash5 } from "node:crypto";
 function computeFingerprint(parts) {
   const normalizedOutput = parts.output.replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/g, "<ts>").replace(/\b\d{5,}\b/g, "<n>").slice(0, 1500);
   const raw = JSON.stringify({
@@ -3114,30 +3405,30 @@ function computeFingerprint(parts) {
     exitCode: parts.exitCode,
     output: normalizedOutput
   });
-  return createHash4("sha256").update(raw).digest("hex").slice(0, 16);
+  return createHash5("sha256").update(raw).digest("hex").slice(0, 16);
 }
 
 // src/core/stagnation/stagnation.store.ts
-import { existsSync as existsSync14, mkdirSync as mkdirSync9, readFileSync as readFileSync15, writeFileSync as writeFileSync8 } from "node:fs";
-import { join as join15 } from "node:path";
+import { existsSync as existsSync15, mkdirSync as mkdirSync10, readFileSync as readFileSync16, writeFileSync as writeFileSync9 } from "node:fs";
+import { join as join16 } from "node:path";
 function storePath2(root) {
-  return join15(projectStateDir(root), "fingerprint.json");
+  return join16(projectStateDir(root), "fingerprint.json");
 }
 function readStore2(root) {
   const path = storePath2(root);
-  if (!existsSync14(path)) {
+  if (!existsSync15(path)) {
     return {};
   }
   try {
-    return JSON.parse(readFileSync15(path, "utf8"));
+    return JSON.parse(readFileSync16(path, "utf8"));
   } catch {
     return {};
   }
 }
 function writeStore2(root, store) {
   try {
-    mkdirSync9(projectStateDir(root), { recursive: true });
-    writeFileSync8(storePath2(root), `${JSON.stringify(store, null, 2)}
+    mkdirSync10(projectStateDir(root), { recursive: true });
+    writeFileSync9(storePath2(root), `${JSON.stringify(store, null, 2)}
 `, "utf8");
   } catch {}
 }
@@ -3159,19 +3450,19 @@ function clearFingerprint(root, sessionKey) {
 }
 
 // src/core/subagent-policy/subagent-policy.parent-model.ts
-import { existsSync as existsSync15, mkdirSync as mkdirSync10, readFileSync as readFileSync16, writeFileSync as writeFileSync9 } from "node:fs";
-import { join as join16 } from "node:path";
+import { existsSync as existsSync16, mkdirSync as mkdirSync11, readFileSync as readFileSync17, writeFileSync as writeFileSync10 } from "node:fs";
+import { join as join17 } from "node:path";
 var PARENT_MODEL_SCHEMA = "harness.parent-model.v1";
 function parentModelPath(root) {
-  return join16(projectStateDir(root), "parent-model.json");
+  return join17(projectStateDir(root), "parent-model.json");
 }
 function readFile(root) {
   const path = parentModelPath(root);
-  if (!existsSync15(path)) {
+  if (!existsSync16(path)) {
     return { schema: PARENT_MODEL_SCHEMA, bySession: {} };
   }
   try {
-    const parsed = JSON.parse(readFileSync16(path, "utf8"));
+    const parsed = JSON.parse(readFileSync17(path, "utf8"));
     if (parsed?.schema === PARENT_MODEL_SCHEMA && parsed.bySession) {
       return parsed;
     }
@@ -3180,8 +3471,8 @@ function readFile(root) {
 }
 function writeFile(root, file) {
   try {
-    mkdirSync10(projectStateDir(root), { recursive: true });
-    writeFileSync9(parentModelPath(root), `${JSON.stringify(file, null, 2)}
+    mkdirSync11(projectStateDir(root), { recursive: true });
+    writeFileSync10(parentModelPath(root), `${JSON.stringify(file, null, 2)}
 `, "utf8");
   } catch {}
 }
@@ -3600,26 +3891,26 @@ function formatAutopilotBlock(plan) {
 }
 
 // src/core/turn/turn.loop-counter.ts
-import { existsSync as existsSync16, mkdirSync as mkdirSync11, readFileSync as readFileSync17, writeFileSync as writeFileSync10 } from "node:fs";
-import { join as join17 } from "node:path";
+import { existsSync as existsSync17, mkdirSync as mkdirSync12, readFileSync as readFileSync18, writeFileSync as writeFileSync11 } from "node:fs";
+import { join as join18 } from "node:path";
 function loopPath(root, sessionKey) {
-  return join17(loopsDir(root), `${sanitizeSegment(sessionKey)}.json`);
+  return join18(loopsDir(root), `${sanitizeSegment(sessionKey)}.json`);
 }
 function readLoopState(root, sessionKey) {
   const path = loopPath(root, sessionKey);
-  if (!existsSync16(path)) {
+  if (!existsSync17(path)) {
     return null;
   }
   try {
-    return JSON.parse(readFileSync17(path, "utf8"));
+    return JSON.parse(readFileSync18(path, "utf8"));
   } catch {
     return null;
   }
 }
 function writeLoopState(root, state) {
   try {
-    mkdirSync11(loopsDir(root), { recursive: true });
-    writeFileSync10(loopPath(root, state.session_key), `${JSON.stringify(state, null, 2)}
+    mkdirSync12(loopsDir(root), { recursive: true });
+    writeFileSync11(loopPath(root, state.session_key), `${JSON.stringify(state, null, 2)}
 `, "utf8");
   } catch {}
 }
@@ -3644,16 +3935,16 @@ function effectiveLoopCount(event, capabilities) {
   return currentLoopCount(event.projectDir, event.sessionKey);
 }
 function bootStampPath(root, sessionKey) {
-  return join17(bootDir(root), sanitizeSegment(sessionKey));
+  return join18(bootDir(root), sanitizeSegment(sessionKey));
 }
 function markBooted(root, sessionKey) {
   const path = bootStampPath(root, sessionKey);
-  if (existsSync16(path)) {
+  if (existsSync17(path)) {
     return { alreadyBooted: true };
   }
   try {
-    mkdirSync11(bootDir(root), { recursive: true });
-    writeFileSync10(path, new Date().toISOString(), "utf8");
+    mkdirSync12(bootDir(root), { recursive: true });
+    writeFileSync11(path, new Date().toISOString(), "utf8");
   } catch {}
   return { alreadyBooted: false };
 }
@@ -3698,21 +3989,21 @@ function detectUntrustedRead(input) {
 }
 
 // src/core/untrusted/untrusted.store.ts
-import { existsSync as existsSync17, mkdirSync as mkdirSync12, rmSync as rmSync3, writeFileSync as writeFileSync11 } from "node:fs";
-import { join as join18 } from "node:path";
+import { existsSync as existsSync18, mkdirSync as mkdirSync13, rmSync as rmSync3, writeFileSync as writeFileSync12 } from "node:fs";
+import { join as join19 } from "node:path";
 function markerDir(root) {
-  return join18(projectStateDir(root), "untrusted");
+  return join19(projectStateDir(root), "untrusted");
 }
 function markerPath(root, sessionKey) {
-  return join18(markerDir(root), `${sanitizeSegment(sessionKey)}.marker`);
+  return join19(markerDir(root), `${sanitizeSegment(sessionKey)}.marker`);
 }
 function wasFramingInjected(root, sessionKey) {
-  return existsSync17(markerPath(root, sessionKey));
+  return existsSync18(markerPath(root, sessionKey));
 }
 function markFramingInjected(root, sessionKey) {
   try {
-    mkdirSync12(markerDir(root), { recursive: true });
-    writeFileSync11(markerPath(root, sessionKey), new Date().toISOString());
+    mkdirSync13(markerDir(root), { recursive: true });
+    writeFileSync12(markerPath(root, sessionKey), new Date().toISOString());
   } catch {}
 }
 function clearFramingMarker(root, sessionKey) {
@@ -3858,6 +4149,9 @@ var coreFacade = {
   },
   policy: {
     guardPolicySurface,
+    checkPolicyBaseline,
+    recordPolicyBaseline,
+    refreshPolicyBaselines,
     operatorBootstrapLines,
     loadPolicy,
     isUnderCodePaths,
@@ -3958,32 +4252,32 @@ function resolveProjectRoot() {
   return process.env.TLC_PROJECT_DIR ?? process.cwd();
 }
 function modeFilePath(root) {
-  return join19(projectStateDir(root), "harness-mode");
+  return join20(projectStateDir(root), "harness-mode");
 }
 function grindFlagPath(root) {
-  return join19(flagsDir(root), "grind-on");
+  return join20(flagsDir(root), "grind-on");
 }
 function skipFlagPath(root) {
-  return join19(flagsDir(root), "skip-verify");
+  return join20(flagsDir(root), "skip-verify");
 }
 function headsDownFlagPath(root) {
-  return join19(flagsDir(root), "heads-down");
+  return join20(flagsDir(root), "heads-down");
 }
 function pairedFlagPath(root) {
-  return join19(flagsDir(root), "paired");
+  return join20(flagsDir(root), "paired");
 }
 function ensureFlagsDir(root) {
-  mkdirSync13(flagsDir(root), { recursive: true });
+  mkdirSync14(flagsDir(root), { recursive: true });
 }
 function modeOrigin(root) {
   const modeFile = modeFilePath(root);
-  if (existsSync18(modeFile)) {
-    const raw = readFileSync18(modeFile, "utf8").trim().toLowerCase();
+  if (existsSync19(modeFile)) {
+    const raw = readFileSync19(modeFile, "utf8").trim().toLowerCase();
     if (raw === "solo" || raw === "paired" || raw === "heads-down") {
       return "file";
     }
   }
-  if (existsSync18(headsDownFlagPath(root)) || existsSync18(pairedFlagPath(root))) {
+  if (existsSync19(headsDownFlagPath(root)) || existsSync19(pairedFlagPath(root))) {
     return "flag";
   }
   return "config";
@@ -3998,7 +4292,7 @@ function grindOn(root) {
   return coreFacade.policy.loadPolicy(root).grind.enabled;
 }
 function gatesPaused(root) {
-  return existsSync18(skipFlagPath(root));
+  return existsSync19(skipFlagPath(root));
 }
 function statusText(root) {
   const report = statusJson(root);
@@ -4032,24 +4326,28 @@ function setGrind(root, on) {
   ensureFlagsDir(root);
   const path = grindFlagPath(root);
   if (on) {
-    writeFileSync12(path, "");
+    writeFileSync13(path, "");
+    coreFacade.policy.refreshPolicyBaselines(root);
     return "grind ON — stop hook will lint/test and auto-retry on failure";
   }
-  if (existsSync18(path)) {
+  if (existsSync19(path)) {
     rmSync4(path);
   }
+  coreFacade.policy.refreshPolicyBaselines(root);
   return "grind OFF — no auto fix loops";
 }
 function setPaused(root, on) {
   ensureFlagsDir(root);
   const path = skipFlagPath(root);
   if (on) {
-    writeFileSync12(path, "");
+    writeFileSync13(path, "");
+    coreFacade.policy.refreshPolicyBaselines(root);
     return "gates PAUSED — stop checks disabled until `tlc harness resume`";
   }
-  if (existsSync18(path)) {
+  if (existsSync19(path)) {
     rmSync4(path);
   }
+  coreFacade.policy.refreshPolicyBaselines(root);
   return "gates ACTIVE again";
 }
 function setMode(root, raw) {
@@ -4058,8 +4356,9 @@ function setMode(root, raw) {
     throw new UsageError("mode must be: solo | paired | focus");
   }
   ensureFlagsDir(root);
-  writeFileSync12(modeFilePath(root), `${mapped}
+  writeFileSync13(modeFilePath(root), `${mapped}
 `);
+  coreFacade.policy.refreshPolicyBaselines(root);
   if (mapped === "heads-down") {
     return "mode focus — max autonomy + grind ON";
   }
@@ -4067,6 +4366,49 @@ function setMode(root, raw) {
     return "mode paired — explain more; check in before big moves";
   }
   return "mode solo — normal day-to-day (grind not forced by mode)";
+}
+var GATE_FIELDS = {
+  "test-command": "test",
+  "lint-command": "lint"
+};
+function resolveExecutable(name, env = process.env, platform = process.platform) {
+  const extensions = platform === "win32" ? (env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";") : [""];
+  const candidates = (base) => [base, ...extensions.map((ext) => `${base}${ext}`)];
+  if (name.includes("/") || name.includes("\\")) {
+    return candidates(name).find((candidate) => existsSync19(candidate)) ?? null;
+  }
+  for (const dir of (env.PATH ?? "").split(delimiter)) {
+    if (!dir) {
+      continue;
+    }
+    const found = candidates(join20(dir, name)).find((candidate) => existsSync19(candidate));
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
+function setGateCommand(root, field, argv, interactive) {
+  if (argv.length === 0) {
+    throw new UsageError(`usage: tlc harness gate ${field}-command <command> [args...]`);
+  }
+  if (!interactive) {
+    throw new UsageError(`tlc harness gate ${field}-command needs an interactive terminal — harness policy is the operator's to set, not a script's.`);
+  }
+  const binary = argv[0];
+  if (resolveExecutable(binary) === null) {
+    throw new UsageError(`\`${binary}\` was not found on PATH, and a gate command that cannot run is a config fault (AD-021).`);
+  }
+  const path = projectConfigPath(root);
+  const parsed = existsSync19(path) ? JSON.parse(readFileSync19(path, "utf8")) : {};
+  const grind = { ...parsed.grind ?? {} };
+  grind[field === "test" ? "testCommand" : "lintCommand"] = argv;
+  parsed.grind = grind;
+  mkdirSync14(join20(root, ".tlc", "harness"), { recursive: true });
+  writeFileSync13(path, `${JSON.stringify(parsed, null, 2)}
+`, "utf8");
+  coreFacade.policy.refreshPolicyBaselines(root);
+  return `grind.${field}Command = ${JSON.stringify(argv)}`;
 }
 function helpText() {
   return `tlc harness — agent steering (gates / follow-up / handoff / policy)
@@ -4088,6 +4430,7 @@ TOPICS
 
 CONTROL
   tlc harness grind [on|off]   tlc harness pause | resume   tlc harness mode solo|paired|focus
+  tlc harness gate test-command <cmd> [args...]   tlc harness gate lint-command <cmd> [args...]
 
 MEASURE
   tlc harness obs live|events|report|prune
@@ -4123,10 +4466,10 @@ function resolveHarnessRoot() {
   }
 }
 function execBinPath() {
-  return join19(resolveHarnessRoot(), "bin", "tlc-exec");
+  return join20(resolveHarnessRoot(), "bin", "tlc-exec");
 }
 function buildBinPath() {
-  return join19(resolveHarnessRoot(), "bin", "tlc-build");
+  return join20(resolveHarnessRoot(), "bin", "tlc-build");
 }
 function route(args) {
   const cmd = (args[0] ?? "status").toLowerCase();
@@ -4167,6 +4510,13 @@ function route(args) {
         throw new UsageError("usage: tlc harness mode <solo|paired|focus>");
       }
       return { kind: "mode", value: modeArg };
+    }
+    case "gate": {
+      const field = GATE_FIELDS[(args[1] ?? "").toLowerCase()];
+      if (!field) {
+        throw new UsageError("usage: tlc harness gate <test-command|lint-command> <command> [args...]");
+      }
+      return { kind: "gate", field, argv: args.slice(2) };
     }
     case "prices": {
       const sub = (args[1] ?? "").toLowerCase();
@@ -4255,12 +4605,12 @@ function runUpdate(root) {
   const dest = resolveHarnessRoot();
   const home = runtimeHome();
   console.log(`update: runtime → ${dest}`);
-  if (!existsSync18(join19(dest, "bin", "tlc-exec.mjs"))) {
+  if (!existsSync19(join20(dest, "bin", "tlc-exec.mjs"))) {
     console.error(`update: missing install at ${home}`);
     console.error("update: install once with the curl/irm installer from the README, then retry.");
     process.exit(1);
   }
-  if (existsSync18(join19(dest, ".git"))) {
+  if (existsSync19(join20(dest, ".git"))) {
     const fetch = spawnSync("git", ["-C", dest, "fetch", "origin"], {
       stdio: "inherit",
       env: process.env
@@ -4290,11 +4640,11 @@ function runUpdate(root) {
   } else {
     console.log("update: no .git at runtime path — skipped pull (linked checkout?).");
   }
-  const binDir = process.env.TLC_BIN_DIR || join19(homedir3(), ".local", "bin");
-  mkdirSync13(binDir, { recursive: true });
-  mkdirSync13(join19(home, "..", "skills"), { recursive: true });
+  const binDir = process.env.TLC_BIN_DIR || join20(homedir3(), ".local", "bin");
+  mkdirSync14(binDir, { recursive: true });
+  mkdirSync14(join20(home, "..", "skills"), { recursive: true });
   if (process.platform === "win32") {
-    const installPs1 = join19(dest, "install.ps1");
+    const installPs1 = join20(dest, "install.ps1");
     const r = spawnSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", installPs1], {
       stdio: "inherit",
       env: { ...process.env, TLC_HOME: home },
@@ -4304,17 +4654,17 @@ function runUpdate(root) {
       process.exit(r.status ?? 1);
     }
   } else {
-    const tlcBin = join19(dest, "bin", "tlc");
-    const skillSrc = join19(dest, "skills", "harness-init");
-    const skillDest = join19(home, "..", "skills", "harness-init");
-    spawnSync("ln", ["-sfn", tlcBin, join19(binDir, "tlc")], { stdio: "inherit" });
-    if (!existsSync18(skillSrc)) {
+    const tlcBin = join20(dest, "bin", "tlc");
+    const skillSrc = join20(dest, "skills", "harness-init");
+    const skillDest = join20(home, "..", "skills", "harness-init");
+    spawnSync("ln", ["-sfn", tlcBin, join20(binDir, "tlc")], { stdio: "inherit" });
+    if (!existsSync19(skillSrc)) {
       console.error(`update: missing skill at ${skillSrc}`);
       process.exit(1);
     }
     spawnSync("ln", ["-sfn", skillSrc, skillDest], { stdio: "inherit" });
     console.log(`update: skill → ${skillDest}`);
-    const hooks = spawnSync(process.execPath, [join19(dest, "bin", "write-user-hooks.mjs")], {
+    const hooks = spawnSync(process.execPath, [join20(dest, "bin", "write-user-hooks.mjs")], {
       stdio: "inherit",
       env: { ...process.env, TLC_HOME: home }
     });
@@ -4322,7 +4672,7 @@ function runUpdate(root) {
       console.log("update: hooks unchanged (merge manually or: node bin/write-user-hooks.mjs --force)");
     }
   }
-  if (existsSync18(buildBinPath())) {
+  if (existsSync19(buildBinPath())) {
     const build = spawnSync(buildBinPath(), [], { stdio: "inherit", env: process.env });
     if ((build.status ?? 1) !== 0) {
       console.log("update: build skipped/failed — ok if dist/ already matches the pulled revision");
@@ -4414,6 +4764,17 @@ function main(argv) {
         throw error;
       }
       break;
+    case "gate":
+      try {
+        console.log(setGateCommand(root, action.field, action.argv, process.stdin.isTTY === true));
+      } catch (error) {
+        if (error instanceof UsageError) {
+          console.error(error.message);
+          process.exit(1);
+        }
+        throw error;
+      }
+      break;
     case "prices-help":
       console.log(pricesHelpText());
       break;
@@ -4442,10 +4803,12 @@ export {
   setPaused,
   setMode,
   setGrind,
+  setGateCommand,
   runTestSteps,
   route,
   resolveProjectRoot,
   resolveHarnessRoot,
+  resolveExecutable,
   readMode,
   pricesHelpText,
   pairedFlagPath,
