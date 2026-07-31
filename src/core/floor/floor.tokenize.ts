@@ -20,6 +20,43 @@ function isExpansion(text: string): boolean {
   return text.includes("$") || text.includes("`");
 }
 
+// hazard: a heredoc body is data being written, not a command list. Tokenizing it invents segments whose
+// head verb never runs, and its quotes make the whole command look unbalanced. It is separated here rather
+// than discarded, because `python3 - <<PY` makes that body the program — a caller that never sees it cannot
+// tell a document from a script.
+export function splitHeredocs(command: string): { stripped: string; bodies: string[] } {
+  const heredoc = /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/;
+  const bodies: string[] = [];
+  let rest = command;
+  let stripped = "";
+  for (;;) {
+    const match = heredoc.exec(rest);
+    if (!match) {
+      stripped += rest;
+      break;
+    }
+    const bodyStart = rest.indexOf("\n", match.index + match[0].length);
+    stripped += rest.slice(0, match.index);
+    if (bodyStart === -1) {
+      break;
+    }
+    const terminator = new RegExp(`^\\s*${match[2] as string}\\s*$`, "m");
+    const body = rest.slice(bodyStart + 1);
+    const end = terminator.exec(body);
+    if (!end) {
+      bodies.push(body);
+      break;
+    }
+    bodies.push(body.slice(0, end.index));
+    rest = body.slice(end.index + end[0].length);
+  }
+  return { stripped, bodies };
+}
+
+export function heredocBodies(command: string): string[] {
+  return splitHeredocs(command).bodies;
+}
+
 // invariant: this splits words, it does not evaluate them. Anything it cannot split with confidence
 // is reported as opaque so callers can refuse rather than guess — a wrong split must never read as
 // a safe command.
@@ -48,30 +85,7 @@ export function tokenizeShell(command: string): ShellSegment[] {
     words = [];
   }
 
-  // hazard: a heredoc body is data being written, not a command list. Tokenizing it invents
-  // segments whose head verb never runs, and its quotes make the whole command look unbalanced.
-  const heredoc = /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/;
-  let rest = command;
-  let stripped = "";
-  for (;;) {
-    const match = heredoc.exec(rest);
-    if (!match) {
-      stripped += rest;
-      break;
-    }
-    const bodyStart = rest.indexOf("\n", match.index + match[0].length);
-    stripped += rest.slice(0, match.index);
-    if (bodyStart === -1) {
-      break;
-    }
-    const terminator = new RegExp(`^\\s*${match[2] as string}\\s*$`, "m");
-    const body = rest.slice(bodyStart + 1);
-    const end = terminator.exec(body);
-    if (!end) {
-      break;
-    }
-    rest = body.slice(end.index + end[0].length);
-  }
+  const { stripped } = splitHeredocs(command);
 
   for (let index = 0; index < stripped.length; index += 1) {
     const char = stripped[index] as string;

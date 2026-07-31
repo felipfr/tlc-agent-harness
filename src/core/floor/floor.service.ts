@@ -1,13 +1,16 @@
 import type { Decision } from "../../contracts/decision.ts";
 import { isInside, isScratch, isSecretPath, resolveTarget } from "./floor.paths.ts";
+import { checkPolicySurface } from "./floor.policy-surface.ts";
 import { type ShellSegment, type ShellWord, tokenizeShell } from "./floor.tokenize.ts";
+import { verbOf } from "./floor.verb.ts";
 
 export type FloorRule =
   | "machine-control"
   | "secret-access"
   | "unprovable-destruction"
   | "history-rewrite"
-  | "outside-project-destruction";
+  | "outside-project-destruction"
+  | "policy-surface-write";
 
 export type FloorInput = {
   projectDir: string;
@@ -20,7 +23,6 @@ export type FloorInput = {
 const DESTRUCTIVE_VERBS = new Set(["dd", "rm", "rmdir", "shred", "truncate"]);
 const MACHINE_VERBS = new Set(["halt", "poweroff", "reboot", "shutdown"]);
 const READER_VERBS = new Set(["base64", "cat", "head", "less", "more", "od", "strings", "tail", "xxd"]);
-const WRAPPERS = new Set(["command", "doas", "env", "nice", "nohup", "sudo", "time", "xargs"]);
 const READING_TOOLS = new Set(["Read", "Edit", "MultiEdit", "NotebookEdit"]);
 const EXPANDING_VERBS = new Set([".", "eval", "source"]);
 const SHELLS = new Set(["ash", "bash", "dash", "fish", "ksh", "sh", "zsh"]);
@@ -42,23 +44,6 @@ function reason(rule: FloorRule, detail: string): string {
 
 function denial(rule: FloorRule, detail: string, note: string): Decision {
   return { kind: "deny", reason: reason(rule, detail), userNote: `Floor rule ${rule}: ${note}` };
-}
-
-function verbOf(words: ShellWord[]): { verb: string; args: ShellWord[] } | null {
-  let index = 0;
-  while (index < words.length) {
-    const word = words[index];
-    if (!word) {
-      return null;
-    }
-    // why: `env FOO=bar cmd` and `sudo -n cmd` both delay the real verb; flags and assignments are skipped.
-    if (WRAPPERS.has(word.text) || word.text.startsWith("-") || word.text.includes("=")) {
-      index += 1;
-      continue;
-    }
-    return { verb: word.text.split("/").pop() ?? word.text, args: words.slice(index + 1) };
-  }
-  return null;
 }
 
 function isMkfs(verb: string): boolean {
@@ -147,6 +132,17 @@ function checkShell(input: FloorInput): Decision {
         );
       }
     }
+  }
+
+  // hazard: the guard that used to defend this surface keyed off tool names, so a single shell line went
+  // around it. The rule belongs here, where the decision is made before any policy is read.
+  const surface = checkPolicySurface(input.projectDir, command, segments);
+  if (surface.kind === "deny") {
+    return denial(
+      "policy-surface-write",
+      `${surface.detail} Set a gate command with \`tlc harness gate test-command\` or \`gate lint-command\`, and run policy changes from your own terminal rather than from inside this session.`,
+      surface.note,
+    );
   }
 
   return checkShellSecrets(segments, input.projectDir);
