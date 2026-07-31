@@ -1,7 +1,7 @@
 ---
 type: Aggregate
 title: "Decisions index"
-description: "Index of every architectural decision (AD-001…AD-020) made while building the multi-provider harness."
+description: "Index of every architectural decision (AD-001…AD-022) made while building the multi-provider harness."
 tags: [decisions, index]
 timestamp: "2026-07-29"
 ---
@@ -36,5 +36,6 @@ Handoff section and a link back to this index.
 | [AD-019](/decisions/ad-019.md) | A resource is identified by what it resolves to, and a declared capability must be read where it matters | active |
 | [AD-020](/decisions/ad-020.md) | One resolution for the install path, one source for posture, and a config that only advertises what it reads | active |
 | [AD-021](/decisions/ad-021.md) | A gate command that never resolved is a config fault, and a recipe runner does not receive file arguments | active |
+| [AD-022](/decisions/ad-022.md) | The policy surface is a floor rule, detection sits behind interception, and the operator/agent line is structural | active |
 
 Related: [/architecture.md](/architecture.md), [/concepts.md](/concepts.md), [/providers/index.md](/providers/index.md).

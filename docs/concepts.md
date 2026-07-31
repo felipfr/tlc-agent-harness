@@ -46,6 +46,34 @@ style stays consistent without a turn spent on it. Trade-off: a wrong command fi
 `tlc harness pause` disables stop checks (grind + ship challenge). Use when exploring or mid-refactor.
 `tlc harness resume` turns them back on.
 
+Run both from your own terminal. Inside an agent session they are denied by the floor rule
+`policy-surface-write`: policy is the operator's to change, and a stop check the agent can switch off is not a
+stop check ([/decisions/ad-022.md](/decisions/ad-022.md)).
+
+## gate commands
+
+`tlc harness gate test-command <cmd> [args...]` and `tlc harness gate lint-command <cmd> [args...]` set
+`grind.testCommand` and `grind.lintCommand` in the project policy. This is the only supported way to change
+those fields — editing `config.json` by hand is fine for you as the operator, but no agent route reaches it.
+
+```bash
+tlc harness gate test-command node --test 'src/**/__test__/*.test.ts'
+tlc harness gate lint-command npx biome check .
+```
+
+Each refuses without writing when the argv is empty, when the first element does not resolve on `PATH` (a gate
+command that cannot run is a config fault, AD-021), or when stdin is not a terminal.
+
+## policy integrity
+
+Every source the policy loader reads — the project config, the runtime config, `harness-mode` and the flag
+files — is hashed when a session starts. If one changes during that session without a `tlc harness` command
+behind it, the next tool call is refused and the changed path is named. The check has no config switch, for
+the same reason the floor does not: a detector the detected change can disable is not a detector.
+
+Editing the config between sessions never triggers it. Baselines are per session, so concurrent sessions do
+not interfere, and every `tlc harness` mutation re-records them.
+
 ## shipGate
 
 `shipGate.enabled`. Ship challenges fire **only** after an explicit protocol line in the agent response:
