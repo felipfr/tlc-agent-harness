@@ -411,3 +411,70 @@ test("a read-only subagent type attempting an allowed tool is allowed", async ()
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("a shell write to the policy surface is denied by the floor", async () => {
+  const root = tempRoot();
+  try {
+    const outcome = await runHandler(
+      toolBeforeHandler,
+      stdinOf(claudeShell(root, "python3 -c \"open('.tlc/harness/config.json','w')\"")),
+    );
+    assert.equal(outcome.decision.kind, "deny");
+    assert.match(
+      outcome.decision.kind === "deny" ? outcome.decision.reason : "",
+      /rule=policy-surface-write/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the mutating harness CLI is denied from inside a session", async () => {
+  const root = tempRoot();
+  try {
+    const outcome = await runHandler(toolBeforeHandler, stdinOf(claudeShell(root, "tlc harness pause")));
+    assert.equal(outcome.decision.kind, "deny");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// invariant: the integrity check is not policy-gated. This policy switches every tunable rail off and the
+// divergence is still refused — otherwise the mutation it detects could switch off its own detector.
+test("policy divergence is denied even under a policy with every rail off", async () => {
+  const root = tempRoot();
+  try {
+    writeProjectPolicy(root, {
+      grind: { enabled: false },
+      shipGate: { enabled: false },
+      shell: { catastrophicAsk: false, stallDetection: false },
+      untrustedContent: { enabled: false },
+      planGate: { enabled: false },
+      comments: { enabled: false },
+      subagents: { enforceAllowlist: false, requireModel: false },
+    });
+    coreFacade.policy.recordPolicyBaseline(root, "claude-sess-1");
+    writeProjectPolicy(root, { grind: { enabled: false }, mode: "solo" });
+
+    const outcome = await runHandler(toolBeforeHandler, stdinOf(claudeTool(root)));
+    assert.equal(outcome.decision.kind, "deny");
+    assert.match(
+      outcome.decision.kind === "deny" ? outcome.decision.reason : "",
+      /changed during this session/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an unchanged policy lets the tool through", async () => {
+  const root = tempRoot();
+  try {
+    writeProjectPolicy(root, { grind: { enabled: false } });
+    coreFacade.policy.recordPolicyBaseline(root, "claude-sess-1");
+    const outcome = await runHandler(toolBeforeHandler, stdinOf(claudeTool(root)));
+    assert.equal(outcome.decision.kind, "allow");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

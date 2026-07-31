@@ -94,6 +94,14 @@ export const toolBeforeHandler: Handler = (
     return floor;
   }
 
+  // invariant: unconditional, for the same reason the floor is. This detects a policy that changed without
+  // a harness command, so reading a policy field to decide whether to look would let the mutation switch
+  // off its own detector.
+  const integrity = coreFacade.policy.checkPolicyBaseline(event.projectDir, event.sessionKey);
+  if (integrity.kind !== "allow") {
+    return integrity;
+  }
+
   switch (event.event) {
     case "shell.before":
       return handleShellBefore(event, ctx);

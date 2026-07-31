@@ -46,6 +46,11 @@ import { getRollup, pruneObs, pruneSpool } from "./observability/observability.s
 import { detectDeviations, detectPlan } from "./plan/plan.detect.ts";
 import { evaluatePlanGate, planVerdict } from "./plan/plan.service.ts";
 import { guardPolicySurface } from "./policy/policy.guard.ts";
+import {
+  checkPolicyBaseline,
+  recordPolicyBaseline,
+  refreshPolicyBaselines,
+} from "./policy/policy.integrity.ts";
 import { isUnderCodePaths, loadPolicy } from "./policy/policy.loader.ts";
 import { operatorBootstrapLines } from "./policy/policy.operator.ts";
 import { forProvider } from "./policy/policy.types.ts";
@@ -175,6 +180,9 @@ export const coreFacade = {
   },
   policy: {
     guardPolicySurface,
+    checkPolicyBaseline,
+    recordPolicyBaseline,
+    refreshPolicyBaselines,
     operatorBootstrapLines,
     loadPolicy,
     isUnderCodePaths,

@@ -13,6 +13,10 @@ export const sessionStartHandler: Handler = async (
   const session = sessionIdFromKey(event);
   const root = event.projectDir;
 
+  // why: recorded before the already-booted return so a resumed session has a baseline too. The check
+  // records lazily when one is missing, so this is robustness rather than correctness.
+  coreFacade.policy.recordPolicyBaseline(root, event.sessionKey);
+
   const boot = coreFacade.turn.markBooted(root, event.sessionKey);
   if (boot.alreadyBooted) {
     return { kind: "context", text: "", env: { HARNESS_ACTIVE: "1" } };
