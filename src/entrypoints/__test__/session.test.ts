@@ -1,11 +1,19 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import type { HarnessLesson } from "../../core/index.ts";
 import { coreFacade } from "../../core/index.ts";
-import { presenceDir, projectConfigPath } from "../../platform/paths.ts";
+import { policyBaselineDir, presenceDir, projectConfigPath } from "../../platform/paths.ts";
 import { CONTEXT_BUDGET_CHARS, runHandler } from "../run.ts";
 import { sessionEndHandler } from "../session-end.ts";
 import { sessionStartHandler } from "../session-start.ts";
@@ -166,6 +174,27 @@ test("a second session.start for the same sessionKey is idempotent and skips re-
     if (second.decision.kind === "context") {
       assert.equal(second.decision.text, "");
     }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("session.start records the policy baseline, so a mid-session change is detectable", async () => {
+  const root = tempRoot();
+  try {
+    mkdirSync(dirname(projectConfigPath(root)), { recursive: true });
+    writeFileSync(projectConfigPath(root), JSON.stringify({ version: 1 }), "utf8");
+    await runHandler(sessionStartHandler, stdinOf(cursorStart(root)));
+
+    assert.ok(existsSync(policyBaselineDir(root)), "no baseline directory was written");
+    const [recorded] = readdirSync(policyBaselineDir(root));
+    assert.ok(recorded, "no baseline file was written for the session");
+
+    // why: the baseline only earns its place if a later change is caught. Asserting the file exists would
+    // pass on an empty fingerprint.
+    writeFileSync(projectConfigPath(root), JSON.stringify({ version: 1, mode: "solo" }), "utf8");
+    const sessionKey = (recorded as string).replace(/\.json$/, "");
+    assert.equal(coreFacade.policy.checkPolicyBaseline(root, sessionKey).kind, "deny");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
