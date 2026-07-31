@@ -24,9 +24,16 @@ function isExpansion(text: string): boolean {
 // head verb never runs, and its quotes make the whole command look unbalanced. It is separated here rather
 // than discarded, because `python3 - <<PY` makes that body the program — a caller that never sees it cannot
 // tell a document from a script.
-export function splitHeredocs(command: string): { stripped: string; bodies: string[] } {
+/**
+ * A heredoc body, paired with the command text that preceded its `<<TAG` marker. The prefix is what
+ * identifies the verb the body is fed to — without it, a body can only be attributed to the command as a
+ * whole, which mistakes `cat <<EOF ... ; node x` for a program handed to node.
+ */
+export type HeredocChunk = { body: string; prefix: string };
+
+export function splitHeredocs(command: string): { stripped: string; heredocs: HeredocChunk[] } {
   const heredoc = /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/;
-  const bodies: string[] = [];
+  const heredocs: HeredocChunk[] = [];
   let rest = command;
   let stripped = "";
   for (;;) {
@@ -36,6 +43,7 @@ export function splitHeredocs(command: string): { stripped: string; bodies: stri
       break;
     }
     const bodyStart = rest.indexOf("\n", match.index + match[0].length);
+    const prefix = stripped + rest.slice(0, match.index);
     stripped += rest.slice(0, match.index);
     if (bodyStart === -1) {
       break;
@@ -44,17 +52,17 @@ export function splitHeredocs(command: string): { stripped: string; bodies: stri
     const body = rest.slice(bodyStart + 1);
     const end = terminator.exec(body);
     if (!end) {
-      bodies.push(body);
+      heredocs.push({ body, prefix });
       break;
     }
-    bodies.push(body.slice(0, end.index));
+    heredocs.push({ body: body.slice(0, end.index), prefix });
     rest = body.slice(end.index + end[0].length);
   }
-  return { stripped, bodies };
+  return { stripped, heredocs };
 }
 
-export function heredocBodies(command: string): string[] {
-  return splitHeredocs(command).bodies;
+export function heredocChunks(command: string): HeredocChunk[] {
+  return splitHeredocs(command).heredocs;
 }
 
 // invariant: this splits words, it does not evaluate them. Anything it cannot split with confidence

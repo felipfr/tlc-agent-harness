@@ -2,7 +2,13 @@ import { relative, resolve } from "node:path";
 import { projectConfigPath, projectStateDir } from "../../platform/paths.ts";
 import { normalizeSeparators } from "../../platform/sanitize.ts";
 import { isInside, isPolicySurface, resolveTarget } from "./floor.paths.ts";
-import { heredocBodies, type ShellSegment, type ShellWord } from "./floor.tokenize.ts";
+import {
+  type HeredocChunk,
+  heredocChunks,
+  type ShellSegment,
+  type ShellWord,
+  tokenizeShell,
+} from "./floor.tokenize.ts";
 import { firstOperand, verbOf } from "./floor.verb.ts";
 
 export type PolicySurfaceVerdict = { kind: "allow" } | { kind: "deny"; detail: string; note: string };
@@ -231,25 +237,24 @@ function checkSegment(projectDir: string, segment: ShellSegment): PolicySurfaceV
 // The body only matters when something executes it: `git commit -F -` and `cat <<EOF` receive heredocs that
 // merely name this path, which is what writing about the rule looks like. A heredoc that *writes* the
 // surface through a redirect or a path argument is caught by the per-segment rules instead.
-function checkHeredocs(
-  projectDir: string,
-  heredocs: string[],
-  segments: ShellSegment[],
-): PolicySurfaceVerdict {
+function checkHeredocs(projectDir: string, heredocs: HeredocChunk[]): PolicySurfaceVerdict {
   const prefix = harnessPrefix(projectDir);
-  if (!heredocs.some((body) => normalizeSeparators(body).includes(prefix))) {
-    return ALLOW;
-  }
-  const executed = segments.some((segment) => {
-    const head = verbOf(segment.words);
-    return head !== null && EXECUTES_STDIN.has(head.verb);
-  });
-  return executed
-    ? deny(
-        "a heredoc in this command names the harness policy surface and is fed to an interpreter, so the body is a program rather than a document.",
+  for (const chunk of heredocs) {
+    if (!normalizeSeparators(chunk.body).includes(prefix)) {
+      continue;
+    }
+    // hazard: the body belongs to the verb immediately before its marker, not to the command. Asking
+    // whether *any* segment runs an interpreter denied `cat >> f <<EOF ... ; node --test`, where the body
+    // goes to cat and node is a separate command.
+    const owner = verbOf(tokenizeShell(chunk.prefix).at(-1)?.words ?? []);
+    if (owner !== null && EXECUTES_STDIN.has(owner.verb)) {
+      return deny(
+        `a heredoc fed to \`${owner.verb}\` names the harness policy surface, so the body is a program rather than a document.`,
         "heredoc program naming the policy surface",
-      )
-    : ALLOW;
+      );
+    }
+  }
+  return ALLOW;
 }
 
 // invariant: reads no policy. It answers from paths, head verbs and the command's own text, so the file it
@@ -265,5 +270,5 @@ export function checkPolicySurface(
       return verdict;
     }
   }
-  return checkHeredocs(projectDir, heredocBodies(command), segments);
+  return checkHeredocs(projectDir, heredocChunks(command));
 }

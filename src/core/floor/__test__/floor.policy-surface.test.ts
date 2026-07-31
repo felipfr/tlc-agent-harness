@@ -153,6 +153,13 @@ test("a heredoc fed to something that does not execute it is a document", () => 
   assertAllowed(`gh pr create --body-file - <<'EOF'\ntouches ${CONFIG}\nEOF`);
 });
 
+test("a heredoc belongs to the verb before its marker, not to the whole command", () => {
+  // hazard: this exact command was denied while writing this feature's own tests — the body goes to `cat`,
+  // and `node` is a separate command that never sees it.
+  assertAllowed(`cat >> src/x.test.ts <<'T'\nassert(${CONFIG})\nT\nnode --test 'src/**/*.test.ts'`);
+  assertDenied(`cat /tmp/a; python3 - <<'PY'\nopen('${CONFIG}','w')\nPY`);
+});
+
 test("a heredoc that writes the surface is still caught by the path rules", () => {
   // why: dropping the interpreter check for documents does not open the write route — the redirect and
   // path-argument rules see the target without ever reading the body.
