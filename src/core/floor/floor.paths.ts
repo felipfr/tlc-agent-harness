@@ -1,5 +1,7 @@
 import { homedir, tmpdir } from "node:os";
 import { basename, isAbsolute, relative, resolve, sep } from "node:path";
+import { flagsDir, projectConfigPath, projectStateDir } from "../../platform/paths.ts";
+import { normalizeSeparators } from "../../platform/sanitize.ts";
 
 export function expandHome(text: string, home = homedir()): string {
   if (text === "~") {
@@ -22,6 +24,17 @@ export function isInside(parent: string, child: string): boolean {
 // concern even though it sits outside the project.
 export function isScratch(target: string, tmp = tmpdir()): boolean {
   return isInside(tmp, target);
+}
+
+// invariant: the policy surface is defined here, next to the floor's other path predicates, because the
+// floor decides before any policy is read. Defining it inside the policy module would point the dependency
+// backwards — against the order the two actually run in.
+export function isPolicySurface(projectDir: string, filePath: string): boolean {
+  const target = normalizeSeparators(relative(projectDir, filePath) || filePath);
+  const config = normalizeSeparators(relative(projectDir, projectConfigPath(projectDir)));
+  const flags = normalizeSeparators(relative(projectDir, flagsDir(projectDir)));
+  const state = normalizeSeparators(relative(projectDir, projectStateDir(projectDir)));
+  return target === config || target.startsWith(`${flags}/`) || target.startsWith(`${state}/`);
 }
 
 const SECRET_HOME_DIRS = [".ssh", ".aws", ".kube", ".gnupg", ".docker", ".config/gh", ".config/gcloud"];

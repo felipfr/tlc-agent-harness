@@ -1,17 +1,9 @@
-import { relative } from "node:path";
 import type { Decision } from "../../contracts/decision.ts";
-import { flagsDir, projectConfigPath, projectStateDir } from "../../platform/paths.ts";
-import { normalizeSeparators } from "../../platform/sanitize.ts";
+import { isPolicySurface } from "../floor/floor.paths.ts";
+
+export { isPolicySurface };
 
 const WRITE_TOOLS = new Set(["Edit", "Write", "Delete", "MultiEdit", "NotebookEdit"]);
-
-export function isPolicySurface(projectDir: string, filePath: string): boolean {
-  const target = normalizeSeparators(relative(projectDir, filePath) || filePath);
-  const config = normalizeSeparators(relative(projectDir, projectConfigPath(projectDir)));
-  const flags = normalizeSeparators(relative(projectDir, flagsDir(projectDir)));
-  const state = normalizeSeparators(relative(projectDir, projectStateDir(projectDir)));
-  return target === config || target.startsWith(`${flags}/`) || target.startsWith(`${state}/`);
-}
 
 export function guardPolicySurface(args: {
   projectDir: string;
