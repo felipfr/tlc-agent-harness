@@ -1,6 +1,12 @@
 import { homedir, tmpdir } from "node:os";
 import { basename, isAbsolute, relative, resolve, sep } from "node:path";
-import { flagsDir, projectConfigPath, projectStateDir } from "../../platform/paths.ts";
+import {
+  flagsDir,
+  projectConfigPath,
+  projectStateDir,
+  runtimeHome,
+  runtimeStateDir,
+} from "../../platform/paths.ts";
 import { normalizeSeparators } from "../../platform/sanitize.ts";
 
 export function expandHome(text: string, home = homedir()): string {
@@ -26,10 +32,21 @@ export function isScratch(target: string, tmp = tmpdir()): boolean {
   return isInside(tmp, target);
 }
 
+// hazard: the runtime config is merged by `loadPolicy` under the project one, so a field the project does
+// not set is decided there — for every repository on the machine. Guarding only the project paths left
+// `echo '{}' > ~/.tlc/harness/config.json` allowed, which is the same defect one directory up.
+export function isRuntimePolicySurface(filePath: string): boolean {
+  const target = resolve(filePath);
+  return target === resolve(runtimeHome(), "config.json") || isInside(runtimeStateDir(), target);
+}
+
 // invariant: the policy surface is defined here, next to the floor's other path predicates, because the
 // floor decides before any policy is read. Defining it inside the policy module would point the dependency
 // backwards — against the order the two actually run in.
 export function isPolicySurface(projectDir: string, filePath: string): boolean {
+  if (isRuntimePolicySurface(filePath)) {
+    return true;
+  }
   const target = normalizeSeparators(relative(projectDir, filePath) || filePath);
   const config = normalizeSeparators(relative(projectDir, projectConfigPath(projectDir)));
   const flags = normalizeSeparators(relative(projectDir, flagsDir(projectDir)));

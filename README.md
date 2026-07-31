@@ -67,7 +67,7 @@ them. Every denial names its rule.
 | `secret-access` | A read that would pull `.env`, `~/.ssh`, `~/.aws`, `*.pem` or similar into the transcript |
 | `history-rewrite` | `git push --force`. `--force-with-lease` is allowed, since it refuses when the remote moved |
 | `machine-control` | `shutdown`, `reboot`, `halt`, `poweroff` |
-| `policy-surface-write` | Any shell route to `.tlc/harness/config.json`, `flags/` or `state/` — a redirect, an interpreter, a heredoc program — plus `tlc harness pause \| resume \| grind \| mode \| init \| gate` from inside an agent session |
+| `policy-surface-write` | Any shell route to `.tlc/harness/config.json`, `flags/` or `state/` — a redirect, an interpreter, a heredoc program — plus the same paths under the runtime home `~/.tlc/harness`, and `tlc harness pause \| resume \| grind \| mode \| init \| gate` from inside an agent session |
 
 Harness policy and state are not agent-writable, through a tool or a shell. Reading them stays allowed: a
 proven reader (`cat`, `grep`, `jq`, `git show`) on those paths passes, and anything not proven to only read

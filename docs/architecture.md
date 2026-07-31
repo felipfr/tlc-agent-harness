@@ -182,7 +182,7 @@ Each denial names its rule, so `rule=secret-access` in a message maps to a row h
 | `secret-access` | A read would pull `.env`, `~/.ssh`, `~/.aws`, `*.pem` or similar into the transcript |
 | `history-rewrite` | `git push --force`. `--force-with-lease` is allowed, since it refuses when the remote moved |
 | `machine-control` | `shutdown`, `reboot`, `halt`, `poweroff` |
-| `policy-surface-write` | Any shell route to `.tlc/harness/config.json`, `flags/` or `state/`, and the mutating `tlc harness` subcommands from inside a session ([/decisions/ad-022.md](/decisions/ad-022.md)) |
+| `policy-surface-write` | Any shell route to `.tlc/harness/config.json`, `flags/` or `state/` — in the project or under the runtime home — and the mutating `tlc harness` subcommands from inside a session ([/decisions/ad-022.md](/decisions/ad-022.md)) |
 | policy surface (tools) | Agent writes to the same paths through Write, Edit, Delete, MultiEdit or NotebookEdit |
 | edit collision | Two agents editing the same file in one working tree are told, not silently merged |
 

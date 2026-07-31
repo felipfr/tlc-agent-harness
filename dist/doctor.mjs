@@ -1473,7 +1473,14 @@ function isInside(parent, child) {
 function isScratch(target, tmp = tmpdir()) {
   return isInside(tmp, target);
 }
+function isRuntimePolicySurface(filePath) {
+  const target = resolve(filePath);
+  return target === resolve(runtimeHome(), "config.json") || isInside(runtimeStateDir(), target);
+}
 function isPolicySurface(projectDir, filePath) {
+  if (isRuntimePolicySurface(filePath)) {
+    return true;
+  }
   const target = normalizeSeparators(relative(projectDir, filePath) || filePath);
   const config = normalizeSeparators(relative(projectDir, projectConfigPath(projectDir)));
   const flags = normalizeSeparators(relative(projectDir, flagsDir(projectDir)));
@@ -1559,15 +1566,21 @@ function tokenizeShell(command) {
   let words2 = [];
   let current = "";
   let currentHadQuote = false;
+  let currentStartedQuoted = false;
   let quote = null;
   let unbalanced = false;
   let depth = 0;
   function pushWord() {
     if (current !== "" || currentHadQuote) {
-      words2.push({ text: current, unresolved: isExpansion(current) });
+      words2.push({
+        text: current,
+        unresolved: isExpansion(current),
+        quotedStart: currentStartedQuoted
+      });
     }
     current = "";
     currentHadQuote = false;
+    currentStartedQuoted = false;
   }
   function pushSegment() {
     pushWord();
@@ -1599,6 +1612,9 @@ function tokenizeShell(command) {
     }
     if (char === '"' || char === "'") {
       quote = char;
+      if (current === "" && !currentHadQuote) {
+        currentStartedQuoted = true;
+      }
       currentHadQuote = true;
       continue;
     }
@@ -1736,7 +1752,7 @@ function redirectTargets(words2) {
   const targets = [];
   for (let index = 0;index < words2.length; index += 1) {
     const word = words2[index];
-    if (!word) {
+    if (!word || word.quotedStart) {
       continue;
     }
     const match = /^(.*?)>{1,2}\|?(.*)$/s.exec(word.text);
@@ -1745,7 +1761,7 @@ function redirectTargets(words2) {
     }
     const attached = match[2] ?? "";
     if (attached !== "") {
-      targets.push({ text: attached, unresolved: word.unresolved });
+      targets.push({ text: attached, unresolved: word.unresolved, quotedStart: false });
       continue;
     }
     const next = words2[index + 1];

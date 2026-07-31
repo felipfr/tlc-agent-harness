@@ -137,7 +137,9 @@ function redirectTargets(words: ShellWord[]): ShellWord[] {
   const targets: ShellWord[] = [];
   for (let index = 0; index < words.length; index += 1) {
     const word = words[index];
-    if (!word) {
+    // hazard: a `>` inside a quoted argument is literal text, not a redirect. Scanning quoted words denied
+    // commands that merely carry shell-looking data — a JSON hook payload, a fixture, a doc example.
+    if (!word || word.quotedStart) {
       continue;
     }
     const match = /^(.*?)>{1,2}\|?(.*)$/s.exec(word.text);
@@ -146,7 +148,7 @@ function redirectTargets(words: ShellWord[]): ShellWord[] {
     }
     const attached = match[2] ?? "";
     if (attached !== "") {
-      targets.push({ text: attached, unresolved: word.unresolved });
+      targets.push({ text: attached, unresolved: word.unresolved, quotedStart: false });
       continue;
     }
     const next = words[index + 1];

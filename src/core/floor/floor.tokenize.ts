@@ -2,6 +2,12 @@ export type ShellWord = {
   text: string;
   /** True when the word carries a `$var`, `$(...)` or backtick — its value is not knowable here. */
   unresolved: boolean;
+  /**
+   * True when the word opened with a quote, so every operator inside it is literal text. A caller looking
+   * for redirects must skip these: `'{"cmd":"x > cfg"}'` is one quoted argument, not a redirect.
+   * Only the opening matters — `>"$f"` starts unquoted and is a real redirect.
+   */
+  quotedStart: boolean;
 };
 
 export type ShellSegment = {
@@ -73,16 +79,22 @@ export function tokenizeShell(command: string): ShellSegment[] {
   let words: ShellWord[] = [];
   let current = "";
   let currentHadQuote = false;
+  let currentStartedQuoted = false;
   let quote: '"' | "'" | null = null;
   let unbalanced = false;
   let depth = 0;
 
   function pushWord(): void {
     if (current !== "" || currentHadQuote) {
-      words.push({ text: current, unresolved: isExpansion(current) });
+      words.push({
+        text: current,
+        unresolved: isExpansion(current),
+        quotedStart: currentStartedQuoted,
+      });
     }
     current = "";
     currentHadQuote = false;
+    currentStartedQuoted = false;
   }
 
   function pushSegment(): void {
@@ -123,6 +135,9 @@ export function tokenizeShell(command: string): ShellSegment[] {
 
     if (char === '"' || char === "'") {
       quote = char;
+      if (current === "" && !currentHadQuote) {
+        currentStartedQuoted = true;
+      }
       currentHadQuote = true;
       continue;
     }

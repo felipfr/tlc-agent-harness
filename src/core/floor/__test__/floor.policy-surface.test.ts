@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { checkPolicySurface } from "../floor.policy-surface.ts";
@@ -108,6 +109,30 @@ test("ordinary work near the project root is untouched", () => {
   assertAllowed("node --test src/**/__test__/*.test.ts");
   assertAllowed(`cat ${join(PROJECT, ".tlc/harness/lessons.md")}`);
   assertAllowed("python3 -c \"print('hello')\"");
+});
+
+test("a quoted redirect is data, not a redirect", () => {
+  // hazard: found by this rule denying the command that verified it. A JSON hook payload carrying
+  // `"command":"echo x > cfg"` is one quoted argument; scanning inside it invents a redirect that no shell
+  // would perform. Only the opening quote matters, so `>"$f"` stays a real redirect.
+  assertAllowed(`printf '%s' '{"command":"echo x > ${CONFIG}"}' > /tmp/payload.json`);
+  assertAllowed(`echo '{"cmd":"tee ${CONFIG}"}' > /tmp/payload.json`);
+  assertDenied(`echo x > "${CONFIG}"`);
+  assertDenied(`echo x >"${join(PROJECT, CONFIG)}"`);
+});
+
+test("the runtime policy surface is guarded too, not just the project's", () => {
+  // hazard: `loadPolicy` merges the runtime config *under* the project one, so any field the project does not
+  // set is decided there, for every repository on the machine. Guarding only project-relative paths left this
+  // allowed — and a reader head verb reached it, because the redirect target resolved outside the project.
+  const runtimeConfig = join(homedir(), ".tlc/harness/config.json");
+  assertDenied(`echo '{}' > ${runtimeConfig}`);
+  assertDenied(`printf '{}' >> ${runtimeConfig}`);
+  assertDenied(`cat /tmp/x > ${runtimeConfig}`);
+  assertDenied(`tee ${runtimeConfig}`);
+  assertDenied(`echo x > ${join(homedir(), ".tlc/harness/state/flags/skip-verify")}`);
+  assertAllowed(`cat ${runtimeConfig}`);
+  assertAllowed(`grep mode ${runtimeConfig}`);
 });
 
 test("a proven reader may read another project's policy file", () => {
