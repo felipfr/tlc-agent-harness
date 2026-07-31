@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { runtimeHome, runtimeStateDir } from "../../../platform/paths.ts";
 import { checkPolicySurface } from "../floor.policy-surface.ts";
 import { evaluateFloor } from "../floor.service.ts";
 import { tokenizeShell } from "../floor.tokenize.ts";
@@ -125,12 +125,15 @@ test("the runtime policy surface is guarded too, not just the project's", () => 
   // hazard: `loadPolicy` merges the runtime config *under* the project one, so any field the project does not
   // set is decided there, for every repository on the machine. Guarding only project-relative paths left this
   // allowed — and a reader head verb reached it, because the redirect target resolved outside the project.
-  const runtimeConfig = join(homedir(), ".tlc/harness/config.json");
+  // why: derived from runtimeHome(), not from homedir(). CI sets TLC_HOME to the workspace, so a path built
+  // from the home directory is not the runtime surface there and the assertions would pass locally while
+  // proving nothing on the runners.
+  const runtimeConfig = join(runtimeHome(), "config.json");
   assertDenied(`echo '{}' > ${runtimeConfig}`);
   assertDenied(`printf '{}' >> ${runtimeConfig}`);
   assertDenied(`cat /tmp/x > ${runtimeConfig}`);
   assertDenied(`tee ${runtimeConfig}`);
-  assertDenied(`echo x > ${join(homedir(), ".tlc/harness/state/flags/skip-verify")}`);
+  assertDenied(`echo x > ${join(runtimeStateDir(), "flags/skip-verify")}`);
   assertAllowed(`cat ${runtimeConfig}`);
   assertAllowed(`grep mode ${runtimeConfig}`);
 });
