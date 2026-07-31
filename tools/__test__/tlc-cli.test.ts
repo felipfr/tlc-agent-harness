@@ -15,9 +15,11 @@ import {
   pairedFlagPath,
   pricesHelpText,
   readMode,
+  resolveExecutable,
   resolveProjectRoot,
   route,
   runTestSteps,
+  setGateCommand,
   setGrind,
   setMode,
   setPaused,
@@ -26,6 +28,7 @@ import {
   statusText,
   UsageError,
 } from "../../bin/tlc-cli.ts";
+import { coreFacade } from "../../src/core/index.ts";
 import { flagsDir, projectConfigPath, projectStateDir } from "../../src/platform/paths.ts";
 
 function fixtureRoot(): string {
@@ -468,5 +471,140 @@ describe("status agrees with the policy the hooks resolve", () => {
     assert.equal(statusJson(root).gatesPaused, false);
     setPaused(root, true);
     assert.equal(statusJson(root).gatesPaused, true);
+  });
+});
+
+describe("gate command", () => {
+  function writeConfig(root: string, content: string): void {
+    const path = projectConfigPath(root);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, content, "utf8");
+  }
+
+  function readConfig(root: string): Record<string, never> {
+    return JSON.parse(readFileSync(projectConfigPath(root), "utf8"));
+  }
+
+  test("route accepts both fields and rejects anything else", () => {
+    assert.deepEqual(route(["gate", "test-command", "node", "--test"]), {
+      kind: "gate",
+      field: "test",
+      argv: ["node", "--test"],
+    });
+    assert.deepEqual(route(["gate", "lint-command", "npx", "biome"]), {
+      kind: "gate",
+      field: "lint",
+      argv: ["npx", "biome"],
+    });
+    assert.throws(() => route(["gate"]), UsageError);
+    assert.throws(() => route(["gate", "whatever"]), UsageError);
+  });
+
+  test("the argv is written as an array and reported back", () => {
+    const root = newRoot();
+    writeConfig(root, JSON.stringify({ version: 1 }, null, 2));
+    const message = setGateCommand(root, "test", ["node", "--test", "src/**/*.test.ts"], true);
+
+    assert.deepEqual(readConfig(root).grind, { testCommand: ["node", "--test", "src/**/*.test.ts"] });
+    assert.match(message, /grind\.testCommand/);
+    assert.match(message, /--test/);
+  });
+
+  test("lint-command writes the sibling field without disturbing the other", () => {
+    const root = newRoot();
+    writeConfig(root, JSON.stringify({ grind: { testCommand: ["node"], maxLoops: 3 } }, null, 2));
+    setGateCommand(root, "lint", ["npx", "biome", "check", "."], true);
+
+    assert.deepEqual(readConfig(root).grind, {
+      testCommand: ["node"],
+      maxLoops: 3,
+      lintCommand: ["npx", "biome", "check", "."],
+    });
+  });
+
+  // why: the write has to be reviewable as one changed field. Canonical two-space JSON is byte-for-byte what
+  // these configs already are, so every untouched line stays put.
+  test("every untouched field survives byte-for-byte", () => {
+    const root = newRoot();
+    const original = { version: 1, codePaths: ["src"], grind: { enabled: true, maxLoops: 3 } };
+    writeConfig(root, `${JSON.stringify(original, null, 2)}\n`);
+    setGateCommand(root, "test", ["node", "--test"], true);
+
+    const after = readFileSync(projectConfigPath(root), "utf8");
+    const expected = `${JSON.stringify(
+      {
+        version: 1,
+        codePaths: ["src"],
+        grind: { enabled: true, maxLoops: 3, testCommand: ["node", "--test"] },
+      },
+      null,
+      2,
+    )}\n`;
+    assert.equal(after, expected);
+  });
+
+  test("an empty argv is a usage error and writes nothing", () => {
+    const root = newRoot();
+    writeConfig(root, JSON.stringify({ version: 1 }));
+    assert.throws(() => setGateCommand(root, "test", [], true), UsageError);
+    assert.equal(readConfig(root).grind, undefined);
+  });
+
+  // invariant: a second layer behind the floor. The floor refuses this command from inside an agent session;
+  // this refuses it from anything that is not a person at a terminal.
+  test("a non-interactive invocation is refused and writes nothing", () => {
+    const root = newRoot();
+    writeConfig(root, JSON.stringify({ version: 1 }));
+    assert.throws(() => setGateCommand(root, "test", ["node", "--test"], false), UsageError);
+    assert.equal(readConfig(root).grind, undefined);
+  });
+
+  test("a binary that is not on PATH is refused and writes nothing", () => {
+    const root = newRoot();
+    writeConfig(root, JSON.stringify({ version: 1 }));
+    assert.throws(
+      () => setGateCommand(root, "test", ["definitely-not-a-real-binary-xyz", "--test"], true),
+      UsageError,
+    );
+    assert.equal(readConfig(root).grind, undefined);
+  });
+
+  test("resolveExecutable finds a name on PATH and rejects one that is absent", () => {
+    assert.ok(resolveExecutable("node") !== null);
+    assert.equal(resolveExecutable("definitely-not-a-real-binary-xyz"), null);
+    assert.equal(resolveExecutable("also-not-real", { PATH: "" }, "linux"), null);
+  });
+
+  test("writing a gate command refreshes the baseline, so the session is not blocked", () => {
+    const root = newRoot();
+    writeConfig(root, JSON.stringify({ version: 1 }, null, 2));
+    coreFacade.policy.recordPolicyBaseline(root, "s1");
+    setGateCommand(root, "test", ["node", "--test"], true);
+
+    assert.equal(coreFacade.policy.checkPolicyBaseline(root, "s1").kind, "allow");
+  });
+
+  test("the flag mutators refresh the baseline too, and an out-of-band write does not", () => {
+    const root = newRoot();
+    writeConfig(root, JSON.stringify({ version: 1 }, null, 2));
+    coreFacade.policy.recordPolicyBaseline(root, "s1");
+
+    setPaused(root, true);
+    assert.equal(coreFacade.policy.checkPolicyBaseline(root, "s1").kind, "allow");
+    setGrind(root, true);
+    assert.equal(coreFacade.policy.checkPolicyBaseline(root, "s1").kind, "allow");
+    setMode(root, "solo");
+    assert.equal(coreFacade.policy.checkPolicyBaseline(root, "s1").kind, "allow");
+
+    // why: the same effect reached without a harness command stays visible, which is the whole point.
+    writeFileSync(join(flagsDir(root), "skip-verify"), "", "utf8");
+    rmSync(join(flagsDir(root), "skip-verify"));
+    writeConfig(root, JSON.stringify({ version: 1, mode: "paired" }, null, 2));
+    assert.equal(coreFacade.policy.checkPolicyBaseline(root, "s1").kind, "deny");
+  });
+
+  test("help names the new subcommand", () => {
+    assert.match(helpText(), /gate test-command/);
+    assert.match(helpText(), /gate lint-command/);
   });
 });

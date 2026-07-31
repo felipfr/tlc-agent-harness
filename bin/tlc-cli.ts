@@ -1,11 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { coreFacade } from "../src/core/index.ts";
 import { emitJson, JSON_FLAG, takeJsonFlag, unknownFlags } from "../src/platform/cli-output.ts";
-import { flagsDir, projectStateDir, runtimeHome } from "../src/platform/paths.ts";
+import { flagsDir, projectConfigPath, projectStateDir, runtimeHome } from "../src/platform/paths.ts";
 
 export class UsageError extends Error {}
 
@@ -117,16 +117,20 @@ export function statusJson(root: string): StatusReport {
   };
 }
 
+// invariant: every sanctioned mutation re-records the baselines. That is what makes "a harness command did
+// this" and "the baseline matches" a single fact — an out-of-band write skips this call and stays visible.
 export function setGrind(root: string, on: boolean): string {
   ensureFlagsDir(root);
   const path = grindFlagPath(root);
   if (on) {
     writeFileSync(path, "");
+    coreFacade.policy.refreshPolicyBaselines(root);
     return "grind ON — stop hook will lint/test and auto-retry on failure";
   }
   if (existsSync(path)) {
     rmSync(path);
   }
+  coreFacade.policy.refreshPolicyBaselines(root);
   return "grind OFF — no auto fix loops";
 }
 
@@ -135,11 +139,13 @@ export function setPaused(root: string, on: boolean): string {
   const path = skipFlagPath(root);
   if (on) {
     writeFileSync(path, "");
+    coreFacade.policy.refreshPolicyBaselines(root);
     return "gates PAUSED — stop checks disabled until `tlc harness resume`";
   }
   if (existsSync(path)) {
     rmSync(path);
   }
+  coreFacade.policy.refreshPolicyBaselines(root);
   return "gates ACTIVE again";
 }
 
@@ -150,6 +156,7 @@ export function setMode(root: string, raw: string): string {
   }
   ensureFlagsDir(root);
   writeFileSync(modeFilePath(root), `${mapped}\n`);
+  coreFacade.policy.refreshPolicyBaselines(root);
   if (mapped === "heads-down") {
     return "mode focus — max autonomy + grind ON";
   }
@@ -157,6 +164,79 @@ export function setMode(root: string, raw: string): string {
     return "mode paired — explain more; check in before big moves";
   }
   return "mode solo — normal day-to-day (grind not forced by mode)";
+}
+
+export type GateField = "test" | "lint";
+
+const GATE_FIELDS: Record<string, GateField> = {
+  "test-command": "test",
+  "lint-command": "lint",
+};
+
+// why: resolved without executing. Running the binary to see whether it exists would run it, which is not
+// something a config write is allowed to do.
+export function resolveExecutable(
+  name: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: string = process.platform,
+): string | null {
+  const extensions = platform === "win32" ? (env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";") : [""];
+  const candidates = (base: string): string[] => [base, ...extensions.map((ext) => `${base}${ext}`)];
+
+  if (name.includes("/") || name.includes("\\")) {
+    return candidates(name).find((candidate) => existsSync(candidate)) ?? null;
+  }
+  for (const dir of (env.PATH ?? "").split(delimiter)) {
+    if (!dir) {
+      continue;
+    }
+    const found = candidates(join(dir, name)).find((candidate) => existsSync(candidate));
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
+
+/**
+ * The only legitimate route to `grind.testCommand` and `grind.lintCommand`. Its absence is what produced the
+ * bypass this rail exists to stop: the guard refused the edit and the CLI offered nothing in its place.
+ *
+ * hazard: `interactive` is a parameter rather than a `process.stdin.isTTY` read here, so the refusal can be
+ * tested without a pty. It is a second layer only — the floor already refuses this command from inside an
+ * agent session, and the operator's own terminal never reaches that check.
+ */
+export function setGateCommand(root: string, field: GateField, argv: string[], interactive: boolean): string {
+  if (argv.length === 0) {
+    throw new UsageError(`usage: tlc harness gate ${field}-command <command> [args...]`);
+  }
+  if (!interactive) {
+    throw new UsageError(
+      `tlc harness gate ${field}-command needs an interactive terminal — harness policy is the operator's to set, not a script's.`,
+    );
+  }
+  const binary = argv[0] as string;
+  if (resolveExecutable(binary) === null) {
+    // why: AD-021 already treats a gate command that never resolved as a config fault. Refusing it at the
+    // point of writing turns that fault into something the operator sees now instead of at the next gate.
+    throw new UsageError(
+      `\`${binary}\` was not found on PATH, and a gate command that cannot run is a config fault (AD-021).`,
+    );
+  }
+
+  const path = projectConfigPath(root);
+  const parsed = existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>) : {};
+  const grind = { ...((parsed.grind as Record<string, unknown> | undefined) ?? {}) };
+  grind[field === "test" ? "testCommand" : "lintCommand"] = argv;
+  parsed.grind = grind;
+
+  mkdirSync(join(root, ".tlc", "harness"), { recursive: true });
+  // why: canonical 2-space JSON is byte-for-byte what these configs already are, so the diff is the changed
+  // field and nothing else.
+  writeFileSync(path, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
+  coreFacade.policy.refreshPolicyBaselines(root);
+
+  return `grind.${field}Command = ${JSON.stringify(argv)}`;
 }
 
 export function helpText(): string {
@@ -179,6 +259,7 @@ TOPICS
 
 CONTROL
   tlc harness grind [on|off]   tlc harness pause | resume   tlc harness mode solo|paired|focus
+  tlc harness gate test-command <cmd> [args...]   tlc harness gate lint-command <cmd> [args...]
 
 MEASURE
   tlc harness obs live|events|report|prune
@@ -234,6 +315,7 @@ export type Action =
   | { kind: "pause" }
   | { kind: "resume" }
   | { kind: "mode"; value: string }
+  | { kind: "gate"; field: GateField; argv: string[] }
   | { kind: "prices-help" }
   | { kind: "prices-refresh"; scope: string }
   | { kind: "prices-lookup"; modelId: string }
@@ -279,6 +361,13 @@ export function route(args: string[]): Action {
         throw new UsageError("usage: tlc harness mode <solo|paired|focus>");
       }
       return { kind: "mode", value: modeArg };
+    }
+    case "gate": {
+      const field = GATE_FIELDS[(args[1] ?? "").toLowerCase()];
+      if (!field) {
+        throw new UsageError("usage: tlc harness gate <test-command|lint-command> <command> [args...]");
+      }
+      return { kind: "gate", field, argv: args.slice(2) };
     }
     case "prices": {
       const sub = (args[1] ?? "").toLowerCase();
@@ -551,6 +640,17 @@ function main(argv: string[]): void {
     case "mode":
       try {
         console.log(setMode(root, action.value));
+      } catch (error) {
+        if (error instanceof UsageError) {
+          console.error(error.message);
+          process.exit(1);
+        }
+        throw error;
+      }
+      break;
+    case "gate":
+      try {
+        console.log(setGateCommand(root, action.field, action.argv, process.stdin.isTTY === true));
       } catch (error) {
         if (error instanceof UsageError) {
           console.error(error.message);

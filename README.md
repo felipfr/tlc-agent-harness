@@ -67,10 +67,23 @@ them. Every denial names its rule.
 | `secret-access` | A read that would pull `.env`, `~/.ssh`, `~/.aws`, `*.pem` or similar into the transcript |
 | `history-rewrite` | `git push --force`. `--force-with-lease` is allowed, since it refuses when the remote moved |
 | `machine-control` | `shutdown`, `reboot`, `halt`, `poweroff` |
+| `policy-surface-write` | Any shell route to `.tlc/harness/config.json`, `flags/` or `state/` — a redirect, an interpreter, a heredoc program — plus `tlc harness pause \| resume \| grind \| mode \| init \| gate` from inside an agent session |
 
-Harness policy and state are not agent-writable either. Everything else is opt-in: 21 capabilities, each
-presented with benefit, trade-off and default by the init skill. Full list in
-[`docs/architecture.md`](docs/architecture.md).
+Harness policy and state are not agent-writable, through a tool or a shell. Reading them stays allowed: a
+proven reader (`cat`, `grep`, `jq`, `git show`) on those paths passes, and anything not proven to only read
+does not. Policy changes are the operator's, from a terminal outside the agent session:
+
+```bash
+tlc harness gate test-command node --test 'src/**/__test__/*.test.ts'
+tlc harness gate lint-command npx biome check .
+```
+
+The harness also hashes every policy source at session start. If one changes mid-session without a
+`tlc harness` command, the next tool call is refused and the change reported — the layer that covers what
+shell parsing cannot see.
+
+Everything else is opt-in: 21 capabilities, each presented with benefit, trade-off and default by the init
+skill. Full list in [`docs/architecture.md`](docs/architecture.md).
 
 Runtime: `~/.tlc/harness`.
 Project policy: `<repo>/.tlc/harness/config.json`.

@@ -20,7 +20,7 @@ export function guardPolicySurface(args: {
     kind: "deny",
     reason: [
       "Harness policy and state are not agent-writable — a gate an agent can switch off is not a gate.",
-      "Change policy through the CLI instead: tlc harness grind | pause | resume | mode | init.",
+      "Change policy through the CLI instead: tlc harness grind | pause | resume | mode | init, or tlc harness gate test-command | gate lint-command.",
       "If a gate is wrong, say so and let the operator decide; do not edit around it.",
     ].join(" "),
     userNote: `Blocked an agent write to ${args.filePath}.`,
