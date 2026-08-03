@@ -33,6 +33,41 @@ test("hoursSince never returns a negative duration", () => {
   assert.equal(hoursSince("2026-06-01T00:00:00.000Z", now), 0);
 });
 
+test("hoursSince treats an unusable timestamp as just seen rather than as NaN", () => {
+  // hazard: NaN does not throw here — it propagates into confidence * exp(-λ·NaN) and poisons every
+  // comparator that sorts on the decayed value, which is a silent ordering bug.
+  const now = new Date("2026-07-01T00:00:00.000Z");
+  for (const bad of ["", "not-a-date", "2026-13-45T99:99:99Z"]) {
+    assert.equal(hoursSince(bad, now), 0, bad);
+  }
+  assert.ok(Number.isFinite(decayedConfidence(lesson({ lastSeenAt: "" }), 0.02, now)));
+});
+
+// invariant: decay measures recurrence, not exposure. This is the defect that made a lesson immortal:
+// touchAccessed writes lastAccessedAt when a lesson is selected for injection, so reading it here meant
+// showing a lesson reset the clock deciding whether to keep showing it.
+test("decay ignores lastAccessedAt entirely", () => {
+  const now = new Date("2026-07-10T00:00:00.000Z");
+  const stale = lesson({
+    lastSeenAt: "2026-07-01T00:00:00.000Z",
+    lastAccessedAt: "2026-07-01T00:00:00.000Z",
+  });
+  const injectedRepeatedly = lesson({
+    lastSeenAt: "2026-07-01T00:00:00.000Z",
+    lastAccessedAt: now.toISOString(),
+  });
+
+  assert.equal(decayedConfidence(injectedRepeatedly, 0.02, now), decayedConfidence(stale, 0.02, now));
+});
+
+test("a failure recurring restores a lesson's confidence", () => {
+  const now = new Date("2026-07-10T00:00:00.000Z");
+  const faded = lesson({ lastSeenAt: "2026-07-01T00:00:00.000Z" });
+  const recurred = lesson({ lastSeenAt: "2026-07-09T23:00:00.000Z" });
+
+  assert.ok(decayedConfidence(recurred, 0.02, now) > decayedConfidence(faded, 0.02, now));
+});
+
 test("decayedConfidence never decays a core-sourced lesson", () => {
   const now = new Date("2027-01-01T00:00:00.000Z");
   const core = lesson({ source: "core", confidence: 1, lastAccessedAt: "2020-01-01T00:00:00.000Z" });

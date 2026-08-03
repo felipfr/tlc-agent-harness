@@ -2,17 +2,29 @@ import type { HarnessLesson } from "./lesson.types.ts";
 
 const MS_PER_HOUR = 3_600_000;
 
+// hazard: an unparseable or missing timestamp used to yield NaN, which does not throw but poisons every
+// comparator that sorts on the decayed value. Unknown reads as "just seen", which is the conservative side.
 export function hoursSince(iso: string, now: Date): number {
-  const delta = now.getTime() - new Date(iso).getTime();
-  return Math.max(0, delta / MS_PER_HOUR);
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) {
+    return 0;
+  }
+  return Math.max(0, (now.getTime() - then) / MS_PER_HOUR);
 }
 
+/**
+ * invariant: decay is measured from `lastSeenAt` — the last time the failure actually recurred — and never
+ * from `lastAccessedAt`.
+ *
+ * hazard: `lastAccessedAt` is written by `touchAccessed` when a lesson is *selected for injection*, so
+ * reading it here made relevance self-fulfilling: showing a lesson reset the clock that decided whether to
+ * keep showing it. Any lesson matching a gate name became immortal and never pruned.
+ */
 export function decayedConfidence(lesson: HarnessLesson, decayLambda: number, now: Date): number {
   if (lesson.source === "core") {
     return lesson.confidence;
   }
-  const hours = hoursSince(lesson.lastAccessedAt || lesson.lastSeenAt, now);
-  return lesson.confidence * Math.exp(-decayLambda * hours);
+  return lesson.confidence * Math.exp(-decayLambda * hoursSince(lesson.lastSeenAt, now));
 }
 
 export function relevanceScore(lesson: HarnessLesson, args: { gate?: string; text?: string }): number {

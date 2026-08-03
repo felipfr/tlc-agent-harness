@@ -58,8 +58,10 @@ export async function gardenLessons(
         continue;
       }
 
+      // invariant: pruning measures the same clock the ranking does — recurrence, not injection. Reading
+      // lastAccessedAt here let an injected lesson postpone its own pruning indefinitely.
       const decayed =
-        candidate.confidence * Math.exp(-config.decayLambda * hoursSince(candidate.lastAccessedAt, now));
+        candidate.confidence * Math.exp(-config.decayLambda * hoursSince(candidate.lastSeenAt, now));
       if (decayed < 0.05 && candidate.status !== "quarantine" && candidate.hitCount < 2) {
         pruned.push(candidate.id);
         continue;

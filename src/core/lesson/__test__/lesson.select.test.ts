@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { DEFAULT_LESSONS_POLICY } from "../../policy/policy.defaults.ts";
+import { decayedConfidence } from "../lesson.score.ts";
 import {
   omitLessonsNote,
   packLessonsUnderBudget,
@@ -11,7 +12,7 @@ import {
   renderLessonBlock,
   selectLessons,
 } from "../lesson.select.ts";
-import { writeProjectLessons } from "../lesson.store.ts";
+import { readProjectLessons, writeProjectLessons } from "../lesson.store.ts";
 import type { HarnessLesson } from "../lesson.types.ts";
 
 function tempRoot(): string {
@@ -130,6 +131,49 @@ test("selectLessons records touched ids as lastAccessedAt updates for project le
       gate: "test",
     });
     assert.ok(result.usedIds.includes("project:test:x"));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// invariant: injecting a lesson must not change what gets injected next. This is the regression that would
+// have caught the self-fulfilling decay — selection writes lastAccessedAt, so any ranking input reading that
+// field turns exposure into relevance and makes a matching lesson permanent.
+test("selecting a lesson twice does not raise its own rank", async () => {
+  const root = tempRoot();
+  try {
+    const stale = new Date(Date.now() - 24 * 20 * 60 * 60 * 1000).toISOString();
+    await writeProjectLessons(root, [
+      lesson({
+        id: "project:test:x",
+        instruction: "project-specific fix",
+        failedGate: "test",
+        lastSeenAt: stale,
+        lastAccessedAt: stale,
+      }),
+    ]);
+    const config = { ...DEFAULT_LESSONS_POLICY, enabled: true };
+
+    const first = await selectLessons({ projectDir: root, config, mode: "retry", gate: "test" });
+    const afterFirst = readProjectLessons(root).find((l) => l.id === "project:test:x");
+    const second = await selectLessons({ projectDir: root, config, mode: "retry", gate: "test" });
+    const afterSecond = readProjectLessons(root).find((l) => l.id === "project:test:x");
+
+    // the injection is recorded as telemetry...
+    assert.notEqual(afterFirst?.lastAccessedAt, stale);
+    // ...but the field that decides relevance never moved, so the decayed value is identical.
+    assert.equal(afterFirst?.lastSeenAt, stale);
+    assert.equal(afterSecond?.lastSeenAt, stale);
+
+    const now = new Date();
+    assert.equal(
+      decayedConfidence(afterSecond as HarnessLesson, config.decayLambda, now),
+      decayedConfidence(afterFirst as HarnessLesson, config.decayLambda, now),
+    );
+    assert.deepEqual(
+      second.lessons.map((l) => l.id),
+      first.lessons.map((l) => l.id),
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

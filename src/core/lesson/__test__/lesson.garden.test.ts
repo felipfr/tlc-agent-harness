@@ -146,3 +146,49 @@ test("renderLessonsMarkdown notes omissions without truncating mid-sentence", ()
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// invariant: pruning measures recurrence. An injected lesson used to postpone its own pruning forever,
+// because touchAccessed refreshed the very field the prune expression read.
+test("gardenLessons prunes a faded candidate even when it was injected moments ago", async () => {
+  const root = tempRoot();
+  try {
+    const longAgo = new Date(Date.now() - 24 * 30 * 60 * 60 * 1000).toISOString();
+    await writeProjectLessons(root, [
+      lesson({
+        id: "project:test:faded",
+        status: "candidate",
+        hitCount: 1,
+        confidence: 0.55,
+        lastSeenAt: longAgo,
+        lastAccessedAt: new Date().toISOString(),
+      }),
+    ]);
+
+    const report = await gardenLessons(root, DEFAULT_LESSONS_POLICY);
+    assert.deepEqual(report.pruned, ["project:test:faded"]);
+    assert.equal(readProjectLessons(root).length, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("gardenLessons keeps a candidate whose failure recurred recently", async () => {
+  const root = tempRoot();
+  try {
+    await writeProjectLessons(root, [
+      lesson({
+        id: "project:test:live",
+        status: "candidate",
+        hitCount: 1,
+        confidence: 0.55,
+        lastSeenAt: new Date().toISOString(),
+        lastAccessedAt: new Date(Date.now() - 24 * 30 * 60 * 60 * 1000).toISOString(),
+      }),
+    ]);
+    const report = await gardenLessons(root, DEFAULT_LESSONS_POLICY);
+    assert.deepEqual(report.pruned, []);
+    assert.equal(readProjectLessons(root).length, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
