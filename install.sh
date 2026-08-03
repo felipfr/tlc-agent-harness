@@ -32,8 +32,16 @@ EOF
   exit 1
 fi
 
-script_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -f "$script_root/bin/tlc-exec.mjs" && "$script_root" != "$DEST" ]]; then
+# hazard: piped through `curl … | bash` the script has no file on disk, so BASH_SOURCE is an empty array and
+# `set -u` aborts on reading it — which is the documented install command in the README. An absent source is
+# not an error, it means there is no local checkout to link, so the clone path below is the right answer.
+# install.ps1 already guards the same way with `if ($scriptRoot -and …)`.
+script_source="${BASH_SOURCE[0]:-}"
+script_root=""
+if [[ -n "$script_source" ]]; then
+  script_root="$(cd "$(dirname "$script_source")" && pwd)"
+fi
+if [[ -n "$script_root" && -f "$script_root/bin/tlc-exec.mjs" && "$script_root" != "$DEST" ]]; then
   echo "install: linking $DEST → $script_root"
   mkdir -p "$(dirname "$DEST")" "$BIN_DIR"
   ln -sfn "$script_root" "$DEST"
