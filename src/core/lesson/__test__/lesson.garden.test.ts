@@ -192,3 +192,74 @@ test("gardenLessons keeps a candidate whose failure recurred recently", async ()
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// why: seeded from the operator's real record (project:test:03dfc3a63df1). AD-021 made an unresolved gate
+// command classify as `config`, so a `verification` lesson carrying a runner-resolution signal could only
+// have been recorded before that fix and can never legitimately recur — yet it kept outranking live lessons.
+const AD021_MISFILE =
+  'Fix the test findings without suppressions or deleted tests; re-run until the gate passes. Recurrent failure signature on gate "test". Signal: error: justfile does not contain recipe `bots/platform-agent/src/agent/investigator.test.ts`';
+
+test("gardenLessons retires a verification lesson whose signal is an unresolved gate command", async () => {
+  const root = tempRoot();
+  try {
+    await writeProjectLessons(root, [
+      lesson({
+        id: "project:test:03dfc3a63df1",
+        category: "verification",
+        status: "candidate",
+        confidence: 0.55,
+        hitCount: 1,
+        instruction: AD021_MISFILE,
+        lastSeenAt: new Date().toISOString(),
+        lastAccessedAt: new Date().toISOString(),
+      }),
+    ]);
+
+    const report = await gardenLessons(root, DEFAULT_LESSONS_POLICY);
+    assert.deepEqual(report.pruned, ["project:test:03dfc3a63df1"]);
+    assert.equal(readProjectLessons(root).length, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("gardenLessons keeps the same signal when it is correctly classified as config", async () => {
+  const root = tempRoot();
+  try {
+    await writeProjectLessons(root, [
+      // why: a fresh lastSeenAt, so this asserts the misfile rule alone and is not decided by decay —
+      // the helper's fixed fixture date is old enough that pruning would pass for the wrong reason.
+      lesson({
+        id: "project:test:cfg",
+        category: "config",
+        instruction: AD021_MISFILE,
+        lastSeenAt: new Date().toISOString(),
+      }),
+    ]);
+    const report = await gardenLessons(root, DEFAULT_LESSONS_POLICY);
+    assert.deepEqual(report.pruned, []);
+    assert.equal(readProjectLessons(root).length, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("gardenLessons keeps a verification lesson about an ordinary assertion failure", async () => {
+  const root = tempRoot();
+  try {
+    await writeProjectLessons(root, [
+      lesson({
+        id: "project:test:real",
+        category: "verification",
+        instruction:
+          'Recurrent failure signature on gate "test". Signal: not ok 1 - emits the metric | AssertionError: values differ',
+        lastSeenAt: new Date().toISOString(),
+      }),
+    ]);
+    const report = await gardenLessons(root, DEFAULT_LESSONS_POLICY);
+    assert.deepEqual(report.pruned, []);
+    assert.equal(readProjectLessons(root).length, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

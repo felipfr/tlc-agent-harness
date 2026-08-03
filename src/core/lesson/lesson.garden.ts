@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { projectConfigPath } from "../../platform/paths.ts";
+import { isCommandResolutionFailure } from "../gate/gate.command.ts";
 import type { LessonsPolicyConfig } from "../policy/policy.types.ts";
 import { hoursSince } from "./lesson.score.ts";
 import { packLessonsUnderBudget, rankLessonsForSync } from "./lesson.select.ts";
@@ -15,6 +16,21 @@ export type GardenReport = {
   candidates: number;
 };
 
+/**
+ * A lesson recorded before AD-021, when a gate command that never resolved was classified `verification`
+ * instead of `config`. Such a lesson teaches an agent to go fix tests in response to a malformed command,
+ * and post-AD-021 the same output classifies `config`, so the signature cannot legitimately recur.
+ *
+ * hazard: exitCode 0 is passed deliberately. `isCommandResolutionFailure` returns true for 127, and stored
+ * instruction text can contain any number — only the message patterns may decide this.
+ */
+function isStaleResolutionMisfile(lesson: HarnessLesson): boolean {
+  return (
+    lesson.category === "verification" &&
+    isCommandResolutionFailure({ exitCode: 0, output: lesson.instruction })
+  );
+}
+
 export async function gardenLessons(
   root: string,
   config: LessonsPolicyConfig,
@@ -28,6 +44,11 @@ export async function gardenLessons(
     const next: HarnessLesson[] = [];
     for (const lesson of current) {
       if (lesson.source === "core") {
+        continue;
+      }
+
+      if (isStaleResolutionMisfile(lesson)) {
+        pruned.push(lesson.id);
         continue;
       }
 
