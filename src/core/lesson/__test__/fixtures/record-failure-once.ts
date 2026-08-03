@@ -12,5 +12,4 @@ await recordLessonFromFailure({
   category: "verification",
   fingerprint,
   output: `${gate} failed`,
-  suggestion: "Fix it.",
 });

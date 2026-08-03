@@ -99,7 +99,6 @@ async function failGate(args: {
       category,
       fingerprint,
       output: args.artifact.outputTail,
-      suggestion,
     });
   }
 

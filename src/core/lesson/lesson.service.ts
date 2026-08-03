@@ -26,13 +26,16 @@ function tokensFrom(gate: string, output: string, category: string): string[] {
   return [...tokens];
 }
 
+// hazard: `suggestion` used to be a parameter here and was prefixed onto `instruction`. The consumer prints
+// next_action from the same suggestionFor(category, gate) call, so every lesson opened by restating the line
+// the gate had already emitted — duplicated by construction, spending the lessons budget on an echo. What a
+// lesson uniquely knows is the recurring signature and the retry guidance, so that is all it carries.
 export async function recordLessonFromFailure(args: {
   projectDir: string;
   gate: string;
   category: FailureCategory;
   fingerprint: string;
   output: string;
-  suggestion: string;
 }): Promise<HarnessLesson> {
   const now = new Date().toISOString();
   const id = lessonId(args.gate, args.fingerprint);
@@ -68,7 +71,7 @@ export async function recordLessonFromFailure(args: {
     failedGate: args.gate,
     category: args.category,
     triggerTokens: tokensFrom(args.gate, args.output, args.category),
-    instruction: `${args.suggestion} Recurrent failure signature on gate "${args.gate}".${snippet ? ` Signal: ${snippet}` : ""}`,
+    instruction: `Recurrent failure signature on gate "${args.gate}".${snippet ? ` Signal: ${snippet}` : ""}`,
     avoid: "Do not repeat the same failing edit, suppression, or command that produced this fingerprint.",
     prefer: "Change approach using the gate output; verify with the same gate before claiming done.",
     preRetryCheck: `Re-read the ${args.gate} output and confirm the next edit targets a different root cause.`,
