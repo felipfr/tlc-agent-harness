@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { projectStateDir } from "../../platform/paths.ts";
+import { findingsFromLines } from "./gate.findings.ts";
 import { GATE_SCHEMA, type GateFinding, type LastGateArtifact } from "./gate.types.ts";
 
 export const OUTPUT_TAIL_MAX = 8000;
@@ -78,6 +79,10 @@ export function readReportFindings(reportPath: string): GateFinding[] | null {
   return out.length > 0 ? out : null;
 }
 
+// hazard: this used to emit one finding per matched line, so a single failing test arrived as three problems
+// to fix — the assertion header, the test name and the tally `1 fail`. The consumer instructs an agent to fix
+// every item, so grouping is not cosmetic. Matching stays as permissive as before; only what happens to the
+// matched lines changed.
 export function extractFindingsFromOutput(
   outputTail: string,
   exitCode: number,
@@ -88,14 +93,8 @@ export function extractFindingsFromOutput(
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && !line.startsWith(">"));
   const hits = lines.filter((line) => FAIL_HINT.test(line));
-  const picked = (hits.length > 0 ? hits : lines.slice(-max)).slice(0, max);
-  if (picked.length === 0) {
-    return [{ summary: `gate exited with code ${exitCode}` }];
-  }
-  return picked.map((summary) => ({
-    summary: summary.slice(0, 200),
-    detail: summary.length > 200 ? summary.slice(0, 500) : undefined,
-  }));
+  const picked = hits.length > 0 ? hits : lines.slice(-max);
+  return findingsFromLines(picked, exitCode, max);
 }
 
 export function writeLastGate(args: {
