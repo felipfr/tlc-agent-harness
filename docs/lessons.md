@@ -36,14 +36,23 @@ optional
 | `maxCharsSession` | 900 | Char budget session |
 | `maxCharsRetry` | 1400 | Char budget retry |
 | `promoteHitCount` | 2 | Candidate → active |
-| `decayLambda` | 0.02 | Exponential decay per hour since last access |
+| `decayLambda` | 0.02 | Exponential decay per hour since the failure last **recurred** (`lastSeenAt`) |
 | `projectBoost` | 1.5 | Score multiplier for project-scoped lessons |
 | `syncRulesFile` | false | Write the provider-native durable view |
 | `gardenOnSessionEnd` | true | Garden on sessionEnd |
 
 ## Ranking
 
-`score = relevance(gate, tokens) × confidence × exp(-λ · hours) × projectBoost?`
+`score = relevance(gate, tokens) × confidence × exp(-λ · hours since lastSeenAt) × projectBoost?`
+
+**Hours are counted from recurrence, never from exposure.** `lastSeenAt` moves only when the failure
+signature happens again; `lastAccessedAt` moves when a lesson is *shown* and is telemetry only. Decay and
+pruning both read `lastSeenAt` — reading the exposure field made relevance self-fulfilling, so a lesson that
+merely matched a gate name kept resetting its own clock and never faded
+([/decisions/ad-023.md](/decisions/ad-023.md)).
+
+A lesson also retires when its cause is gone: the garden prunes a `verification` lesson whose stored signal is
+an unresolved gate command, because AD-021 made that class classify as `config` and it can no longer recur.
 
 Pack **whole lesson blocks** under the char budget. Never mid-string `slice` a lesson. When the budget is
 full, omit lower-ranked lessons entirely and append `_(N more active lessons omitted under char budget)_`.

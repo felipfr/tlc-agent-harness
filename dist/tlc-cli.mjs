@@ -1096,6 +1096,110 @@ import { createHash } from "node:crypto";
 import { existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync5, unlinkSync, writeFileSync as writeFileSync2 } from "node:fs";
 import { dirname as dirname2, join as join5 } from "node:path";
 
+// src/core/gate/gate.findings.ts
+var DETAIL_MAX = 500;
+var SUMMARY_MAX = 200;
+var TALLY = /\d+\s+(?:tests?|specs?|examples?)?\s*(?:fail(?:ed|ures?)?|pass(?:ed|ing)?|pending|skipped|todo|errors?)\b|(?:failures?|errors?)\s*=\s*\d+/gi;
+var COUNT_LABEL = /^(?:tests?|specs?|failed|failures?|summary|results?)\b[:\s]*/i;
+var COUNT_RESIDUE = /^[\s\d:;,|—–\-()=.✗×✕✖*]*$/;
+var STRONG_TEST = [
+  /^\(fail\)\s*\S/i,
+  /^not ok\s+\d+/i,
+  /^---\s*FAIL:\s*\S/i,
+  /^(?:FAIL|FAILED)\s+(?!\()\S/i
+];
+var WEAK_TEST = /^[✗×✕✖]\s+\S/;
+var ASSERTION_HINT = /(?:expect\(|toEqual|toBe\b|toMatch|toThrow|AssertionError|assert(?:ion)?\b|deep(?:Strict)?Equal|strictEqual|Expected\b|received\b|actual\b)/i;
+function isCountOnly(line) {
+  if (!/\d/.test(line) || !/(?:fail|error)/i.test(line)) {
+    return false;
+  }
+  const stripped = line.replace(COUNT_LABEL, " ").replace(TALLY, " ");
+  return COUNT_RESIDUE.test(stripped);
+}
+function classifyLine(line) {
+  if (STRONG_TEST.some((pattern) => pattern.test(line))) {
+    return "test";
+  }
+  if (isCountOnly(line)) {
+    return "count";
+  }
+  if (WEAK_TEST.test(line)) {
+    return "test";
+  }
+  return ASSERTION_HINT.test(line) ? "assertion" : "other";
+}
+function groupFailures(lines) {
+  const failures = [];
+  const pending = [];
+  let firstCount = null;
+  let current = null;
+  for (const line of lines) {
+    switch (classifyLine(line)) {
+      case "count":
+        firstCount ??= line;
+        break;
+      case "test": {
+        const failure = { summary: line, details: pending.splice(0) };
+        failures.push(failure);
+        current = failure;
+        break;
+      }
+      case "assertion":
+        if (current) {
+          current.details.push(line);
+        } else {
+          pending.push(line);
+        }
+        break;
+      default: {
+        const failure = { summary: line, details: pending.splice(0) };
+        failures.push(failure);
+        current = failure;
+      }
+    }
+  }
+  if (pending.length > 0) {
+    failures.push({ summary: pending[0], details: pending.slice(1) });
+  }
+  return { failures, firstCount };
+}
+function normalize(text) {
+  return text.replace(/\s+/g, " ").trim().toLowerCase();
+}
+function dedupe(failures) {
+  const byKey = new Map;
+  for (const failure of failures) {
+    const key = normalize(failure.summary);
+    const seen = byKey.get(key);
+    if (seen) {
+      seen.details.push(...failure.details);
+      continue;
+    }
+    byKey.set(key, { summary: failure.summary, details: [...failure.details] });
+  }
+  return [...byKey.values()];
+}
+function toFinding(failure) {
+  const detail = [...new Set(failure.details)].join(`
+`).slice(0, DETAIL_MAX);
+  return detail ? { summary: failure.summary.slice(0, SUMMARY_MAX), detail } : { summary: failure.summary.slice(0, SUMMARY_MAX) };
+}
+function findingsFromLines(lines, exitCode, max) {
+  const { failures, firstCount } = groupFailures(lines);
+  const unique = dedupe(failures);
+  if (unique.length === 0) {
+    const fallback = { summary: `gate exited with code ${exitCode}` };
+    return firstCount ? [{ ...fallback, detail: firstCount.slice(0, DETAIL_MAX) }] : [fallback];
+  }
+  if (unique.length <= max) {
+    return unique.map(toFinding);
+  }
+  const kept = unique.slice(0, Math.max(1, max - 1)).map(toFinding);
+  const omitted = unique.length - kept.length;
+  return [...kept, { summary: `…and ${omitted} more failures in the gate output` }];
+}
+
 // src/core/gate/gate.types.ts
 var GATE_SCHEMA = "harness.gate.v1";
 
@@ -1158,14 +1262,8 @@ function extractFindingsFromOutput(outputTail, exitCode, max = FINDINGS_MAX) {
   const lines = outputTail.split(`
 `).map((line) => line.trim()).filter((line) => line.length > 0 && !line.startsWith(">"));
   const hits = lines.filter((line) => FAIL_HINT.test(line));
-  const picked = (hits.length > 0 ? hits : lines.slice(-max)).slice(0, max);
-  if (picked.length === 0) {
-    return [{ summary: `gate exited with code ${exitCode}` }];
-  }
-  return picked.map((summary) => ({
-    summary: summary.slice(0, 200),
-    detail: summary.length > 200 ? summary.slice(0, 500) : undefined
-  }));
+  const picked = hits.length > 0 ? hits : lines.slice(-max);
+  return findingsFromLines(picked, exitCode, max);
 }
 function writeLastGate(args) {
   const outputTail = trimOutputTail(args.output);
@@ -1506,15 +1604,17 @@ import { dirname as dirname4, join as join9 } from "node:path";
 // src/core/lesson/lesson.score.ts
 var MS_PER_HOUR = 3600000;
 function hoursSince(iso, now) {
-  const delta = now.getTime() - new Date(iso).getTime();
-  return Math.max(0, delta / MS_PER_HOUR);
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) {
+    return 0;
+  }
+  return Math.max(0, (now.getTime() - then) / MS_PER_HOUR);
 }
 function decayedConfidence(lesson, decayLambda, now) {
   if (lesson.source === "core") {
     return lesson.confidence;
   }
-  const hours = hoursSince(lesson.lastAccessedAt || lesson.lastSeenAt, now);
-  return lesson.confidence * Math.exp(-decayLambda * hours);
+  return lesson.confidence * Math.exp(-decayLambda * hoursSince(lesson.lastSeenAt, now));
 }
 function relevanceScore(lesson, args) {
   let score = 0.25;
@@ -1859,6 +1959,9 @@ async function selectLessons(args) {
 }
 
 // src/core/lesson/lesson.garden.ts
+function isStaleResolutionMisfile(lesson) {
+  return lesson.category === "verification" && isCommandResolutionFailure({ exitCode: 0, output: lesson.instruction });
+}
 async function gardenLessons(root, config, now = new Date) {
   const promoted = [];
   const quarantined = [];
@@ -1867,6 +1970,10 @@ async function gardenLessons(root, config, now = new Date) {
     const next = [];
     for (const lesson of current) {
       if (lesson.source === "core") {
+        continue;
+      }
+      if (isStaleResolutionMisfile(lesson)) {
+        pruned.push(lesson.id);
         continue;
       }
       let candidate = lesson;
@@ -1888,7 +1995,7 @@ async function gardenLessons(root, config, now = new Date) {
         pruned.push(candidate.id);
         continue;
       }
-      const decayed = candidate.confidence * Math.exp(-config.decayLambda * hoursSince(candidate.lastAccessedAt, now));
+      const decayed = candidate.confidence * Math.exp(-config.decayLambda * hoursSince(candidate.lastSeenAt, now));
       if (decayed < 0.05 && candidate.status !== "quarantine" && candidate.hitCount < 2) {
         pruned.push(candidate.id);
         continue;
@@ -1984,7 +2091,7 @@ async function recordLessonFromFailure(args) {
     failedGate: args.gate,
     category: args.category,
     triggerTokens: tokensFrom(args.gate, args.output, args.category),
-    instruction: `${args.suggestion} Recurrent failure signature on gate "${args.gate}".${snippet ? ` Signal: ${snippet}` : ""}`,
+    instruction: `Recurrent failure signature on gate "${args.gate}".${snippet ? ` Signal: ${snippet}` : ""}`,
     avoid: "Do not repeat the same failing edit, suppression, or command that produced this fingerprint.",
     prefer: "Change approach using the gate output; verify with the same gate before claiming done.",
     preRetryCheck: `Re-read the ${args.gate} output and confirm the next edit targets a different root cause.`,
