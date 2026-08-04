@@ -8,6 +8,11 @@ import { coreFacade } from "../src/core/index.ts";
 import { emitJson, takeJsonFlag } from "../src/platform/cli-output.ts";
 import { projectConfigPath, projectStateDir, runtimeHome } from "../src/platform/paths.ts";
 import { mergeClaudeSettings } from "../src/providers/claude/claude.wiring.ts";
+import {
+  cursorWiringProblems,
+  formatWiringProblems,
+  type WiringProblem,
+} from "../src/providers/cursor/cursor.wiring.ts";
 import { providers } from "../src/providers/index.ts";
 import type { ProviderPort } from "../src/providers/provider.port.ts";
 
@@ -78,12 +83,38 @@ export function checkHookRuntime(_home: string, bunPath: string | null): Check {
 
 export type ProviderWiringStatus = "wired" | "detected-but-unwired" | "not-installed";
 
+/**
+ * hazard: the replace-strategy branch decided health by marker presence alone, so a file carrying the marker in one
+ * entry and a broken command in another reported `wired`. A colleague's session was blocked by exactly that shape
+ * ([/decisions/ad-032.md](/decisions/ad-032.md)).
+ */
+export function wiringProblems(wiring: ProviderWiring): WiringProblem[] {
+  if (wiring.strategy !== "replace") {
+    return [];
+  }
+  const text = existsSync(wiring.target) ? readFileSync(wiring.target, "utf8") : null;
+  return cursorWiringProblems(text, { launcherPath: launcherPathOf(wiring) }, existsSync);
+}
+
+/**
+ * why: derived from the wiring's own entries rather than passed in, so the check compares the file against the same
+ * launcher path the writer would use. Reading it from anywhere else is how the two come to disagree.
+ */
+function launcherPathOf(wiring: ProviderWiring): string {
+  const first = wiring.entries[0];
+  return first?.args.find((arg) => arg.endsWith(".mjs")) ?? "";
+}
+
 export function providerWiringStatus(wiring: ProviderWiring): ProviderWiringStatus {
   if (!existsSync(dirname(wiring.target))) {
     return "not-installed";
   }
   if (wiring.strategy === "replace") {
-    return isCursorWired(wiring.target) ? "wired" : "detected-but-unwired";
+    if (!isCursorWired(wiring.target)) {
+      return "detected-but-unwired";
+    }
+    // invariant: the marker says the file is ours; the problems say whether it works. Both must pass.
+    return wiringProblems(wiring).length === 0 ? "wired" : "detected-but-unwired";
   }
   const existingText = existsSync(wiring.target) ? readFileSync(wiring.target, "utf8") : null;
   const result = mergeClaudeSettings(existingText, wiring.entries);
@@ -101,10 +132,14 @@ export function checkProviders(registry: readonly ProviderPort[], home: string):
     if (status === "wired") {
       return { level: "ok", name: `${provider.name} wiring`, detail: `wired (${wiring.target})` };
     }
+    // why: names the event and the reason. "detected but not wired" told an operator that something was wrong and
+    // nothing else, which is one step above silence.
+    const problems = wiringProblems(wiring);
+    const why = problems.length > 0 ? ` — ${formatWiringProblems(problems)}` : "";
     return {
       level: "warn",
       name: `${provider.name} wiring`,
-      detail: `detected but not wired — run: tlc harness update (${wiring.target})`,
+      detail: `detected but not wired${why} — run: tlc harness update (${wiring.target})`,
     };
   });
 }

@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { cursorWiring } from "../cursor.wiring.ts";
+import { cursorWiring, cursorWiringProblems, formatWiringProblems } from "../cursor.wiring.ts";
 
 const RUNTIME = { launcherPath: "/opt/tlc/bin/tlc-exec.mjs" };
 
@@ -88,17 +88,124 @@ test("afterFileEdit and afterAgentResponse keep their matchers", () => {
 });
 
 test("commands point at the launcher path — node on non-Windows, cmd /c on Windows", () => {
-  const posix = cursorWiring(RUNTIME).entries[0];
+  const posix = cursorWiring(HEALTH_RUNTIME).entries[0];
   assert.equal(posix?.command, process.platform === "win32" ? "cmd" : "node");
 
   const originalPlatform = process.platform;
   Object.defineProperty(process, "platform", { value: "win32" });
   try {
-    const win = cursorWiring(RUNTIME).entries[0];
+    const win = cursorWiring(HEALTH_RUNTIME).entries[0];
     assert.equal(win?.command, "cmd");
     assert.deepEqual(win?.args.slice(0, 2), ["/c", "node"]);
     assert.ok(win?.args.includes(RUNTIME.launcherPath));
   } finally {
     Object.defineProperty(process, "platform", { value: originalPlatform });
   }
+});
+
+// why: the exact shape from the incident. A `preToolUse` whose command was a bare `node` made Node read the hook
+// payload as a program, and `failClosed` turned that crash into a blocked tool
+// ([/decisions/ad-032.md](/decisions/ad-032.md)).
+const LAUNCHER = "/opt/tlc/bin/tlc-exec.mjs";
+const HEALTH_RUNTIME = { launcherPath: LAUNCHER };
+const EXISTS = (path: string): boolean => path === LAUNCHER;
+
+function hooksDoc(entries: Record<string, { command: string }[]>): string {
+  return JSON.stringify({ version: 1, hooks: entries });
+}
+
+function fullyWired(): string {
+  const hooks: Record<string, { command: string }[]> = {};
+  for (const entry of cursorWiring(HEALTH_RUNTIME).entries) {
+    hooks[entry.hookEvent] = [{ command: [entry.command, ...entry.args].join(" ") }];
+  }
+  return hooksDoc(hooks);
+}
+
+test("a fully wired file has no problems", () => {
+  assert.deepEqual(cursorWiringProblems(fullyWired(), HEALTH_RUNTIME, EXISTS), []);
+});
+
+test("a bare executable is reported, naming the event", () => {
+  const doc = JSON.parse(fullyWired()) as { hooks: Record<string, { command: string }[]> };
+  doc.hooks.preToolUse = [{ command: "node" }];
+  const problems = cursorWiringProblems(JSON.stringify(doc), HEALTH_RUNTIME, EXISTS);
+  // why: a bare `node` does not name our launcher at all, so it reads as "no harness entry" — which is the correct
+  // reading. What matters is that the event is named and the file no longer passes.
+  assert.equal(problems.length, 1);
+  assert.equal(problems[0]?.hookEvent, "preToolUse");
+});
+
+test("a command with the script and no handler is reported", () => {
+  const doc = JSON.parse(fullyWired()) as { hooks: Record<string, { command: string }[]> };
+  doc.hooks.preToolUse = [{ command: `node ${LAUNCHER}` }];
+  const problems = cursorWiringProblems(JSON.stringify(doc), HEALTH_RUNTIME, EXISTS);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0]?.reason ?? "", /no handler after the script/);
+});
+
+test("a command with no executable before the script is reported", () => {
+  const doc = JSON.parse(fullyWired()) as { hooks: Record<string, { command: string }[]> };
+  doc.hooks.preToolUse = [{ command: `${LAUNCHER} tool-before` }];
+  const problems = cursorWiringProblems(JSON.stringify(doc), HEALTH_RUNTIME, EXISTS);
+  assert.match(problems[0]?.reason ?? "", /no executable before the script/);
+});
+
+test("a script that does not exist is reported", () => {
+  const problems = cursorWiringProblems(fullyWired(), HEALTH_RUNTIME, () => false);
+  assert.ok(problems.length > 0);
+  assert.match(problems[0]?.reason ?? "", /does not exist/);
+});
+
+test("a declared event with no entry at all is reported as missing", () => {
+  const doc = JSON.parse(fullyWired()) as { hooks: Record<string, unknown> };
+  delete doc.hooks.preToolUse;
+  const problems = cursorWiringProblems(JSON.stringify(doc), HEALTH_RUNTIME, EXISTS);
+  assert.equal(problems.length, 1);
+  assert.equal(problems[0]?.hookEvent, "preToolUse");
+  assert.match(problems[0]?.reason ?? "", /no harness entry/);
+});
+
+// invariant: a hook belonging to another tool is not ours to judge. Flagging it would train an operator to ignore
+// the check, which is how a real warning gets missed.
+test("another tool's hook in the same file is never reported", () => {
+  const doc = JSON.parse(fullyWired()) as { hooks: Record<string, { command: string }[]> };
+  doc.hooks.preToolUse = [...(doc.hooks.preToolUse ?? []), { command: "some-other-tool --hook preToolUse" }];
+  assert.deepEqual(cursorWiringProblems(JSON.stringify(doc), HEALTH_RUNTIME, EXISTS), []);
+});
+
+test("an absent or unparseable file is reported rather than throwing", () => {
+  assert.match(cursorWiringProblems(null, HEALTH_RUNTIME, EXISTS)[0]?.reason ?? "", /no hooks file/);
+  assert.match(cursorWiringProblems("{ not json", HEALTH_RUNTIME, EXISTS)[0]?.reason ?? "", /not valid JSON/);
+});
+
+test("a file with no hooks key reports every declared event as missing", () => {
+  const problems = cursorWiringProblems(JSON.stringify({ version: 1 }), HEALTH_RUNTIME, EXISTS);
+  assert.equal(problems.length, cursorWiring(HEALTH_RUNTIME).entries.length);
+});
+
+test("a quoted launcher path still matches, so a path with spaces is not a false problem", () => {
+  const spaced = "/opt/my tlc/bin/tlc-exec.mjs";
+  const runtime = { launcherPath: spaced };
+  const doc = hooksDoc(
+    Object.fromEntries(
+      cursorWiring(runtime).entries.map((entry) => [
+        entry.hookEvent,
+        [{ command: `node "${spaced}" ${entry.handler}` }],
+      ]),
+    ),
+  );
+  assert.deepEqual(
+    cursorWiringProblems(doc, runtime, (p) => p === spaced),
+    [],
+  );
+});
+
+// why: a fresh install with no wiring produces one problem per declared event, and a doctor line listing all of
+// them is a wall.
+test("the formatted problems are bounded and say how many were left out", () => {
+  const many = Array.from({ length: 9 }, (_, i) => ({ hookEvent: `e${i}`, reason: "broken" }));
+  const text = formatWiringProblems(many);
+  assert.match(text, /and 6 more/);
+  assert.equal(text.split(";").length, 4);
 });

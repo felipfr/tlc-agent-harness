@@ -913,6 +913,60 @@ function cursorWiring(runtime) {
     entries
   };
 }
+function commandTokens(command) {
+  return [...command.matchAll(/"([^"]*)"|(\S+)/g)].map((match) => match[1] ?? match[2] ?? "");
+}
+function cursorWiringProblems(text, runtime, fileExists) {
+  if (text === null) {
+    return [{ hookEvent: "(file)", reason: "no hooks file at the expected path" }];
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return [{ hookEvent: "(file)", reason: "the hooks file is not valid JSON" }];
+  }
+  const hooks = parsed !== null && typeof parsed === "object" ? parsed.hooks ?? {} : {};
+  const problems = [];
+  for (const spec of ENTRY_SPECS2) {
+    const list = Array.isArray(hooks[spec.hookEvent]) ? hooks[spec.hookEvent] : [];
+    const commands = list.map((row) => row !== null && typeof row === "object" ? String(row.command ?? "") : "").filter((command) => command.includes(runtime.launcherPath));
+    if (commands.length === 0) {
+      problems.push({ hookEvent: spec.hookEvent, reason: "no harness entry — run: tlc harness update" });
+      continue;
+    }
+    for (const command of commands) {
+      const tokens = commandTokens(command);
+      const scriptAt = tokens.findIndex((token) => token === runtime.launcherPath);
+      if (scriptAt < 1) {
+        problems.push({
+          hookEvent: spec.hookEvent,
+          reason: `no executable before the script: \`${command}\``
+        });
+        continue;
+      }
+      if (!fileExists(runtime.launcherPath)) {
+        problems.push({
+          hookEvent: spec.hookEvent,
+          reason: `the script does not exist: ${runtime.launcherPath}`
+        });
+        continue;
+      }
+      if (tokens[scriptAt + 1] === undefined || tokens[scriptAt + 1] === "") {
+        problems.push({
+          hookEvent: spec.hookEvent,
+          reason: `no handler after the script: \`${command}\``
+        });
+      }
+    }
+  }
+  return problems;
+}
+function formatWiringProblems(problems, max = 3) {
+  const shown = problems.slice(0, max).map((problem) => `${problem.hookEvent}: ${problem.reason}`).join("; ");
+  const rest = problems.length - Math.min(problems.length, max);
+  return rest > 0 ? `${shown}; and ${rest} more` : shown;
+}
 
 // src/providers/cursor/index.ts
 var cursorProvider = {
@@ -5827,12 +5881,26 @@ function checkHookRuntime(_home, bunPath) {
   }
   return { level: "warn", name: "hook runtime", detail: `Node + dist/ — ${BUN_COST_NOTE}` };
 }
+function wiringProblems(wiring) {
+  if (wiring.strategy !== "replace") {
+    return [];
+  }
+  const text = existsSync26(wiring.target) ? readFileSync26(wiring.target, "utf8") : null;
+  return cursorWiringProblems(text, { launcherPath: launcherPathOf(wiring) }, existsSync26);
+}
+function launcherPathOf(wiring) {
+  const first = wiring.entries[0];
+  return first?.args.find((arg) => arg.endsWith(".mjs")) ?? "";
+}
 function providerWiringStatus(wiring) {
   if (!existsSync26(dirname8(wiring.target))) {
     return "not-installed";
   }
   if (wiring.strategy === "replace") {
-    return isCursorWired(wiring.target) ? "wired" : "detected-but-unwired";
+    if (!isCursorWired(wiring.target)) {
+      return "detected-but-unwired";
+    }
+    return wiringProblems(wiring).length === 0 ? "wired" : "detected-but-unwired";
   }
   const existingText = existsSync26(wiring.target) ? readFileSync26(wiring.target, "utf8") : null;
   const result = mergeClaudeSettings(existingText, wiring.entries);
@@ -5849,10 +5917,12 @@ function checkProviders(registry, home) {
     if (status === "wired") {
       return { level: "ok", name: `${provider.name} wiring`, detail: `wired (${wiring.target})` };
     }
+    const problems = wiringProblems(wiring);
+    const why = problems.length > 0 ? ` — ${formatWiringProblems(problems)}` : "";
     return {
       level: "warn",
       name: `${provider.name} wiring`,
-      detail: `detected but not wired — run: tlc harness update (${wiring.target})`
+      detail: `detected but not wired${why} — run: tlc harness update (${wiring.target})`
     };
   });
 }
@@ -6020,6 +6090,7 @@ if (__require.main == __require.module) {
   process.exit(exitCodeFor(checks));
 }
 export {
+  wiringProblems,
   toReport,
   runChecks,
   providerWiringStatus,

@@ -419,3 +419,23 @@ of band. If a migration note was forgotten, that is where it surfaces.
 
 If the fast-forward fails, the runtime checkout has commits upstream does not. The message names both ways out —
 reset to upstream, or re-run the installer — and runs neither, because the first one throws work away.
+
+## wiring health
+
+`tlc harness doctor` checks each provider's hooks, and for the replace-strategy target it checks them **per event**:
+our launcher named in the command, that file present on disk, and a handler after it. A declared event with no
+harness entry is reported too — that is the case a marker cannot see.
+
+The marker keeps its own job, unchanged: it answers *is this file ours*, which is what decides whether `update` may
+overwrite it. Whether the hooks work is a different question, and conflating the two is what let a hook that could
+not run report as healthy ([/decisions/ad-032.md](/decisions/ad-032.md)).
+
+A hook belonging to another tool in the same file is never reported. That is deliberate — flagging someone else's
+entry would train you to skip the check, and then it would miss ours.
+
+When something is wrong the detail names the event and the reason, bounded to three with a count of the rest:
+
+```
+WARN  cursor wiring — detected but not wired — preToolUse: no handler after the
+      script: `node /path/tlc-exec.mjs` — run: tlc harness update (~/.cursor/hooks.json)
+```

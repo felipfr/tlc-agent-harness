@@ -46,5 +46,6 @@ Handoff section and a link back to this index.
 | [AD-029](/decisions/ad-029.md) | A capability the init skill cannot correctly initialise is not shipped | active |
 | [AD-030](/decisions/ad-030.md) | Clearing a policy divergence is one operator command behind four independent locks, and a refusal never points an agent at a door the floor holds shut | active |
 | [AD-031](/decisions/ad-031.md) | The decisions are the changelog, a breaking change carries its own instruction, and looking never changes anything | active |
+| [AD-032](/decisions/ad-032.md) | A hook is healthy when it can run, not when a marker string is present | active |
 
 Related: [/architecture.md](/architecture.md), [/concepts.md](/concepts.md), [/providers/index.md](/providers/index.md).

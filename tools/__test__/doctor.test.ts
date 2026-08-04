@@ -7,6 +7,7 @@ import type { ProviderWiring } from "../../src/contracts/index.ts";
 import { coreFacade } from "../../src/core/index.ts";
 import { projectConfigPath } from "../../src/platform/paths.ts";
 import { mergeClaudeSettings } from "../../src/providers/claude/claude.wiring.ts";
+import { cursorWiring, formatWiringProblems } from "../../src/providers/cursor/cursor.wiring.ts";
 import type { ProviderPort } from "../../src/providers/provider.port.ts";
 import {
   type Check,
@@ -20,6 +21,7 @@ import {
   providerWiringStatus,
   runChecks,
   toReport,
+  wiringProblems,
 } from "../doctor.ts";
 
 function fixtureRoot(): string {
@@ -94,14 +96,17 @@ describe("providerWiringStatus", () => {
     assert.equal(providerWiringStatus(wiring), "detected-but-unwired");
   });
 
-  test("wired for a replace-strategy target already carrying the harness marker", () => {
+  // hazard: this test used to assert that a file carrying the marker is wired, with one entry out of nineteen. That
+  // was the weak rule — a colleague's session was blocked by a file that passed it. The marker still answers "is
+  // this file ours"; whether the hooks work is a separate question ([/decisions/ad-032.md](/decisions/ad-032.md)).
+  test("a marker with one entry out of many is detected but not wired", () => {
     const root = newRoot();
     const home = join(root, "cursor-home");
     mkdirSync(home, { recursive: true });
     const target = join(home, "hooks.json");
     writeFileSync(target, JSON.stringify({ hooks: { stop: [{ command: "node tlc-exec.mjs shim stop" }] } }));
     const wiring: ProviderWiring = { target, strategy: "replace", entries: [] };
-    assert.equal(providerWiringStatus(wiring), "wired");
+    assert.equal(providerWiringStatus(wiring), "detected-but-unwired");
   });
 
   test("detected-but-unwired for a merge-strategy target missing the desired entries", () => {
@@ -437,5 +442,55 @@ describe("checkPolicyDivergence", () => {
     coreFacade.policy.recordPolicyBaseline(root, "s1");
     writeFileSync(path, JSON.stringify({ version: 2 }), "utf8");
     assert.equal(exitCodeFor(checkProjectPolicy(root)), 0);
+  });
+});
+
+describe("wiring health", () => {
+  /** why: a realistic document — every declared event wired — so a single broken entry is what the test isolates. */
+  function cursorLike(root: string, breakEvent?: string): ProviderWiring {
+    const launcher = join(root, "bin", "tlc-exec.mjs");
+    mkdirSync(dirname(launcher), { recursive: true });
+    writeFileSync(launcher, "// launcher\n");
+    const wiring = cursorWiring({ launcherPath: launcher });
+    const hooks: Record<string, { command: string }[]> = {};
+    for (const entry of wiring.entries) {
+      const full = [entry.command, ...entry.args].join(" ");
+      hooks[entry.hookEvent] = [
+        { command: entry.hookEvent === breakEvent ? `${entry.command} ${launcher}` : full },
+      ];
+    }
+    const home = join(root, "cursor-home");
+    mkdirSync(home, { recursive: true });
+    const target = join(home, "hooks.json");
+    writeFileSync(target, JSON.stringify({ version: 1, hooks }));
+    return { ...wiring, target };
+  }
+
+  // hazard: marker presence decided health, so a file carrying the marker in one entry and a broken command in
+  // another reported `wired`. A colleague's session was blocked by exactly that shape.
+  test("a file with the marker but one broken command is not wired", () => {
+    const root = newRoot();
+    const wiring = cursorLike(root, "preToolUse");
+    assert.equal(providerWiringStatus(wiring), "detected-but-unwired");
+    assert.match(formatWiringProblems(wiringProblems(wiring)), /preToolUse/);
+  });
+
+  test("a fully healthy file is still wired", () => {
+    const root = newRoot();
+    const wiring = cursorLike(root);
+    assert.deepEqual(wiringProblems(wiring), []);
+    assert.equal(providerWiringStatus(wiring), "wired");
+  });
+
+  // why: "detected but not wired" told an operator that something was wrong and nothing else.
+  test("the doctor detail names the failing event and the reason", () => {
+    const root = newRoot();
+    const wiring = cursorLike(root, "preToolUse");
+    const provider = { name: "cursor", wiring: () => wiring } as unknown as ProviderPort;
+    const check = checkProviders([provider], join(root, "home"))[0];
+    assert.equal(check?.level, "warn");
+    assert.match(check?.detail ?? "", /preToolUse/);
+    assert.match(check?.detail ?? "", /no handler after the script/);
+    assert.match(check?.detail ?? "", /tlc harness update/);
   });
 });
