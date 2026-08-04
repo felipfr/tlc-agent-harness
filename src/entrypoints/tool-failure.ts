@@ -1,5 +1,5 @@
 import type { HarnessEvent } from "../contracts/index.ts";
-import { coreFacade, type ObservabilityConfig } from "../core/index.ts";
+import { coreFacade } from "../core/index.ts";
 import type { Handler, HandlerContext } from "./run.ts";
 import { main } from "./run.ts";
 import { OBS_CONFIG_AUDIT, obsConfigFor } from "./support.ts";

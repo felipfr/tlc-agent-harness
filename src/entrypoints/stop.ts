@@ -6,7 +6,7 @@ import { filterCodeTargets, filterTestTargets, listChangedRepoFiles, runCommand 
 import { flagsDir } from "../platform/paths.ts";
 import type { Handler, HandlerContext } from "./run.ts";
 import { main } from "./run.ts";
-import { formatLessonsBlock, OBS_CONFIG, sessionIdFromKey } from "./support.ts";
+import { formatLessonsBlock, sessionIdFromKey } from "./support.ts";
 
 const STAGNATION_FOLLOWUP = [
   "BLOCKED: identical validation fingerprint repeated — no progress between attempts.",

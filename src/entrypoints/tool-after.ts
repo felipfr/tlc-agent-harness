@@ -1,5 +1,5 @@
 import type { HarnessEvent, HarnessEventKind } from "../contracts/index.ts";
-import { coreFacade, type ObservabilityConfig, type ObsKind } from "../core/index.ts";
+import { coreFacade, type ObsKind } from "../core/index.ts";
 import { estimateCostUsd, mapPoolToNeutral } from "../platform/pricing.ts";
 import { readClaudeUsage } from "../providers/index.ts";
 import type { Handler, HandlerContext } from "./run.ts";

@@ -1,4 +1,3 @@
-import { pathToFileURL } from "node:url";
 import { emitJson, takeJsonFlag } from "../src/platform/cli-output.ts";
 import {
   type CostEstimate,

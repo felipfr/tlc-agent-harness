@@ -1,7 +1,6 @@
 import { existsSync, lstatSync, readFileSync, readlinkSync } from "node:fs";
 import { homedir, platform as osPlatform } from "node:os";
 import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { findBunOnPath, writeRuntimeCache } from "../bin/tlc-exec.mjs";
 import { isCursorWired } from "../bin/write-user-hooks.mjs";
 import type { ProviderWiring } from "../src/contracts/index.ts";

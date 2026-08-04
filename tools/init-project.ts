@@ -1,7 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { applyCursorWiring, renderCursorHooksDocument } from "../bin/write-user-hooks.mjs";
 import type { WiringEntry } from "../src/contracts/index.ts";
 import { DEFAULTS } from "../src/core/policy/policy.defaults.ts";
