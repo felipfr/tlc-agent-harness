@@ -371,8 +371,20 @@ describe("harness test — step plan and runner", () => {
         "capabilities in sync",
       ],
     );
-    assert.deepEqual(steps[2]?.args, ["--test", "src/**/__test__/*.test.ts"]);
-    assert.deepEqual(steps[3]?.args, ["--test", "tools/__test__/*.test.ts"]);
+    // why: both suites carry the hermetic setup module. Without it the runner reads CLAUDE_PROJECT_DIR from
+    // whatever launched it and 22 tests resolve against the real repository instead of their own fixtures.
+    assert.deepEqual(steps[2]?.args, [
+      "--import",
+      "./tools/test-env.mjs",
+      "--test",
+      "src/**/__test__/*.test.ts",
+    ]);
+    assert.deepEqual(steps[3]?.args, [
+      "--import",
+      "./tools/test-env.mjs",
+      "--test",
+      "tools/__test__/*.test.ts",
+    ]);
     assert.deepEqual(steps[4]?.args, ["tools/check-boundaries.ts"]);
     assert.deepEqual(steps[5]?.args, ["tools/check-docs-bundle.ts"]);
     assert.deepEqual(steps[6]?.args, ["tools/render-capabilities.ts", "--check"]);
