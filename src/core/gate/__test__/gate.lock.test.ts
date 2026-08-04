@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import { closeSync, mkdirSync, mkdtempSync, openSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { nextDelay } from "../../../platform/backoff.ts";
 import {
   describeHolder,
+  GATE_LOCK_STALE_MS,
+  GATE_LOCK_UNREADABLE_GRACE_MS,
   GateLockTimeoutError,
   gateLockPath,
+  isLockOwnerGone,
   isLockReclaimable,
   isLockStale,
   isLockUnreadable,
@@ -398,4 +401,89 @@ test("isUsableLockBody accepts a real body and rejects every malformed shape", (
   ]) {
     assert.equal(isUsableLockBody(shape), false, `should reject ${JSON.stringify(shape)}`);
   }
+});
+
+// why: an unused pid. Linux pid_max is at least 32768, so a value above it cannot name a live process, and
+// `process.kill` reports ESRCH for it without the test having to create and reap anything.
+const DEAD_PID = 4_194_303;
+
+function writeLockBody(root: string, body: Record<string, unknown>): string {
+  const path = gateLockPath(root);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(body), "utf8");
+  return path;
+}
+
+function lockBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    provider: "provider-a",
+    session: "session-1",
+    pid: DEAD_PID,
+    acquired_at: new Date().toISOString(),
+    host: hostname(),
+    ...overrides,
+  };
+}
+
+const FRESH = { now: Date.now(), staleMs: GATE_LOCK_STALE_MS, graceMs: GATE_LOCK_UNREADABLE_GRACE_MS };
+
+test("a lock whose owner is gone on this host is reclaimable at once", () => {
+  const root = tempRoot();
+  try {
+    // hazard: the file is fresh, so the age rule says keep it. Measured cost of that alone: a gate blocked for
+    // the full 30-minute window by a session that had already died.
+    const path = writeLockBody(root, lockBody());
+    assert.equal(isLockReclaimable(path, FRESH), true);
+    assert.equal(describeHolder(root), null, "a dead owner must not read as holding the lock");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a lock held by a live process on this host is not reclaimable", () => {
+  const root = tempRoot();
+  try {
+    const path = writeLockBody(root, lockBody({ pid: process.pid }));
+    assert.equal(isLockReclaimable(path, FRESH), false);
+    assert.ok(describeHolder(root)?.includes("provider-a"));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a dead pid on another host is left to the age rule", () => {
+  const root = tempRoot();
+  try {
+    // invariant: a pid means nothing on another machine. Reclaiming here would let one host steal a lock whose
+    // owner is alive on another, and two gates would run at once.
+    const path = writeLockBody(root, lockBody({ host: `${hostname()}-elsewhere` }));
+    assert.equal(isLockReclaimable(path, FRESH), false);
+    assert.ok(describeHolder(root)?.includes("provider-a"));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a body written before hosts were recorded is left to the age rule", () => {
+  const root = tempRoot();
+  try {
+    const body = lockBody();
+    delete body.host;
+    const path = writeLockBody(root, body);
+    assert.equal(isLockReclaimable(path, FRESH), false);
+    assert.ok(describeHolder(root)?.includes("provider-a"));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a pid that cannot name a process is never consulted", () => {
+  for (const pid of [0, -1, 1.5, Number.NaN]) {
+    assert.equal(isLockOwnerGone(lockBody({ pid })), false, String(pid));
+  }
+});
+
+test("an unusable body is not judged by liveness", () => {
+  assert.equal(isLockOwnerGone(null), false);
+  assert.equal(isLockOwnerGone({ provider: "a" }), false);
 });

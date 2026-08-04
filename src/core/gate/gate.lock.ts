@@ -84,13 +84,46 @@ export function isLockUnreadable(path: string, args: { now: number; graceMs: num
   return !isUsableLockBody(readLockBody(path));
 }
 
+/**
+ * Whether the recorded process is provably gone.
+ *
+ * hazard: a pid means nothing on another machine, so this answers `false` unless the lock names this host.
+ * Without that check a shared checkout would let one machine reclaim a lock whose owner is alive on another,
+ * and two gates would run at once — the thing the lock exists to prevent.
+ *
+ * why: `process.kill(pid, 0)` sends no signal, it only asks whether the process exists. `EPERM` means it
+ * exists and belongs to another user, which is alive for our purposes. Anything unexpected is treated as
+ * alive, because the age rule is the safe fallback and reclaiming a live holder is the expensive mistake.
+ */
+export function isLockOwnerGone(body: unknown, thisHost: string = hostname()): boolean {
+  if (!isUsableLockBody(body)) {
+    return false;
+  }
+  const { host, pid } = body;
+  if (typeof host !== "string" || host !== thisHost) {
+    return false;
+  }
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ESRCH";
+  }
+}
+
 export function isLockReclaimable(
   path: string,
   args: { now: number; staleMs: number; graceMs: number },
 ): boolean {
   return (
     isLockStale(path, { now: args.now, staleMs: args.staleMs }) ||
-    isLockUnreadable(path, { now: args.now, graceMs: args.graceMs })
+    isLockUnreadable(path, { now: args.now, graceMs: args.graceMs }) ||
+    // why: an owner that no longer exists has nothing to wait for. Without this the gate honoured a dead
+    // session's lock for the full stale window — measured at 30 minutes, blocking on a pid `ps` reported gone.
+    isLockOwnerGone(readLockBody(path))
   );
 }
 
@@ -111,6 +144,13 @@ export function describeHolder(root: string, options: DescribeHolderOptions = {}
   }
   const body = readLockBody(path);
   if (!isUsableLockBody(body)) {
+    return null;
+  }
+  // hazard: the comment above predicted this exact failure and the code did not implement it. A lock whose
+  // owner is dead but whose file is younger than the threshold was reported as held, and the caller
+  // short-circuited before withGateLock could reclaim it — measured blocking a gate on a pid `ps` said was
+  // gone. Reclaimability and holder reporting have to agree, or the reclaim path is unreachable.
+  if (isLockOwnerGone(body)) {
     return null;
   }
   return `${body.provider} session ${body.session} (pid ${body.pid})`;
