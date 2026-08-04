@@ -6,13 +6,43 @@ import { filterCodeTargets, filterTestTargets, listChangedRepoFiles, runCommand 
 import { flagsDir } from "../platform/paths.ts";
 import type { Handler, HandlerContext } from "./run.ts";
 import { main } from "./run.ts";
-import { formatLessonsBlock, sessionIdFromKey } from "./support.ts";
+import { formatLessonsBlock, obsConfigFor, sessionIdFromKey } from "./support.ts";
 
 const STAGNATION_FOLLOWUP = [
   "BLOCKED: identical validation fingerprint repeated — no progress between attempts.",
   "TRIED: same gate failure signature as the previous stop loop.",
   "NEED: change approach. Do not repeat the same fix. Inspect root cause, try a different path, or escalate with BLOCKED/TRIED/NEED.",
 ].join("\n");
+
+/**
+ * hazard: `gate.outcome` was consumed in two places — the rollup counter and the session report's
+ * "Gates pass/fail" line — and emitted by nothing. Both read structurally zero, so the report printed a
+ * truthful-looking `0 / 0` for every gate this harness has ever run
+ * ([/decisions/ad-027.md](/decisions/ad-027.md)).
+ *
+ * why: recorded here rather than at each call site, so a gate added later cannot be forgotten. Every gate goes
+ * through this function; a gate that does not is not run under the lock either.
+ */
+function recordGateOutcome(args: {
+  root: string;
+  provider: string;
+  sessionKey: string;
+  policy: Policy;
+  artifact: LastGateArtifact;
+}): void {
+  coreFacade.observability.recordObs(args.root, obsConfigFor(args.policy), {
+    provider: args.provider,
+    kind: "gate.outcome",
+    sessionKey: args.sessionKey,
+    attrs: {
+      gate: args.artifact.gate,
+      passed: args.artifact.passed,
+      exit_code: args.artifact.exitCode,
+      duration_ms: args.artifact.durationMs,
+      file_count: args.artifact.files.length,
+    },
+  });
+}
 
 async function runLockedGate(args: {
   root: string;
@@ -22,19 +52,29 @@ async function runLockedGate(args: {
   command: string[];
   argvFiles: string[];
   recordFiles: string[];
+  sessionKey: string;
+  policy: Policy;
 }): Promise<LastGateArtifact> {
-  return coreFacade.gate.withGateLock(args.root, args.provider, args.session, async () => {
-    const result = await runCommand(args.root, args.command, args.argvFiles);
-    return coreFacade.gate.writeLastGate({
-      root: args.root,
-      gate: args.gate,
-      exitCode: result.exitCode,
-      command: [...args.command, ...args.argvFiles],
-      files: args.recordFiles,
-      durationMs: result.durationMs,
-      output: result.output,
-    });
-  });
+  const artifact = await coreFacade.gate.withGateLock(
+    args.root,
+    args.provider,
+    args.session,
+    async () => {
+      const result = await runCommand(args.root, args.command, args.argvFiles);
+      return coreFacade.gate.writeLastGate({
+        root: args.root,
+        gate: args.gate,
+        exitCode: result.exitCode,
+        command: [...args.command, ...args.argvFiles],
+        files: args.recordFiles,
+        durationMs: result.durationMs,
+        output: result.output,
+      });
+    },
+  );
+  // invariant: recorded outside the lock. A measurement must not widen the window in which one gate blocks another.
+  recordGateOutcome({ ...args, artifact });
+  return artifact;
 }
 
 async function failGate(args: {
@@ -280,6 +320,8 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
       root,
       provider,
       session,
+      sessionKey,
+      policy,
       gate: "lint",
       command: policy.grind.lintCommand,
       argvFiles: coreFacade.gate.shouldAppendFiles(policy.grind.lintCommand, policy.grind.appendFiles)
@@ -303,6 +345,8 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
         root,
         provider,
         session,
+        sessionKey,
+        policy,
         gate: "test",
         command: policy.grind.testCommand,
         argvFiles: coreFacade.gate.shouldAppendFiles(policy.grind.testCommand, policy.grind.appendFiles)
@@ -341,6 +385,8 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
       root,
       provider,
       session,
+      sessionKey,
+      policy,
       gate: "docs",
       command: policy.docs.command,
       argvFiles: [],

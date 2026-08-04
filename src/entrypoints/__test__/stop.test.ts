@@ -707,3 +707,48 @@ test("the plan gate runs before the ship gate, since bad scope invalidates the e
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// hazard: `gate.outcome` was consumed by the rollup counter and by the session report's "Gates pass/fail" line,
+// and emitted by nothing. Both read structurally zero, so the report printed a truthful-looking `0 / 0` for every
+// gate this harness has ever run.
+test("a failing gate records its outcome, and the counter that reads it moves", async () => {
+  const root = repoWithChange();
+  try {
+    writeProjectPolicy(root, {
+      version: 1,
+      codePaths: ["src"],
+      grind: { enabled: true, lintCommand: ["node", "-e", "process.exit(1)"] },
+    });
+    await runHandler(stopHandler, stdinOf(claudeStop(root)));
+
+    const recorded = coreFacade.observability
+      .readSignalEvents(root, "obs.jsonl", 50)
+      .filter((event) => event.kind === "gate.outcome");
+    assert.ok(recorded.length >= 1, "no gate outcome was recorded");
+    assert.equal(recorded[0]?.attrs.passed, false);
+    assert.equal(recorded[0]?.attrs.gate, "lint");
+
+    const rollup = coreFacade.observability.getRollup(root, "claude-sess-1");
+    assert.equal(rollup?.gates.fail, 1);
+    assert.equal(rollup?.gates.pass, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a passing gate records a passing outcome", async () => {
+  const root = repoWithChange();
+  try {
+    writeProjectPolicy(root, {
+      version: 1,
+      codePaths: ["src"],
+      grind: { enabled: true, lintCommand: ["node", "-e", "process.exit(0)"] },
+    });
+    await runHandler(stopHandler, stdinOf(claudeStop(root)));
+
+    const rollup = coreFacade.observability.getRollup(root, "claude-sess-1");
+    assert.equal(rollup?.gates.pass, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
