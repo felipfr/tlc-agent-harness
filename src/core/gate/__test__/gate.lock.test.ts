@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { closeSync, mkdirSync, mkdtempSync, openSync, rmSync, utimesSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { nextDelay } from "../../../platform/backoff.ts";
@@ -43,18 +43,26 @@ function writeRawLock(root: string, body: unknown, ageMs = 0): string {
   return path;
 }
 
-test("withGateLock writes a JSON body of {provider, session, pid, acquired_at}", async () => {
+test("withGateLock writes a JSON body of {provider, session, pid, acquired_at, host}", async () => {
   const root = tempRoot();
   try {
     let observed: unknown;
     await withGateLock(root, "provider-a", "session-1", async () => {
       observed = readLockBody(gateLockPath(root));
     });
-    const body = observed as { provider: string; session: string; pid: number; acquired_at: string };
+    const body = observed as {
+      provider: string;
+      session: string;
+      pid: number;
+      acquired_at: string;
+      host?: string;
+    };
     assert.equal(body.provider, "provider-a");
     assert.equal(body.session, "session-1");
     assert.equal(body.pid, process.pid);
     assert.equal(typeof body.acquired_at, "string");
+    // why: the pid is only meaningful on the machine that issued it, so the host travels with it.
+    assert.equal(body.host, hostname());
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -8,6 +8,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { nextDelay } from "../../platform/backoff.ts";
 import { projectStateDir } from "../../platform/paths.ts";
@@ -190,7 +191,13 @@ export async function withGateLock<T>(
   let attempt = 0;
   while (true) {
     const now = nowFn();
-    const body: LockBody = { provider, session, pid, acquired_at: new Date(now).toISOString() };
+    const body: LockBody = {
+      provider,
+      session,
+      pid,
+      acquired_at: new Date(now).toISOString(),
+      host: hostname(),
+    };
 
     if (tryAcquire(path, body)) {
       return runUnderLock(path, pid, fn);
