@@ -2,9 +2,9 @@ import { createRequire } from "node:module";
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // tools/doctor.ts
-import { existsSync as existsSync24, lstatSync, readFileSync as readFileSync24, readlinkSync } from "node:fs";
+import { existsSync as existsSync26, lstatSync, readFileSync as readFileSync26, readlinkSync } from "node:fs";
 import { homedir as homedir3, platform as osPlatform } from "node:os";
-import { dirname as dirname8, join as join26 } from "node:path";
+import { dirname as dirname8, join as join28 } from "node:path";
 
 // bin/tlc-exec.mjs
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
@@ -4569,19 +4569,115 @@ function release(root, provider, session) {
   deletePresenceRecord(root, provider, session);
 }
 
-// src/core/shell-policy/shell-policy.stall.ts
-import { existsSync as existsSync18, mkdirSync as mkdirSync12, readFileSync as readFileSync19, writeFileSync as writeFileSync11 } from "node:fs";
+// src/core/release/release.decisions.ts
+import { existsSync as existsSync18, readdirSync as readdirSync5, readFileSync as readFileSync19 } from "node:fs";
 import { join as join20 } from "node:path";
+function frontmatterField(text, field) {
+  const match = new RegExp(`^${field}:\\s*"?(.+?)"?\\s*$`, "m").exec(text);
+  const value = match?.[1]?.trim();
+  return value === undefined || value === "" ? undefined : value;
+}
+function decisionsDir(repoRoot) {
+  return join20(repoRoot, "docs", "decisions");
+}
+function readDecision(repoRoot, file) {
+  const path = join20(decisionsDir(repoRoot), file);
+  if (!existsSync18(path)) {
+    return null;
+  }
+  let text;
+  try {
+    text = readFileSync19(path, "utf8");
+  } catch {
+    return null;
+  }
+  const title = frontmatterField(text, "title");
+  if (title === undefined) {
+    return null;
+  }
+  const id = file.replace(/\.md$/, "").toUpperCase();
+  const migration = frontmatterField(text, "migration");
+  return migration === undefined ? { id, title } : { id, title, migration };
+}
+function readDecisions(repoRoot, files) {
+  return files.filter((file) => /^ad-\d+\.md$/.test(file)).map((file) => readDecision(repoRoot, file)).filter((decision) => decision !== null).sort((a, b) => a.id.localeCompare(b.id));
+}
+function allDecisionFiles(repoRoot) {
+  const dir = decisionsDir(repoRoot);
+  if (!existsSync18(dir)) {
+    return [];
+  }
+  try {
+    return readdirSync5(dir).filter((file) => /^ad-\d+\.md$/.test(file));
+  } catch {
+    return [];
+  }
+}
+function needsAction(decisions) {
+  return decisions.filter((decision) => decision.migration !== undefined);
+}
+function formatDecisionDigest(decisions) {
+  if (decisions.length === 0) {
+    return "";
+  }
+  const action = needsAction(decisions);
+  const lines = [`Decisions that landed (${decisions.length}):`];
+  if (action.length > 0) {
+    lines.push("", `NEEDS YOUR ACTION (${action.length}):`);
+    for (const decision of action) {
+      lines.push(`  ${decision.title}`, `    → ${decision.migration}`);
+    }
+  }
+  const rest = decisions.filter((decision) => decision.migration === undefined);
+  if (rest.length > 0) {
+    lines.push("", "No action needed:");
+    for (const decision of rest) {
+      lines.push(`  ${decision.title}`);
+    }
+  }
+  lines.push("", "Full reasoning: docs/decisions/index.md");
+  return lines.join(`
+`);
+}
+
+// src/core/release/release.seen.ts
+import { existsSync as existsSync19, readFileSync as readFileSync20 } from "node:fs";
+import { join as join21 } from "node:path";
+function seenPath(projectDir) {
+  return join21(projectStateDir(projectDir), "release-seen.json");
+}
+function readReleaseSeen(projectDir) {
+  const path = seenPath(projectDir);
+  if (!existsSync19(path)) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(readFileSync20(path, "utf8"));
+    return typeof parsed?.revision === "string" && parsed.revision !== "" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+async function writeReleaseSeen(projectDir, revision) {
+  await writeJsonAtomic(seenPath(projectDir), {
+    revision,
+    updatedAt: new Date().toISOString()
+  });
+}
+
+// src/core/shell-policy/shell-policy.stall.ts
+import { existsSync as existsSync20, mkdirSync as mkdirSync12, readFileSync as readFileSync21, writeFileSync as writeFileSync11 } from "node:fs";
+import { join as join22 } from "node:path";
 function storePath(root) {
-  return join20(projectStateDir(root), "shell-stall.json");
+  return join22(projectStateDir(root), "shell-stall.json");
 }
 function readStore(root) {
   const path = storePath(root);
-  if (!existsSync18(path)) {
+  if (!existsSync20(path)) {
     return {};
   }
   try {
-    return JSON.parse(readFileSync19(path, "utf8"));
+    return JSON.parse(readFileSync21(path, "utf8"));
   } catch {
     return {};
   }
@@ -4756,20 +4852,20 @@ function evaluateShellCommand(args) {
 }
 
 // src/core/stagnation/stagnation.resolution.ts
-import { existsSync as existsSync19, mkdirSync as mkdirSync13, readFileSync as readFileSync20, writeFileSync as writeFileSync12 } from "node:fs";
-import { join as join21 } from "node:path";
+import { existsSync as existsSync21, mkdirSync as mkdirSync13, readFileSync as readFileSync22, writeFileSync as writeFileSync12 } from "node:fs";
+import { join as join23 } from "node:path";
 var MAX_RESOLUTIONS = 200;
 var MAX_FILES_PER_RESOLUTION = 8;
 function storePath2(root) {
-  return join21(projectStateDir(root), "fingerprint-resolutions.json");
+  return join23(projectStateDir(root), "fingerprint-resolutions.json");
 }
 function readResolutions(root) {
   const path = storePath2(root);
-  if (!existsSync19(path)) {
+  if (!existsSync21(path)) {
     return {};
   }
   try {
-    const parsed = JSON.parse(readFileSync20(path, "utf8"));
+    const parsed = JSON.parse(readFileSync22(path, "utf8"));
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return {};
@@ -4818,18 +4914,18 @@ function computeFingerprint(parts) {
 }
 
 // src/core/stagnation/stagnation.store.ts
-import { existsSync as existsSync20, mkdirSync as mkdirSync14, readFileSync as readFileSync21, writeFileSync as writeFileSync13 } from "node:fs";
-import { join as join22 } from "node:path";
+import { existsSync as existsSync22, mkdirSync as mkdirSync14, readFileSync as readFileSync23, writeFileSync as writeFileSync13 } from "node:fs";
+import { join as join24 } from "node:path";
 function storePath3(root) {
-  return join22(projectStateDir(root), "fingerprint.json");
+  return join24(projectStateDir(root), "fingerprint.json");
 }
 function readStore2(root) {
   const path = storePath3(root);
-  if (!existsSync20(path)) {
+  if (!existsSync22(path)) {
     return {};
   }
   try {
-    return JSON.parse(readFileSync21(path, "utf8"));
+    return JSON.parse(readFileSync23(path, "utf8"));
   } catch {
     return {};
   }
@@ -4859,19 +4955,19 @@ function clearFingerprint(root, sessionKey) {
 }
 
 // src/core/subagent-policy/subagent-policy.parent-model.ts
-import { existsSync as existsSync21, mkdirSync as mkdirSync15, readFileSync as readFileSync22, writeFileSync as writeFileSync14 } from "node:fs";
-import { join as join23 } from "node:path";
+import { existsSync as existsSync23, mkdirSync as mkdirSync15, readFileSync as readFileSync24, writeFileSync as writeFileSync14 } from "node:fs";
+import { join as join25 } from "node:path";
 var PARENT_MODEL_SCHEMA = "harness.parent-model.v1";
 function parentModelPath(root) {
-  return join23(projectStateDir(root), "parent-model.json");
+  return join25(projectStateDir(root), "parent-model.json");
 }
 function readFile(root) {
   const path = parentModelPath(root);
-  if (!existsSync21(path)) {
+  if (!existsSync23(path)) {
     return { schema: PARENT_MODEL_SCHEMA, bySession: {} };
   }
   try {
-    const parsed = JSON.parse(readFileSync22(path, "utf8"));
+    const parsed = JSON.parse(readFileSync24(path, "utf8"));
     if (parsed?.schema === PARENT_MODEL_SCHEMA && parsed.bySession) {
       return parsed;
     }
@@ -5302,18 +5398,18 @@ function formatAutopilotBlock(plan) {
 }
 
 // src/core/turn/turn.loop-counter.ts
-import { existsSync as existsSync22, mkdirSync as mkdirSync16, readFileSync as readFileSync23, writeFileSync as writeFileSync15 } from "node:fs";
-import { join as join24 } from "node:path";
+import { existsSync as existsSync24, mkdirSync as mkdirSync16, readFileSync as readFileSync25, writeFileSync as writeFileSync15 } from "node:fs";
+import { join as join26 } from "node:path";
 function loopPath(root, sessionKey) {
-  return join24(loopsDir(root), `${sanitizeSegment(sessionKey)}.json`);
+  return join26(loopsDir(root), `${sanitizeSegment(sessionKey)}.json`);
 }
 function readLoopState(root, sessionKey) {
   const path = loopPath(root, sessionKey);
-  if (!existsSync22(path)) {
+  if (!existsSync24(path)) {
     return null;
   }
   try {
-    return JSON.parse(readFileSync23(path, "utf8"));
+    return JSON.parse(readFileSync25(path, "utf8"));
   } catch {
     return null;
   }
@@ -5346,11 +5442,11 @@ function effectiveLoopCount(event, capabilities) {
   return currentLoopCount(event.projectDir, event.sessionKey);
 }
 function bootStampPath(root, sessionKey) {
-  return join24(bootDir(root), sanitizeSegment(sessionKey));
+  return join26(bootDir(root), sanitizeSegment(sessionKey));
 }
 function markBooted(root, sessionKey) {
   const path = bootStampPath(root, sessionKey);
-  if (existsSync22(path)) {
+  if (existsSync24(path)) {
     return { alreadyBooted: true };
   }
   try {
@@ -5400,16 +5496,16 @@ function detectUntrustedRead(input) {
 }
 
 // src/core/untrusted/untrusted.store.ts
-import { existsSync as existsSync23, mkdirSync as mkdirSync17, rmSync as rmSync3, writeFileSync as writeFileSync16 } from "node:fs";
-import { join as join25 } from "node:path";
+import { existsSync as existsSync25, mkdirSync as mkdirSync17, rmSync as rmSync3, writeFileSync as writeFileSync16 } from "node:fs";
+import { join as join27 } from "node:path";
 function markerDir(root) {
-  return join25(projectStateDir(root), "untrusted");
+  return join27(projectStateDir(root), "untrusted");
 }
 function markerPath(root, sessionKey) {
-  return join25(markerDir(root), `${sanitizeSegment(sessionKey)}.marker`);
+  return join27(markerDir(root), `${sanitizeSegment(sessionKey)}.marker`);
 }
 function wasFramingInjected(root, sessionKey) {
-  return existsSync23(markerPath(root, sessionKey));
+  return existsSync25(markerPath(root, sessionKey));
 }
 function markFramingInjected(root, sessionKey) {
   try {
@@ -5626,6 +5722,15 @@ var coreFacade = {
     isObservableRail,
     unobservableRails
   },
+  release: {
+    readDecision,
+    readDecisions,
+    allDecisionFiles,
+    needsAction,
+    formatDecisionDigest,
+    readReleaseSeen,
+    writeReleaseSeen
+  },
   attest: {
     appendAttestation,
     readAttestations,
@@ -5697,20 +5802,20 @@ function checkNodeVersion(nodeVersion, bunPath = null) {
   return checks;
 }
 function checkRuntimePaths(home, platform) {
-  const launcher = join26(home, "bin", "tlc-exec.mjs");
-  const distSample = join26(home, "dist", "stop.mjs");
-  const cliLink = join26(homedir3(), ".local", "bin", platform === "win32" ? "tlc.cmd" : "tlc");
+  const launcher = join28(home, "bin", "tlc-exec.mjs");
+  const distSample = join28(home, "dist", "stop.mjs");
+  const cliLink = join28(homedir3(), ".local", "bin", platform === "win32" ? "tlc.cmd" : "tlc");
   return [
     { level: "ok", name: "platform", detail: platform },
-    { level: existsSync24(launcher) ? "ok" : "fail", name: "global runtime", detail: home },
+    { level: existsSync26(launcher) ? "ok" : "fail", name: "global runtime", detail: home },
     {
-      level: existsSync24(distSample) ? "ok" : "fail",
+      level: existsSync26(distSample) ? "ok" : "fail",
       name: "dist bundles",
-      detail: existsSync24(distSample) ? join26(home, "dist") : "missing — run: tlc harness build"
+      detail: existsSync26(distSample) ? join28(home, "dist") : "missing — run: tlc harness build"
     },
-    { level: existsSync24(launcher) ? "ok" : "fail", name: "portable launcher", detail: launcher },
+    { level: existsSync26(launcher) ? "ok" : "fail", name: "portable launcher", detail: launcher },
     {
-      level: existsSync24(cliLink) || existsSync24(join26(home, "bin", platform === "win32" ? "tlc.cmd" : "tlc")) ? "ok" : "fail",
+      level: existsSync26(cliLink) || existsSync26(join28(home, "bin", platform === "win32" ? "tlc.cmd" : "tlc")) ? "ok" : "fail",
       name: "CLI on PATH",
       detail: cliLink
     }
@@ -5723,18 +5828,18 @@ function checkHookRuntime(_home, bunPath) {
   return { level: "warn", name: "hook runtime", detail: `Node + dist/ — ${BUN_COST_NOTE}` };
 }
 function providerWiringStatus(wiring) {
-  if (!existsSync24(dirname8(wiring.target))) {
+  if (!existsSync26(dirname8(wiring.target))) {
     return "not-installed";
   }
   if (wiring.strategy === "replace") {
     return isCursorWired(wiring.target) ? "wired" : "detected-but-unwired";
   }
-  const existingText = existsSync24(wiring.target) ? readFileSync24(wiring.target, "utf8") : null;
+  const existingText = existsSync26(wiring.target) ? readFileSync26(wiring.target, "utf8") : null;
   const result = mergeClaudeSettings(existingText, wiring.entries);
   return result.ok && !result.changed ? "wired" : "detected-but-unwired";
 }
 function checkProviders(registry, home) {
-  const launcherPath = join26(home, "bin", "tlc-exec.mjs");
+  const launcherPath = join28(home, "bin", "tlc-exec.mjs");
   return registry.map((provider) => {
     const wiring = provider.wiring({ launcherPath });
     const status = providerWiringStatus(wiring);
@@ -5821,12 +5926,12 @@ function checkProjectPolicy(root) {
     {
       level: "ok",
       name: "project policy",
-      detail: existsSync24(configPath) ? configPath : "missing — run: tlc harness init"
+      detail: existsSync26(configPath) ? configPath : "missing — run: tlc harness init"
     },
     {
       level: "ok",
       name: "state dir",
-      detail: existsSync24(stateDir) ? stateDir : `${stateDir} (created on first session)`
+      detail: existsSync26(stateDir) ? stateDir : `${stateDir} (created on first session)`
     },
     checkPosture(root),
     ...checkObservedRails(root),
@@ -5834,8 +5939,8 @@ function checkProjectPolicy(root) {
   ];
 }
 function checkGlobalCommands(home) {
-  const globalCommands = join26(home, ".cursor", "commands");
-  if (!existsSync24(globalCommands)) {
+  const globalCommands = join28(home, ".cursor", "commands");
+  if (!existsSync26(globalCommands)) {
     return {
       level: "ok",
       name: "global commands dir",

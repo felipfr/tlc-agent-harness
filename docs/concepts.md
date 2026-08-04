@@ -395,3 +395,27 @@ session's attestation sees that policy moved and was accepted, instead of seeing
 
 `status` and `doctor` never clear a divergence as a side effect of looking at it. `doctor` reports one when it
 exists, naming the paths and the command.
+
+## updating
+
+```bash
+tlc harness version          # which revision you run, and what this project last saw
+tlc harness update --check   # what an update would pull. Fetches; never merges
+tlc harness update           # pull, relink, rebuild, announce what landed, then doctor
+```
+
+There is no changelog file and no version number, on purpose. The version is the runtime's git revision and its
+date, because that is what `update` actually moves — a hand-maintained number drifts, and this one said `0.1.0` for
+the project's whole life. A semantic version is a promise about compatibility that AD-003 declines to make.
+
+The changelog is `docs/decisions/`. A decision that requires you to change something carries a `migration` note in
+its own frontmatter, and `update` prints those notes for the decisions that landed since the revision your project
+last saw — needs-action first, once, never repeated. A project updating for the first time records where it stands
+and announces nothing, because thirty entries at once is the same as no message
+([/decisions/ad-031.md](/decisions/ad-031.md)).
+
+`doctor` is the net underneath: a posture that fell back, an observed rail with no checker, a policy that changed out
+of band. If a migration note was forgotten, that is where it surfaces.
+
+If the fast-forward fails, the runtime checkout has commits upstream does not. The message names both ways out —
+reset to upstream, or re-run the installer — and runs neither, because the first one throws work away.

@@ -1,5 +1,5 @@
 // src/entrypoints/run.ts
-import { join as join25 } from "node:path";
+import { join as join27 } from "node:path";
 
 // src/core/attest/attest.service.ts
 import { createHash } from "node:crypto";
@@ -3739,19 +3739,115 @@ function release(root, provider, session) {
   deletePresenceRecord(root, provider, session);
 }
 
-// src/core/shell-policy/shell-policy.stall.ts
-import { existsSync as existsSync15, mkdirSync as mkdirSync9, readFileSync as readFileSync16, writeFileSync as writeFileSync8 } from "node:fs";
+// src/core/release/release.decisions.ts
+import { existsSync as existsSync15, readdirSync as readdirSync5, readFileSync as readFileSync16 } from "node:fs";
 import { join as join17 } from "node:path";
+function frontmatterField(text, field) {
+  const match = new RegExp(`^${field}:\\s*"?(.+?)"?\\s*$`, "m").exec(text);
+  const value = match?.[1]?.trim();
+  return value === undefined || value === "" ? undefined : value;
+}
+function decisionsDir(repoRoot) {
+  return join17(repoRoot, "docs", "decisions");
+}
+function readDecision(repoRoot, file) {
+  const path = join17(decisionsDir(repoRoot), file);
+  if (!existsSync15(path)) {
+    return null;
+  }
+  let text;
+  try {
+    text = readFileSync16(path, "utf8");
+  } catch {
+    return null;
+  }
+  const title = frontmatterField(text, "title");
+  if (title === undefined) {
+    return null;
+  }
+  const id = file.replace(/\.md$/, "").toUpperCase();
+  const migration = frontmatterField(text, "migration");
+  return migration === undefined ? { id, title } : { id, title, migration };
+}
+function readDecisions(repoRoot, files) {
+  return files.filter((file) => /^ad-\d+\.md$/.test(file)).map((file) => readDecision(repoRoot, file)).filter((decision) => decision !== null).sort((a, b) => a.id.localeCompare(b.id));
+}
+function allDecisionFiles(repoRoot) {
+  const dir = decisionsDir(repoRoot);
+  if (!existsSync15(dir)) {
+    return [];
+  }
+  try {
+    return readdirSync5(dir).filter((file) => /^ad-\d+\.md$/.test(file));
+  } catch {
+    return [];
+  }
+}
+function needsAction(decisions) {
+  return decisions.filter((decision) => decision.migration !== undefined);
+}
+function formatDecisionDigest(decisions) {
+  if (decisions.length === 0) {
+    return "";
+  }
+  const action = needsAction(decisions);
+  const lines = [`Decisions that landed (${decisions.length}):`];
+  if (action.length > 0) {
+    lines.push("", `NEEDS YOUR ACTION (${action.length}):`);
+    for (const decision of action) {
+      lines.push(`  ${decision.title}`, `    → ${decision.migration}`);
+    }
+  }
+  const rest = decisions.filter((decision) => decision.migration === undefined);
+  if (rest.length > 0) {
+    lines.push("", "No action needed:");
+    for (const decision of rest) {
+      lines.push(`  ${decision.title}`);
+    }
+  }
+  lines.push("", "Full reasoning: docs/decisions/index.md");
+  return lines.join(`
+`);
+}
+
+// src/core/release/release.seen.ts
+import { existsSync as existsSync16, readFileSync as readFileSync17 } from "node:fs";
+import { join as join18 } from "node:path";
+function seenPath(projectDir) {
+  return join18(projectStateDir(projectDir), "release-seen.json");
+}
+function readReleaseSeen(projectDir) {
+  const path = seenPath(projectDir);
+  if (!existsSync16(path)) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(readFileSync17(path, "utf8"));
+    return typeof parsed?.revision === "string" && parsed.revision !== "" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+async function writeReleaseSeen(projectDir, revision) {
+  await writeJsonAtomic(seenPath(projectDir), {
+    revision,
+    updatedAt: new Date().toISOString()
+  });
+}
+
+// src/core/shell-policy/shell-policy.stall.ts
+import { existsSync as existsSync17, mkdirSync as mkdirSync9, readFileSync as readFileSync18, writeFileSync as writeFileSync8 } from "node:fs";
+import { join as join19 } from "node:path";
 function storePath(root) {
-  return join17(projectStateDir(root), "shell-stall.json");
+  return join19(projectStateDir(root), "shell-stall.json");
 }
 function readStore(root) {
   const path = storePath(root);
-  if (!existsSync15(path)) {
+  if (!existsSync17(path)) {
     return {};
   }
   try {
-    return JSON.parse(readFileSync16(path, "utf8"));
+    return JSON.parse(readFileSync18(path, "utf8"));
   } catch {
     return {};
   }
@@ -3926,20 +4022,20 @@ function evaluateShellCommand(args) {
 }
 
 // src/core/stagnation/stagnation.resolution.ts
-import { existsSync as existsSync16, mkdirSync as mkdirSync10, readFileSync as readFileSync17, writeFileSync as writeFileSync9 } from "node:fs";
-import { join as join18 } from "node:path";
+import { existsSync as existsSync18, mkdirSync as mkdirSync10, readFileSync as readFileSync19, writeFileSync as writeFileSync9 } from "node:fs";
+import { join as join20 } from "node:path";
 var MAX_RESOLUTIONS = 200;
 var MAX_FILES_PER_RESOLUTION = 8;
 function storePath2(root) {
-  return join18(projectStateDir(root), "fingerprint-resolutions.json");
+  return join20(projectStateDir(root), "fingerprint-resolutions.json");
 }
 function readResolutions(root) {
   const path = storePath2(root);
-  if (!existsSync16(path)) {
+  if (!existsSync18(path)) {
     return {};
   }
   try {
-    const parsed = JSON.parse(readFileSync17(path, "utf8"));
+    const parsed = JSON.parse(readFileSync19(path, "utf8"));
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return {};
@@ -3988,18 +4084,18 @@ function computeFingerprint(parts) {
 }
 
 // src/core/stagnation/stagnation.store.ts
-import { existsSync as existsSync17, mkdirSync as mkdirSync11, readFileSync as readFileSync18, writeFileSync as writeFileSync10 } from "node:fs";
-import { join as join19 } from "node:path";
+import { existsSync as existsSync19, mkdirSync as mkdirSync11, readFileSync as readFileSync20, writeFileSync as writeFileSync10 } from "node:fs";
+import { join as join21 } from "node:path";
 function storePath3(root) {
-  return join19(projectStateDir(root), "fingerprint.json");
+  return join21(projectStateDir(root), "fingerprint.json");
 }
 function readStore2(root) {
   const path = storePath3(root);
-  if (!existsSync17(path)) {
+  if (!existsSync19(path)) {
     return {};
   }
   try {
-    return JSON.parse(readFileSync18(path, "utf8"));
+    return JSON.parse(readFileSync20(path, "utf8"));
   } catch {
     return {};
   }
@@ -4029,19 +4125,19 @@ function clearFingerprint(root, sessionKey) {
 }
 
 // src/core/subagent-policy/subagent-policy.parent-model.ts
-import { existsSync as existsSync18, mkdirSync as mkdirSync12, readFileSync as readFileSync19, writeFileSync as writeFileSync11 } from "node:fs";
-import { join as join20 } from "node:path";
+import { existsSync as existsSync20, mkdirSync as mkdirSync12, readFileSync as readFileSync21, writeFileSync as writeFileSync11 } from "node:fs";
+import { join as join22 } from "node:path";
 var PARENT_MODEL_SCHEMA = "harness.parent-model.v1";
 function parentModelPath(root) {
-  return join20(projectStateDir(root), "parent-model.json");
+  return join22(projectStateDir(root), "parent-model.json");
 }
 function readFile(root) {
   const path = parentModelPath(root);
-  if (!existsSync18(path)) {
+  if (!existsSync20(path)) {
     return { schema: PARENT_MODEL_SCHEMA, bySession: {} };
   }
   try {
-    const parsed = JSON.parse(readFileSync19(path, "utf8"));
+    const parsed = JSON.parse(readFileSync21(path, "utf8"));
     if (parsed?.schema === PARENT_MODEL_SCHEMA && parsed.bySession) {
       return parsed;
     }
@@ -4484,18 +4580,18 @@ function formatAutopilotBlock(plan) {
 }
 
 // src/core/turn/turn.loop-counter.ts
-import { existsSync as existsSync19, mkdirSync as mkdirSync13, readFileSync as readFileSync20, writeFileSync as writeFileSync12 } from "node:fs";
-import { join as join21 } from "node:path";
+import { existsSync as existsSync21, mkdirSync as mkdirSync13, readFileSync as readFileSync22, writeFileSync as writeFileSync12 } from "node:fs";
+import { join as join23 } from "node:path";
 function loopPath(root, sessionKey) {
-  return join21(loopsDir(root), `${sanitizeSegment(sessionKey)}.json`);
+  return join23(loopsDir(root), `${sanitizeSegment(sessionKey)}.json`);
 }
 function readLoopState(root, sessionKey) {
   const path = loopPath(root, sessionKey);
-  if (!existsSync19(path)) {
+  if (!existsSync21(path)) {
     return null;
   }
   try {
-    return JSON.parse(readFileSync20(path, "utf8"));
+    return JSON.parse(readFileSync22(path, "utf8"));
   } catch {
     return null;
   }
@@ -4528,11 +4624,11 @@ function effectiveLoopCount(event, capabilities) {
   return currentLoopCount(event.projectDir, event.sessionKey);
 }
 function bootStampPath(root, sessionKey) {
-  return join21(bootDir(root), sanitizeSegment(sessionKey));
+  return join23(bootDir(root), sanitizeSegment(sessionKey));
 }
 function markBooted(root, sessionKey) {
   const path = bootStampPath(root, sessionKey);
-  if (existsSync19(path)) {
+  if (existsSync21(path)) {
     return { alreadyBooted: true };
   }
   try {
@@ -4582,16 +4678,16 @@ function detectUntrustedRead(input) {
 }
 
 // src/core/untrusted/untrusted.store.ts
-import { existsSync as existsSync20, mkdirSync as mkdirSync14, rmSync as rmSync3, writeFileSync as writeFileSync13 } from "node:fs";
-import { join as join22 } from "node:path";
+import { existsSync as existsSync22, mkdirSync as mkdirSync14, rmSync as rmSync3, writeFileSync as writeFileSync13 } from "node:fs";
+import { join as join24 } from "node:path";
 function markerDir(root) {
-  return join22(projectStateDir(root), "untrusted");
+  return join24(projectStateDir(root), "untrusted");
 }
 function markerPath(root, sessionKey) {
-  return join22(markerDir(root), `${sanitizeSegment(sessionKey)}.marker`);
+  return join24(markerDir(root), `${sanitizeSegment(sessionKey)}.marker`);
 }
 function wasFramingInjected(root, sessionKey) {
-  return existsSync20(markerPath(root, sessionKey));
+  return existsSync22(markerPath(root, sessionKey));
 }
 function markFramingInjected(root, sessionKey) {
   try {
@@ -4807,6 +4903,15 @@ var coreFacade = {
     OBSERVABLE_RAILS,
     isObservableRail,
     unobservableRails
+  },
+  release: {
+    readDecision,
+    readDecisions,
+    allDecisionFiles,
+    needsAction,
+    formatDecisionDigest,
+    readReleaseSeen,
+    writeReleaseSeen
   },
   attest: {
     appendAttestation,
@@ -5239,7 +5344,7 @@ function claudePolicyDefaults() {
 }
 
 // src/providers/claude/claude.wiring.ts
-import { dirname as dirname6, join as join23 } from "node:path";
+import { dirname as dirname6, join as join25 } from "node:path";
 var ENTRY_SPECS = [
   { hookEvent: "SessionStart", handler: "session-start", timeoutSeconds: 10 },
   { hookEvent: "SessionEnd", handler: "session-end", timeoutSeconds: 10 },
@@ -5254,7 +5359,7 @@ var ENTRY_SPECS = [
   { hookEvent: "MessageDisplay", handler: "response-after", timeoutSeconds: 5 }
 ];
 function claudeSettingsPath() {
-  return join23(claudeConfigDir(), "settings.json");
+  return join25(claudeConfigDir(), "settings.json");
 }
 function claudeWiring(runtime) {
   const entries = ENTRY_SPECS.map((spec) => ({
@@ -5551,7 +5656,7 @@ function cursorPolicyDefaults() {
 }
 
 // src/providers/cursor/cursor.wiring.ts
-import { join as join24 } from "node:path";
+import { join as join26 } from "node:path";
 var ENTRY_SPECS2 = [
   { hookEvent: "sessionStart", handler: "session-start", timeoutSeconds: 10 },
   { hookEvent: "sessionEnd", handler: "session-end", timeoutSeconds: 10 },
@@ -5591,7 +5696,7 @@ function cursorWiring(runtime) {
     ...spec.loopLimit !== undefined ? { loopLimit: spec.loopLimit } : {}
   }));
   return {
-    target: join24(cursorConfigDir(), "hooks.json"),
+    target: join26(cursorConfigDir(), "hooks.json"),
     strategy: "replace",
     entries
   };
@@ -5650,7 +5755,7 @@ function errorMessage(error) {
 }
 function recordAdapterEvent(root, kind, attrs) {
   try {
-    appendRecord(join25(projectStateDir(root), "obs.jsonl"), {
+    appendRecord(join27(projectStateDir(root), "obs.jsonl"), {
       schema: "harness.observability.v1",
       provider: "unknown",
       kind,

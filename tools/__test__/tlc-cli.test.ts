@@ -9,6 +9,7 @@ import {
   attestText,
   buildTestSteps,
   ensureFlagsDir,
+  ffFailureMessage,
   focusFlagPath,
   gatesPaused,
   grindFlagPath,
@@ -16,6 +17,8 @@ import {
   helpText,
   modeFilePath,
   pairedFlagPath,
+  pendingText,
+  pendingUpdate,
   policyJson,
   policyText,
   pricesHelpText,
@@ -24,6 +27,7 @@ import {
   resolveProjectRoot,
   route,
   runTestSteps,
+  runtimeRevision,
   setGateCommand,
   setGrind,
   setMode,
@@ -825,5 +829,64 @@ describe("policy accept", () => {
 
   test("help names the subcommand", () => {
     assert.match(helpText(), /tlc harness policy/);
+  });
+});
+
+describe("version and update --check", () => {
+  // why: says so rather than printing an empty revision. A linked checkout with no `.git` is a real install shape,
+  // and it is also the shape where `update` cannot pull — worth saying in the same breath.
+  test("a runtime that is not a git checkout reports an unknown revision and says why", () => {
+    const root = newRoot();
+    assert.deepEqual(runtimeRevision(root), { revision: null, date: null });
+  });
+
+  test("the pending report on a non-git runtime is not an error", () => {
+    const root = newRoot();
+    const report = pendingUpdate(root, "origin/main");
+    assert.equal(report.ok, false);
+    assert.equal(report.commits, 0);
+    assert.match(pendingText(report), /not a git checkout/);
+  });
+
+  test("a current runtime says so rather than printing an empty list", () => {
+    assert.match(pendingText({ ok: true, commits: 0, decisions: [] }), /is current/);
+  });
+
+  test("a pending update reports the count and states that nothing changed yet", () => {
+    const text = pendingText({
+      ok: true,
+      commits: 4,
+      decisions: [{ id: "AD-031", title: "AD-031 — A thing", migration: "Do X." }],
+    });
+    assert.match(text, /4 commit\(s\) would be pulled/);
+    assert.match(text, /Nothing has changed yet/);
+    assert.match(text, /NEEDS YOUR ACTION/);
+    assert.match(text, /Do X\./);
+  });
+
+  test("a pending update with no decisions says that, rather than showing an empty digest", () => {
+    assert.match(pendingText({ ok: true, commits: 2, decisions: [] }), /no decisions landed in that range/);
+  });
+
+  // hazard: the old message named "Fix the checkout or re-install", which is the two things an operator cannot
+  // choose between without knowing which applies. Both routes are spelled out and neither is run for them.
+  test("a fast-forward failure names both routes and gives the command for one", () => {
+    const message = ffFailureMessage("/opt/tlc", "origin/main");
+    assert.match(message, /git -C \/opt\/tlc reset --hard origin\/main/);
+    assert.match(message, /re-run the installer/);
+    assert.match(message, /Nothing was changed/);
+    assert.match(message, /throws work away/);
+  });
+
+  test("route recognises version and separates update from update --check", () => {
+    assert.deepEqual(route(["version"]), { kind: "version" });
+    assert.deepEqual(route(["update"]), { kind: "update" });
+    assert.deepEqual(route(["update", "--check"]), { kind: "update-check" });
+    assert.deepEqual(route(["upgrade", "--check"]), { kind: "update-check" });
+  });
+
+  test("help names both new commands", () => {
+    assert.match(helpText(), /tlc harness version/);
+    assert.match(helpText(), /tlc harness update --check/);
   });
 });

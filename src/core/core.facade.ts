@@ -80,6 +80,14 @@ import { isOperatorMode, OPERATOR_MODES } from "./policy/policy.posture.ts";
 import { activeRails } from "./policy/policy.rails.ts";
 import { forProvider } from "./policy/policy.types.ts";
 import { checkCollision, heartbeat, register, release, sweepStale } from "./presence/presence.service.ts";
+import {
+  allDecisionFiles,
+  formatDecisionDigest,
+  needsAction,
+  readDecision,
+  readDecisions,
+} from "./release/release.decisions.ts";
+import { readReleaseSeen, writeReleaseSeen } from "./release/release.seen.ts";
 import { evaluateShellCommand } from "./shell-policy/shell-policy.service.ts";
 import { clearShellStall } from "./shell-policy/shell-policy.stall.ts";
 import { appendShipLedger, hasRecentEvidence, newestChangeMs, readShipLedger } from "./ship/ship.ledger.ts";
@@ -275,6 +283,15 @@ export const coreFacade = {
     OBSERVABLE_RAILS,
     isObservableRail,
     unobservableRails,
+  },
+  release: {
+    readDecision,
+    readDecisions,
+    allDecisionFiles,
+    needsAction,
+    formatDecisionDigest,
+    readReleaseSeen,
+    writeReleaseSeen,
   },
   attest: {
     appendAttestation,

@@ -3,9 +3,9 @@ var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/tlc-cli.ts
 import { spawnSync } from "node:child_process";
-import { existsSync as existsSync21, mkdirSync as mkdirSync15, readFileSync as readFileSync21, realpathSync, rmSync as rmSync4, writeFileSync as writeFileSync14 } from "node:fs";
+import { existsSync as existsSync23, mkdirSync as mkdirSync15, readFileSync as readFileSync23, realpathSync, rmSync as rmSync4, writeFileSync as writeFileSync14 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { delimiter, join as join23 } from "node:path";
+import { delimiter, join as join25 } from "node:path";
 
 // src/core/attest/attest.service.ts
 import { createHash } from "node:crypto";
@@ -3730,19 +3730,115 @@ function release(root, provider, session) {
   deletePresenceRecord(root, provider, session);
 }
 
-// src/core/shell-policy/shell-policy.stall.ts
-import { existsSync as existsSync15, mkdirSync as mkdirSync9, readFileSync as readFileSync16, writeFileSync as writeFileSync8 } from "node:fs";
+// src/core/release/release.decisions.ts
+import { existsSync as existsSync15, readdirSync as readdirSync5, readFileSync as readFileSync16 } from "node:fs";
 import { join as join17 } from "node:path";
+function frontmatterField(text, field) {
+  const match = new RegExp(`^${field}:\\s*"?(.+?)"?\\s*$`, "m").exec(text);
+  const value = match?.[1]?.trim();
+  return value === undefined || value === "" ? undefined : value;
+}
+function decisionsDir(repoRoot) {
+  return join17(repoRoot, "docs", "decisions");
+}
+function readDecision(repoRoot, file) {
+  const path = join17(decisionsDir(repoRoot), file);
+  if (!existsSync15(path)) {
+    return null;
+  }
+  let text;
+  try {
+    text = readFileSync16(path, "utf8");
+  } catch {
+    return null;
+  }
+  const title = frontmatterField(text, "title");
+  if (title === undefined) {
+    return null;
+  }
+  const id = file.replace(/\.md$/, "").toUpperCase();
+  const migration = frontmatterField(text, "migration");
+  return migration === undefined ? { id, title } : { id, title, migration };
+}
+function readDecisions(repoRoot, files) {
+  return files.filter((file) => /^ad-\d+\.md$/.test(file)).map((file) => readDecision(repoRoot, file)).filter((decision) => decision !== null).sort((a, b) => a.id.localeCompare(b.id));
+}
+function allDecisionFiles(repoRoot) {
+  const dir = decisionsDir(repoRoot);
+  if (!existsSync15(dir)) {
+    return [];
+  }
+  try {
+    return readdirSync5(dir).filter((file) => /^ad-\d+\.md$/.test(file));
+  } catch {
+    return [];
+  }
+}
+function needsAction(decisions) {
+  return decisions.filter((decision) => decision.migration !== undefined);
+}
+function formatDecisionDigest(decisions) {
+  if (decisions.length === 0) {
+    return "";
+  }
+  const action = needsAction(decisions);
+  const lines = [`Decisions that landed (${decisions.length}):`];
+  if (action.length > 0) {
+    lines.push("", `NEEDS YOUR ACTION (${action.length}):`);
+    for (const decision of action) {
+      lines.push(`  ${decision.title}`, `    → ${decision.migration}`);
+    }
+  }
+  const rest = decisions.filter((decision) => decision.migration === undefined);
+  if (rest.length > 0) {
+    lines.push("", "No action needed:");
+    for (const decision of rest) {
+      lines.push(`  ${decision.title}`);
+    }
+  }
+  lines.push("", "Full reasoning: docs/decisions/index.md");
+  return lines.join(`
+`);
+}
+
+// src/core/release/release.seen.ts
+import { existsSync as existsSync16, readFileSync as readFileSync17 } from "node:fs";
+import { join as join18 } from "node:path";
+function seenPath(projectDir) {
+  return join18(projectStateDir(projectDir), "release-seen.json");
+}
+function readReleaseSeen(projectDir) {
+  const path = seenPath(projectDir);
+  if (!existsSync16(path)) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(readFileSync17(path, "utf8"));
+    return typeof parsed?.revision === "string" && parsed.revision !== "" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+async function writeReleaseSeen(projectDir, revision) {
+  await writeJsonAtomic(seenPath(projectDir), {
+    revision,
+    updatedAt: new Date().toISOString()
+  });
+}
+
+// src/core/shell-policy/shell-policy.stall.ts
+import { existsSync as existsSync17, mkdirSync as mkdirSync9, readFileSync as readFileSync18, writeFileSync as writeFileSync8 } from "node:fs";
+import { join as join19 } from "node:path";
 function storePath(root) {
-  return join17(projectStateDir(root), "shell-stall.json");
+  return join19(projectStateDir(root), "shell-stall.json");
 }
 function readStore(root) {
   const path = storePath(root);
-  if (!existsSync15(path)) {
+  if (!existsSync17(path)) {
     return {};
   }
   try {
-    return JSON.parse(readFileSync16(path, "utf8"));
+    return JSON.parse(readFileSync18(path, "utf8"));
   } catch {
     return {};
   }
@@ -3917,20 +4013,20 @@ function evaluateShellCommand(args) {
 }
 
 // src/core/stagnation/stagnation.resolution.ts
-import { existsSync as existsSync16, mkdirSync as mkdirSync10, readFileSync as readFileSync17, writeFileSync as writeFileSync9 } from "node:fs";
-import { join as join18 } from "node:path";
+import { existsSync as existsSync18, mkdirSync as mkdirSync10, readFileSync as readFileSync19, writeFileSync as writeFileSync9 } from "node:fs";
+import { join as join20 } from "node:path";
 var MAX_RESOLUTIONS = 200;
 var MAX_FILES_PER_RESOLUTION = 8;
 function storePath2(root) {
-  return join18(projectStateDir(root), "fingerprint-resolutions.json");
+  return join20(projectStateDir(root), "fingerprint-resolutions.json");
 }
 function readResolutions(root) {
   const path = storePath2(root);
-  if (!existsSync16(path)) {
+  if (!existsSync18(path)) {
     return {};
   }
   try {
-    const parsed = JSON.parse(readFileSync17(path, "utf8"));
+    const parsed = JSON.parse(readFileSync19(path, "utf8"));
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return {};
@@ -3979,18 +4075,18 @@ function computeFingerprint(parts) {
 }
 
 // src/core/stagnation/stagnation.store.ts
-import { existsSync as existsSync17, mkdirSync as mkdirSync11, readFileSync as readFileSync18, writeFileSync as writeFileSync10 } from "node:fs";
-import { join as join19 } from "node:path";
+import { existsSync as existsSync19, mkdirSync as mkdirSync11, readFileSync as readFileSync20, writeFileSync as writeFileSync10 } from "node:fs";
+import { join as join21 } from "node:path";
 function storePath3(root) {
-  return join19(projectStateDir(root), "fingerprint.json");
+  return join21(projectStateDir(root), "fingerprint.json");
 }
 function readStore2(root) {
   const path = storePath3(root);
-  if (!existsSync17(path)) {
+  if (!existsSync19(path)) {
     return {};
   }
   try {
-    return JSON.parse(readFileSync18(path, "utf8"));
+    return JSON.parse(readFileSync20(path, "utf8"));
   } catch {
     return {};
   }
@@ -4020,19 +4116,19 @@ function clearFingerprint(root, sessionKey) {
 }
 
 // src/core/subagent-policy/subagent-policy.parent-model.ts
-import { existsSync as existsSync18, mkdirSync as mkdirSync12, readFileSync as readFileSync19, writeFileSync as writeFileSync11 } from "node:fs";
-import { join as join20 } from "node:path";
+import { existsSync as existsSync20, mkdirSync as mkdirSync12, readFileSync as readFileSync21, writeFileSync as writeFileSync11 } from "node:fs";
+import { join as join22 } from "node:path";
 var PARENT_MODEL_SCHEMA = "harness.parent-model.v1";
 function parentModelPath(root) {
-  return join20(projectStateDir(root), "parent-model.json");
+  return join22(projectStateDir(root), "parent-model.json");
 }
 function readFile(root) {
   const path = parentModelPath(root);
-  if (!existsSync18(path)) {
+  if (!existsSync20(path)) {
     return { schema: PARENT_MODEL_SCHEMA, bySession: {} };
   }
   try {
-    const parsed = JSON.parse(readFileSync19(path, "utf8"));
+    const parsed = JSON.parse(readFileSync21(path, "utf8"));
     if (parsed?.schema === PARENT_MODEL_SCHEMA && parsed.bySession) {
       return parsed;
     }
@@ -4475,18 +4571,18 @@ function formatAutopilotBlock(plan) {
 }
 
 // src/core/turn/turn.loop-counter.ts
-import { existsSync as existsSync19, mkdirSync as mkdirSync13, readFileSync as readFileSync20, writeFileSync as writeFileSync12 } from "node:fs";
-import { join as join21 } from "node:path";
+import { existsSync as existsSync21, mkdirSync as mkdirSync13, readFileSync as readFileSync22, writeFileSync as writeFileSync12 } from "node:fs";
+import { join as join23 } from "node:path";
 function loopPath(root, sessionKey) {
-  return join21(loopsDir(root), `${sanitizeSegment(sessionKey)}.json`);
+  return join23(loopsDir(root), `${sanitizeSegment(sessionKey)}.json`);
 }
 function readLoopState(root, sessionKey) {
   const path = loopPath(root, sessionKey);
-  if (!existsSync19(path)) {
+  if (!existsSync21(path)) {
     return null;
   }
   try {
-    return JSON.parse(readFileSync20(path, "utf8"));
+    return JSON.parse(readFileSync22(path, "utf8"));
   } catch {
     return null;
   }
@@ -4519,11 +4615,11 @@ function effectiveLoopCount(event, capabilities) {
   return currentLoopCount(event.projectDir, event.sessionKey);
 }
 function bootStampPath(root, sessionKey) {
-  return join21(bootDir(root), sanitizeSegment(sessionKey));
+  return join23(bootDir(root), sanitizeSegment(sessionKey));
 }
 function markBooted(root, sessionKey) {
   const path = bootStampPath(root, sessionKey);
-  if (existsSync19(path)) {
+  if (existsSync21(path)) {
     return { alreadyBooted: true };
   }
   try {
@@ -4573,16 +4669,16 @@ function detectUntrustedRead(input) {
 }
 
 // src/core/untrusted/untrusted.store.ts
-import { existsSync as existsSync20, mkdirSync as mkdirSync14, rmSync as rmSync3, writeFileSync as writeFileSync13 } from "node:fs";
-import { join as join22 } from "node:path";
+import { existsSync as existsSync22, mkdirSync as mkdirSync14, rmSync as rmSync3, writeFileSync as writeFileSync13 } from "node:fs";
+import { join as join24 } from "node:path";
 function markerDir(root) {
-  return join22(projectStateDir(root), "untrusted");
+  return join24(projectStateDir(root), "untrusted");
 }
 function markerPath(root, sessionKey) {
-  return join22(markerDir(root), `${sanitizeSegment(sessionKey)}.marker`);
+  return join24(markerDir(root), `${sanitizeSegment(sessionKey)}.marker`);
 }
 function wasFramingInjected(root, sessionKey) {
-  return existsSync20(markerPath(root, sessionKey));
+  return existsSync22(markerPath(root, sessionKey));
 }
 function markFramingInjected(root, sessionKey) {
   try {
@@ -4799,6 +4895,15 @@ var coreFacade = {
     isObservableRail,
     unobservableRails
   },
+  release: {
+    readDecision,
+    readDecisions,
+    allDecisionFiles,
+    needsAction,
+    formatDecisionDigest,
+    readReleaseSeen,
+    writeReleaseSeen
+  },
   attest: {
     appendAttestation,
     readAttestations,
@@ -4858,19 +4963,19 @@ function resolveProjectRoot() {
   return process.env.TLC_PROJECT_DIR ?? process.cwd();
 }
 function modeFilePath(root) {
-  return join23(projectStateDir(root), "harness-mode");
+  return join25(projectStateDir(root), "harness-mode");
 }
 function grindFlagPath(root) {
-  return join23(flagsDir(root), "grind-on");
+  return join25(flagsDir(root), "grind-on");
 }
 function skipFlagPath(root) {
-  return join23(flagsDir(root), "skip-verify");
+  return join25(flagsDir(root), "skip-verify");
 }
 function focusFlagPath(root) {
-  return join23(flagsDir(root), "focus");
+  return join25(flagsDir(root), "focus");
 }
 function pairedFlagPath(root) {
-  return join23(flagsDir(root), "paired");
+  return join25(flagsDir(root), "paired");
 }
 function ensureFlagsDir(root) {
   mkdirSync15(flagsDir(root), { recursive: true });
@@ -4882,7 +4987,7 @@ function grindOn(root) {
   return coreFacade.policy.loadPolicy(root).grind.enabled;
 }
 function gatesPaused(root) {
-  return existsSync21(skipFlagPath(root));
+  return existsSync23(skipFlagPath(root));
 }
 function acceptedModes() {
   return coreFacade.policy.OPERATOR_MODES.join(" | ");
@@ -4926,7 +5031,7 @@ function setGrind(root, on) {
     coreFacade.policy.refreshPolicyBaselines(root);
     return "grind ON — stop hook will lint/test and auto-retry on failure";
   }
-  if (existsSync21(path)) {
+  if (existsSync23(path)) {
     rmSync4(path);
   }
   coreFacade.policy.refreshPolicyBaselines(root);
@@ -4940,7 +5045,7 @@ function setPaused(root, on) {
     coreFacade.policy.refreshPolicyBaselines(root);
     return "gates PAUSED — stop checks disabled until `tlc harness resume`";
   }
-  if (existsSync21(path)) {
+  if (existsSync23(path)) {
     rmSync4(path);
   }
   coreFacade.policy.refreshPolicyBaselines(root);
@@ -5030,6 +5135,96 @@ function policyJson(root) {
   const diverged = coreFacade.policy.allDivergedPaths(root);
   return { diverged, ok: diverged.length === 0 };
 }
+function upstreamRef(dest) {
+  const read = (args) => {
+    const r = spawnSync("git", ["-C", dest, ...args], { encoding: "utf8", env: process.env });
+    return (r.status ?? 1) === 0 ? (r.stdout ?? "").trim() : "";
+  };
+  const tracked = read(["rev-parse", "--abbrev-ref", "@{u}"]);
+  if (tracked !== "") {
+    return tracked;
+  }
+  return `origin/${read(["rev-parse", "--abbrev-ref", "HEAD"]) || "main"}`;
+}
+function ffFailureMessage(dest, mergeRef) {
+  return [
+    `update: fast-forward failed (${mergeRef}) — the runtime checkout has commits that upstream does not.`,
+    "Two ways out, both yours to choose:",
+    `  discard local changes at the runtime path:  git -C ${dest} reset --hard ${mergeRef}`,
+    "  or re-run the installer from the README, which replaces the checkout",
+    "Nothing was changed. Neither command is run for you, because the first one throws work away."
+  ].join(`
+`);
+}
+function runtimeRevision(dest) {
+  if (!existsSync23(join25(dest, ".git"))) {
+    return { revision: null, date: null };
+  }
+  const read = (args) => {
+    const r = spawnSync("git", ["-C", dest, ...args], { encoding: "utf8", env: process.env });
+    const out = (r.stdout ?? "").trim();
+    return (r.status ?? 1) === 0 && out !== "" ? out : null;
+  };
+  return { revision: read(["rev-parse", "--short", "HEAD"]), date: read(["log", "-1", "--format=%cs"]) };
+}
+function versionJson(root) {
+  const dest = resolveHarnessRoot();
+  const { revision, date } = runtimeRevision(dest);
+  return {
+    runtime: dest,
+    revision,
+    date,
+    seenRevision: coreFacade.release.readReleaseSeen(root)?.revision ?? null
+  };
+}
+function versionText(root) {
+  const report = versionJson(root);
+  if (report.revision === null) {
+    return [
+      `harness runtime: ${report.runtime}`,
+      "  revision: unknown — the runtime path is not a git checkout, so `update` cannot pull either"
+    ].join(`
+`);
+  }
+  return [
+    `harness runtime: ${report.runtime}`,
+    `  revision: ${report.revision} (${report.date ?? "date unknown"})`,
+    `  this project last saw: ${report.seenRevision ?? "nothing yet — the next update will announce what landed"}`
+  ].join(`
+`);
+}
+function pendingUpdate(dest, mergeRef) {
+  if (!existsSync23(join25(dest, ".git"))) {
+    return { ok: false, reason: "the runtime path is not a git checkout", commits: 0, decisions: [] };
+  }
+  const fetch = spawnSync("git", ["-C", dest, "fetch", "origin"], { stdio: "inherit", env: process.env });
+  if ((fetch.status ?? 1) !== 0) {
+    return { ok: false, reason: "git fetch failed", commits: 0, decisions: [] };
+  }
+  const count = spawnSync("git", ["-C", dest, "rev-list", "--count", `HEAD..${mergeRef}`], {
+    encoding: "utf8",
+    env: process.env
+  });
+  const commits = Number.parseInt((count.stdout ?? "0").trim(), 10) || 0;
+  const added = spawnSync("git", ["-C", dest, "diff", "--name-only", "--diff-filter=A", `HEAD..${mergeRef}`, "--", "docs/decisions"], { encoding: "utf8", env: process.env });
+  const files = (added.stdout ?? "").split(`
+`).map((line) => line.trim().split("/").pop() ?? "").filter(Boolean);
+  return { ok: true, commits, decisions: coreFacade.release.readDecisions(dest, files) };
+}
+function pendingText(report) {
+  if (!report.ok) {
+    return `update --check: ${report.reason} — nothing to compare against`;
+  }
+  if (report.commits === 0) {
+    return "update --check: the runtime is current — nothing to pull";
+  }
+  const digest = coreFacade.release.formatDecisionDigest(report.decisions);
+  const head = `update --check: ${report.commits} commit(s) would be pulled. Nothing has changed yet.`;
+  return digest === "" ? `${head}
+  no decisions landed in that range` : `${head}
+
+${digest}`;
+}
 var GATE_FIELDS = {
   "test-command": "test",
   "lint-command": "lint"
@@ -5038,13 +5233,13 @@ function resolveExecutable(name, env = process.env, platform = process.platform)
   const extensions = platform === "win32" ? (env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";") : [""];
   const candidates = (base) => [base, ...extensions.map((ext) => `${base}${ext}`)];
   if (name.includes("/") || name.includes("\\")) {
-    return candidates(name).find((candidate) => existsSync21(candidate)) ?? null;
+    return candidates(name).find((candidate) => existsSync23(candidate)) ?? null;
   }
   for (const dir of (env.PATH ?? "").split(delimiter)) {
     if (!dir) {
       continue;
     }
-    const found = candidates(join23(dir, name)).find((candidate) => existsSync21(candidate));
+    const found = candidates(join25(dir, name)).find((candidate) => existsSync23(candidate));
     if (found) {
       return found;
     }
@@ -5063,11 +5258,11 @@ function setGateCommand(root, field, argv, interactive) {
     throw new UsageError(`\`${binary}\` was not found on PATH, and a gate command that cannot run is a config fault (AD-021).`);
   }
   const path = projectConfigPath(root);
-  const parsed = existsSync21(path) ? JSON.parse(readFileSync21(path, "utf8")) : {};
+  const parsed = existsSync23(path) ? JSON.parse(readFileSync23(path, "utf8")) : {};
   const grind = { ...parsed.grind ?? {} };
   grind[field === "test" ? "testCommand" : "lintCommand"] = argv;
   parsed.grind = grind;
-  mkdirSync15(join23(root, ".tlc", "harness"), { recursive: true });
+  mkdirSync15(join25(root, ".tlc", "harness"), { recursive: true });
   writeFileSync14(path, `${JSON.stringify(parsed, null, 2)}
 `, "utf8");
   coreFacade.policy.refreshPolicyBaselines(root);
@@ -5082,6 +5277,8 @@ Read commands accept --json: status, doctor, obs, lessons, prices lookup, attest
 
 QUICK
   tlc harness status              mode / grind / gates
+  tlc harness version             runtime revision, and what this project last saw
+  tlc harness update --check      what an update would pull, without pulling it
   tlc harness update              pull runtime + refresh skill/CLI, then doctor
   tlc harness doctor               health checklist
   tlc harness build                compile dist/ for Node
@@ -5131,10 +5328,10 @@ function resolveHarnessRoot() {
   }
 }
 function execBinPath() {
-  return join23(resolveHarnessRoot(), "bin", "tlc-exec");
+  return join25(resolveHarnessRoot(), "bin", "tlc-exec");
 }
 function buildBinPath() {
-  return join23(resolveHarnessRoot(), "bin", "tlc-build");
+  return join25(resolveHarnessRoot(), "bin", "tlc-build");
 }
 function route(args) {
   const cmd = (args[0] ?? "status").toLowerCase();
@@ -5148,7 +5345,10 @@ function route(args) {
       return { kind: "build" };
     case "update":
     case "upgrade":
-      return { kind: "update" };
+      return args.slice(1).includes("--check") ? { kind: "update-check" } : { kind: "update" };
+    case "version":
+    case "--version":
+      return { kind: "version" };
     case "test":
       return { kind: "test" };
     case "grind":
@@ -5279,16 +5479,43 @@ function announceNewCapabilities(root, runtimeRoot) {
   console.log("");
   coreFacade.capability.writeRuntimeSeen(root, catalog.catalogVersion);
 }
+function announceLandedDecisions(root, dest, before) {
+  const now = runtimeRevision(dest).revision;
+  if (now === null) {
+    return;
+  }
+  const seen = coreFacade.release.readReleaseSeen(root)?.revision ?? before;
+  if (seen === null || seen === now) {
+    coreFacade.release.writeReleaseSeen(root, now);
+    return;
+  }
+  const added = spawnSync("git", ["-C", dest, "diff", "--name-only", "--diff-filter=A", `${seen}..${now}`, "--", "docs/decisions"], { encoding: "utf8", env: process.env });
+  if ((added.status ?? 1) !== 0) {
+    console.log(`update: cannot list what landed since ${seen} — that revision is no longer in the checkout`);
+    coreFacade.release.writeReleaseSeen(root, now);
+    return;
+  }
+  const files = (added.stdout ?? "").split(`
+`).map((line) => line.trim().split("/").pop() ?? "").filter(Boolean);
+  const digest = coreFacade.release.formatDecisionDigest(coreFacade.release.readDecisions(dest, files));
+  if (digest !== "") {
+    console.log("");
+    console.log(digest);
+    console.log("");
+  }
+  coreFacade.release.writeReleaseSeen(root, now);
+}
 function runUpdate(root) {
   const dest = resolveHarnessRoot();
+  const revisionBefore = runtimeRevision(dest).revision;
   const home = runtimeHome();
   console.log(`update: runtime → ${dest}`);
-  if (!existsSync21(join23(dest, "bin", "tlc-exec.mjs"))) {
+  if (!existsSync23(join25(dest, "bin", "tlc-exec.mjs"))) {
     console.error(`update: missing install at ${home}`);
     console.error("update: install once with the curl/irm installer from the README, then retry.");
     process.exit(1);
   }
-  if (existsSync21(join23(dest, ".git"))) {
+  if (existsSync23(join25(dest, ".git"))) {
     const fetch = spawnSync("git", ["-C", dest, "fetch", "origin"], {
       stdio: "inherit",
       env: process.env
@@ -5297,32 +5524,23 @@ function runUpdate(root) {
       console.error("update: git fetch failed.");
       process.exit(fetch.status ?? 1);
     }
-    const branchProc = spawnSync("git", ["-C", dest, "rev-parse", "--abbrev-ref", "HEAD"], {
-      encoding: "utf8",
-      env: process.env
-    });
-    const branch = (branchProc.stdout ?? "").trim() || "main";
-    const upstreamProc = spawnSync("git", ["-C", dest, "rev-parse", "--abbrev-ref", "@{u}"], {
-      encoding: "utf8",
-      env: process.env
-    });
-    const mergeRef = (upstreamProc.status ?? 1) === 0 && (upstreamProc.stdout ?? "").trim() ? (upstreamProc.stdout ?? "").trim() : `origin/${branch}`;
+    const mergeRef = upstreamRef(dest);
     const merge = spawnSync("git", ["-C", dest, "merge", "--ff-only", mergeRef], {
       stdio: "inherit",
       env: process.env
     });
     if ((merge.status ?? 1) !== 0) {
-      console.error(`update: fast-forward failed (${mergeRef}). Fix the checkout or re-install.`);
+      console.error(ffFailureMessage(dest, mergeRef));
       process.exit(merge.status ?? 1);
     }
   } else {
     console.log("update: no .git at runtime path — skipped pull (linked checkout?).");
   }
-  const binDir = process.env.TLC_BIN_DIR || join23(homedir3(), ".local", "bin");
+  const binDir = process.env.TLC_BIN_DIR || join25(homedir3(), ".local", "bin");
   mkdirSync15(binDir, { recursive: true });
-  mkdirSync15(join23(home, "..", "skills"), { recursive: true });
+  mkdirSync15(join25(home, "..", "skills"), { recursive: true });
   if (process.platform === "win32") {
-    const installPs1 = join23(dest, "install.ps1");
+    const installPs1 = join25(dest, "install.ps1");
     const r = spawnSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", installPs1], {
       stdio: "inherit",
       env: { ...process.env, TLC_HOME: home },
@@ -5332,17 +5550,17 @@ function runUpdate(root) {
       process.exit(r.status ?? 1);
     }
   } else {
-    const tlcBin = join23(dest, "bin", "tlc");
-    const skillSrc = join23(dest, "skills", "harness-init");
-    const skillDest = join23(home, "..", "skills", "harness-init");
-    spawnSync("ln", ["-sfn", tlcBin, join23(binDir, "tlc")], { stdio: "inherit" });
-    if (!existsSync21(skillSrc)) {
+    const tlcBin = join25(dest, "bin", "tlc");
+    const skillSrc = join25(dest, "skills", "harness-init");
+    const skillDest = join25(home, "..", "skills", "harness-init");
+    spawnSync("ln", ["-sfn", tlcBin, join25(binDir, "tlc")], { stdio: "inherit" });
+    if (!existsSync23(skillSrc)) {
       console.error(`update: missing skill at ${skillSrc}`);
       process.exit(1);
     }
     spawnSync("ln", ["-sfn", skillSrc, skillDest], { stdio: "inherit" });
     console.log(`update: skill → ${skillDest}`);
-    const hooks = spawnSync(process.execPath, [join23(dest, "bin", "write-user-hooks.mjs")], {
+    const hooks = spawnSync(process.execPath, [join25(dest, "bin", "write-user-hooks.mjs")], {
       stdio: "inherit",
       env: { ...process.env, TLC_HOME: home }
     });
@@ -5350,13 +5568,14 @@ function runUpdate(root) {
       console.log("update: hooks unchanged (merge manually or: node bin/write-user-hooks.mjs --force)");
     }
   }
-  if (existsSync21(buildBinPath())) {
+  if (existsSync23(buildBinPath())) {
     const build = spawnSync(buildBinPath(), [], { stdio: "inherit", env: process.env });
     if ((build.status ?? 1) !== 0) {
       console.log("update: build skipped/failed — ok if dist/ already matches the pulled revision");
     }
   }
   announceNewCapabilities(root, dest);
+  announceLandedDecisions(root, dest, revisionBefore);
   console.log("update: running doctor…");
   const doctor = spawnSync(execBinPath(), ["doctor"], {
     stdio: "inherit",
@@ -5450,6 +5669,23 @@ function main(argv) {
       process.exit(r.status ?? 1);
       break;
     }
+    case "version":
+      if (json) {
+        emitJson(versionJson(root));
+      } else {
+        console.log(versionText(root));
+      }
+      break;
+    case "update-check": {
+      const dest = resolveHarnessRoot();
+      const report = pendingUpdate(dest, upstreamRef(dest));
+      if (json) {
+        emitJson(report);
+      } else {
+        console.log(pendingText(report));
+      }
+      break;
+    }
     case "update":
       runUpdate(root);
       break;
@@ -5511,6 +5747,9 @@ if (__require.main == __require.module) {
   main(process.argv.slice(2));
 }
 export {
+  versionText,
+  versionJson,
+  upstreamRef,
   statusText,
   statusJson,
   skipFlagPath,
@@ -5518,6 +5757,7 @@ export {
   setMode,
   setGrind,
   setGateCommand,
+  runtimeRevision,
   runTestSteps,
   route,
   resolveProjectRoot,
@@ -5527,6 +5767,8 @@ export {
   pricesHelpText,
   policyText,
   policyJson,
+  pendingUpdate,
+  pendingText,
   pairedFlagPath,
   modeFilePath,
   helpText,
@@ -5534,6 +5776,7 @@ export {
   grindFlagPath,
   gatesPaused,
   focusFlagPath,
+  ffFailureMessage,
   execBinPath,
   ensureFlagsDir,
   buildTestSteps,

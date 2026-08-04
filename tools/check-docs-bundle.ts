@@ -154,6 +154,17 @@ function checkConceptDoc(rootRelFile: string, frontmatter: Frontmatter, violatio
       detail: `frontmatter.type "${type}" is not in the closed OKF vocabulary`,
     });
   }
+  // why: optional, because most decisions need no operator action and requiring the field would produce a wall of
+  // "no migration needed". Validated when present, because a note that is present and empty is worse than absent —
+  // the update path would announce a decision as needing action and then show nothing
+  // ([/decisions/ad-031.md](/decisions/ad-031.md)).
+  if ("migration" in frontmatter && !isNonEmptyString(frontmatter.migration)) {
+    violations.push({
+      file: rootRelFile,
+      rule: "empty-migration",
+      detail: "frontmatter.migration is present but empty — remove it, or say what the operator must do",
+    });
+  }
   for (const field of REQUIRED_FIELDS) {
     if (!isNonEmptyField(frontmatter[field])) {
       violations.push({

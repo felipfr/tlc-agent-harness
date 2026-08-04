@@ -266,6 +266,130 @@ export function policyJson(root: string): PolicyReport {
   return { diverged, ok: diverged.length === 0 };
 }
 
+/** why: computed once and read by both `update` and `update --check`, so the two cannot disagree about what is upstream. */
+export function upstreamRef(dest: string): string {
+  const read = (args: string[]): string => {
+    const r = spawnSync("git", ["-C", dest, ...args], { encoding: "utf8", env: process.env });
+    return (r.status ?? 1) === 0 ? (r.stdout ?? "").trim() : "";
+  };
+  const tracked = read(["rev-parse", "--abbrev-ref", "@{u}"]);
+  if (tracked !== "") {
+    return tracked;
+  }
+  return `origin/${read(["rev-parse", "--abbrev-ref", "HEAD"]) || "main"}`;
+}
+
+export function ffFailureMessage(dest: string, mergeRef: string): string {
+  return [
+    `update: fast-forward failed (${mergeRef}) — the runtime checkout has commits that upstream does not.`,
+    "Two ways out, both yours to choose:",
+    `  discard local changes at the runtime path:  git -C ${dest} reset --hard ${mergeRef}`,
+    "  or re-run the installer from the README, which replaces the checkout",
+    "Nothing was changed. Neither command is run for you, because the first one throws work away.",
+  ].join("\n");
+}
+
+export type RuntimeRevision = { revision: string | null; date: string | null };
+
+/**
+ * why: the revision is what `update` already moves, so it cannot drift the way a hand-edited version number does.
+ * `package.json` has said `0.1.0` since the first commit, which is the failure mode a number invites. And a semantic
+ * version is a promise about compatibility that AD-003 refuses to make ([/decisions/ad-031.md](/decisions/ad-031.md)).
+ */
+export function runtimeRevision(dest: string): RuntimeRevision {
+  if (!existsSync(join(dest, ".git"))) {
+    return { revision: null, date: null };
+  }
+  const read = (args: string[]): string | null => {
+    const r = spawnSync("git", ["-C", dest, ...args], { encoding: "utf8", env: process.env });
+    const out = (r.stdout ?? "").trim();
+    return (r.status ?? 1) === 0 && out !== "" ? out : null;
+  };
+  return { revision: read(["rev-parse", "--short", "HEAD"]), date: read(["log", "-1", "--format=%cs"]) };
+}
+
+export type VersionReport = {
+  runtime: string;
+  revision: string | null;
+  date: string | null;
+  seenRevision: string | null;
+};
+
+export function versionJson(root: string): VersionReport {
+  const dest = resolveHarnessRoot();
+  const { revision, date } = runtimeRevision(dest);
+  return {
+    runtime: dest,
+    revision,
+    date,
+    seenRevision: coreFacade.release.readReleaseSeen(root)?.revision ?? null,
+  };
+}
+
+export function versionText(root: string): string {
+  const report = versionJson(root);
+  if (report.revision === null) {
+    // why: says so rather than printing an empty revision. A linked checkout with no `.git` is a real install shape.
+    return [
+      `harness runtime: ${report.runtime}`,
+      "  revision: unknown — the runtime path is not a git checkout, so `update` cannot pull either",
+    ].join("\n");
+  }
+  return [
+    `harness runtime: ${report.runtime}`,
+    `  revision: ${report.revision} (${report.date ?? "date unknown"})`,
+    `  this project last saw: ${report.seenRevision ?? "nothing yet — the next update will announce what landed"}`,
+  ].join("\n");
+}
+
+export type PendingReport = {
+  ok: boolean;
+  reason?: string;
+  commits: number;
+  decisions: ReturnType<typeof coreFacade.release.readDecisions>;
+};
+
+/**
+ * why: fetches and never merges. "Look before you leap" that changes something is just leaping, so the merge is not
+ * reachable from this path at all rather than guarded by a flag.
+ */
+export function pendingUpdate(dest: string, mergeRef: string): PendingReport {
+  if (!existsSync(join(dest, ".git"))) {
+    return { ok: false, reason: "the runtime path is not a git checkout", commits: 0, decisions: [] };
+  }
+  const fetch = spawnSync("git", ["-C", dest, "fetch", "origin"], { stdio: "inherit", env: process.env });
+  if ((fetch.status ?? 1) !== 0) {
+    return { ok: false, reason: "git fetch failed", commits: 0, decisions: [] };
+  }
+  const count = spawnSync("git", ["-C", dest, "rev-list", "--count", `HEAD..${mergeRef}`], {
+    encoding: "utf8",
+    env: process.env,
+  });
+  const commits = Number.parseInt((count.stdout ?? "0").trim(), 10) || 0;
+  const added = spawnSync(
+    "git",
+    ["-C", dest, "diff", "--name-only", "--diff-filter=A", `HEAD..${mergeRef}`, "--", "docs/decisions"],
+    { encoding: "utf8", env: process.env },
+  );
+  const files = (added.stdout ?? "")
+    .split("\n")
+    .map((line) => line.trim().split("/").pop() ?? "")
+    .filter(Boolean);
+  return { ok: true, commits, decisions: coreFacade.release.readDecisions(dest, files) };
+}
+
+export function pendingText(report: PendingReport): string {
+  if (!report.ok) {
+    return `update --check: ${report.reason} — nothing to compare against`;
+  }
+  if (report.commits === 0) {
+    return "update --check: the runtime is current — nothing to pull";
+  }
+  const digest = coreFacade.release.formatDecisionDigest(report.decisions);
+  const head = `update --check: ${report.commits} commit(s) would be pulled. Nothing has changed yet.`;
+  return digest === "" ? `${head}\n  no decisions landed in that range` : `${head}\n\n${digest}`;
+}
+
 export type GateField = "test" | "lint";
 
 const GATE_FIELDS: Record<string, GateField> = {
@@ -348,6 +472,8 @@ Read commands accept --json: status, doctor, obs, lessons, prices lookup, attest
 
 QUICK
   tlc harness status              mode / grind / gates
+  tlc harness version             runtime revision, and what this project last saw
+  tlc harness update --check      what an update would pull, without pulling it
   tlc harness update              pull runtime + refresh skill/CLI, then doctor
   tlc harness doctor               health checklist
   tlc harness build                compile dist/ for Node
@@ -419,6 +545,8 @@ export type Action =
   | { kind: "mode"; value: string }
   | { kind: "gate"; field: GateField; argv: string[] }
   | { kind: "attest" }
+  | { kind: "version" }
+  | { kind: "update-check" }
   | { kind: "policy"; accept: string[] }
   | { kind: "prices-help" }
   | { kind: "prices-refresh"; scope: string }
@@ -438,7 +566,10 @@ export function route(args: string[]): Action {
       return { kind: "build" };
     case "update":
     case "upgrade":
-      return { kind: "update" };
+      return args.slice(1).includes("--check") ? { kind: "update-check" } : { kind: "update" };
+    case "version":
+    case "--version":
+      return { kind: "version" };
     case "test":
       return { kind: "test" };
     case "grind":
@@ -590,8 +721,52 @@ function announceNewCapabilities(root: string, runtimeRoot: string): void {
   void coreFacade.capability.writeRuntimeSeen(root, catalog.catalogVersion);
 }
 
+/**
+ * why: the shape the capability digest established — what is new, what it costs you, announced once. A per-project
+ * seen revision is what makes "once" true, and the reason it matters is that an announcement which repeats becomes
+ * noise, and noise is filtered out by the reader ([/decisions/ad-031.md](/decisions/ad-031.md)).
+ *
+ * invariant: a project with no seen marker is not shown every decision ever written. The first update records where
+ * it stands and announces nothing, because a wall of thirty entries is indistinguishable from no message at all.
+ */
+function announceLandedDecisions(root: string, dest: string, before: string | null): void {
+  const now = runtimeRevision(dest).revision;
+  if (now === null) {
+    return;
+  }
+  const seen = coreFacade.release.readReleaseSeen(root)?.revision ?? before;
+  if (seen === null || seen === now) {
+    void coreFacade.release.writeReleaseSeen(root, now);
+    return;
+  }
+  const added = spawnSync(
+    "git",
+    ["-C", dest, "diff", "--name-only", "--diff-filter=A", `${seen}..${now}`, "--", "docs/decisions"],
+    { encoding: "utf8", env: process.env },
+  );
+  if ((added.status ?? 1) !== 0) {
+    // why: a force-push upstream can leave the seen revision unreachable. Reporting that beats throwing on the
+    // path an operator is standing in front of.
+    console.log(`update: cannot list what landed since ${seen} — that revision is no longer in the checkout`);
+    void coreFacade.release.writeReleaseSeen(root, now);
+    return;
+  }
+  const files = (added.stdout ?? "")
+    .split("\n")
+    .map((line) => line.trim().split("/").pop() ?? "")
+    .filter(Boolean);
+  const digest = coreFacade.release.formatDecisionDigest(coreFacade.release.readDecisions(dest, files));
+  if (digest !== "") {
+    console.log("");
+    console.log(digest);
+    console.log("");
+  }
+  void coreFacade.release.writeReleaseSeen(root, now);
+}
+
 function runUpdate(root: string): never {
   const dest = resolveHarnessRoot();
+  const revisionBefore = runtimeRevision(dest).revision;
   const home = runtimeHome();
   console.log(`update: runtime → ${dest}`);
 
@@ -610,25 +785,16 @@ function runUpdate(root: string): never {
       console.error("update: git fetch failed.");
       process.exit(fetch.status ?? 1);
     }
-    const branchProc = spawnSync("git", ["-C", dest, "rev-parse", "--abbrev-ref", "HEAD"], {
-      encoding: "utf8",
-      env: process.env,
-    });
-    const branch = (branchProc.stdout ?? "").trim() || "main";
-    const upstreamProc = spawnSync("git", ["-C", dest, "rev-parse", "--abbrev-ref", "@{u}"], {
-      encoding: "utf8",
-      env: process.env,
-    });
-    const mergeRef =
-      (upstreamProc.status ?? 1) === 0 && (upstreamProc.stdout ?? "").trim()
-        ? (upstreamProc.stdout ?? "").trim()
-        : `origin/${branch}`;
+    const mergeRef = upstreamRef(dest);
     const merge = spawnSync("git", ["-C", dest, "merge", "--ff-only", mergeRef], {
       stdio: "inherit",
       env: process.env,
     });
     if ((merge.status ?? 1) !== 0) {
-      console.error(`update: fast-forward failed (${mergeRef}). Fix the checkout or re-install.`);
+      // hazard: this used to end "Fix the checkout or re-install", which names the two things an operator cannot
+      // choose between without knowing which applies. Both routes are spelled out, and neither is run for them:
+      // discarding local commits at the runtime path is their call ([/decisions/ad-031.md](/decisions/ad-031.md)).
+      console.error(ffFailureMessage(dest, mergeRef));
       process.exit(merge.status ?? 1);
     }
   } else {
@@ -677,6 +843,7 @@ function runUpdate(root: string): never {
   }
 
   announceNewCapabilities(root, dest);
+  announceLandedDecisions(root, dest, revisionBefore);
 
   console.log("update: running doctor…");
   const doctor = spawnSync(execBinPath(), ["doctor"], {
@@ -776,6 +943,23 @@ function main(argv: string[]): void {
     case "build": {
       const r = spawnSync(buildBinPath(), [], { stdio: "inherit", env: process.env });
       process.exit(r.status ?? 1);
+      break;
+    }
+    case "version":
+      if (json) {
+        emitJson(versionJson(root));
+      } else {
+        console.log(versionText(root));
+      }
+      break;
+    case "update-check": {
+      const dest = resolveHarnessRoot();
+      const report = pendingUpdate(dest, upstreamRef(dest));
+      if (json) {
+        emitJson(report);
+      } else {
+        console.log(pendingText(report));
+      }
       break;
     }
     case "update":

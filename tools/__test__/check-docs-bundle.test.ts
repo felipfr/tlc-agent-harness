@@ -180,3 +180,41 @@ describe("runBundleChecks — seeded violations", () => {
     rmSync(root, { recursive: true, force: true });
   });
 });
+
+// hazard: a decision announced as needing action that then shows nothing is worse than one that never claimed it —
+// the operator reads the heading, finds no instruction, and learns to skip the heading
+// ([/decisions/ad-031.md](/decisions/ad-031.md)).
+test("flags a migration note that is present but empty", () => {
+  const root = fixtureRoot();
+  write(
+    root,
+    "docs/architecture.md",
+    '---\ntype: Concept\ntitle: "Architecture"\ndescription: "desc"\nmigration: ""\ntags: [x]\ntimestamp: "2026-07-29"\n---\n\nbody\n',
+  );
+  assert.deepEqual(rulesOf(checks(root)), ["empty-migration"]);
+  rmSync(root, { recursive: true, force: true });
+});
+
+// why: optional. Requiring it on every document would produce "no migration needed" on the large majority and train
+// a reader to skip the field.
+test("a document with no migration note passes", () => {
+  const root = fixtureRoot();
+  write(
+    root,
+    "docs/architecture.md",
+    '---\ntype: Concept\ntitle: "Architecture"\ndescription: "desc"\ntags: [x]\ntimestamp: "2026-07-29"\n---\n\nbody\n',
+  );
+  assert.deepEqual(rulesOf(checks(root)), []);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("a document with a real migration note passes", () => {
+  const root = fixtureRoot();
+  write(
+    root,
+    "docs/architecture.md",
+    '---\ntype: Concept\ntitle: "Architecture"\ndescription: "desc"\nmigration: "Change X to Y."\ntags: [x]\ntimestamp: "2026-07-29"\n---\n\nbody\n',
+  );
+  assert.deepEqual(rulesOf(checks(root)), []);
+  rmSync(root, { recursive: true, force: true });
+});

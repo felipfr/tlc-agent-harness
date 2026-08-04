@@ -45,5 +45,6 @@ Handoff section and a link back to this index.
 | [AD-028](/decisions/ad-028.md) | A resolved failure is kept, a session attests to itself, and provider neutrality becomes a proof | active |
 | [AD-029](/decisions/ad-029.md) | A capability the init skill cannot correctly initialise is not shipped | active |
 | [AD-030](/decisions/ad-030.md) | Clearing a policy divergence is one operator command behind four independent locks, and a refusal never points an agent at a door the floor holds shut | active |
+| [AD-031](/decisions/ad-031.md) | The decisions are the changelog, a breaking change carries its own instruction, and looking never changes anything | active |
 
 Related: [/architecture.md](/architecture.md), [/concepts.md](/concepts.md), [/providers/index.md](/providers/index.md).
