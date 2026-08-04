@@ -97,6 +97,7 @@ test("facade.policy.loadPolicy resolves defaults for a project with no config", 
 test("facade.shellPolicy.evaluateShellCommand asks on a catastrophic command", () => {
   const decision = coreFacade.shellPolicy.evaluateShellCommand({
     command: "rm -rf /",
+    mode: "solo" as const,
     sessionKey: "session-a",
     projectDir: "",
     catastrophicAsk: true,

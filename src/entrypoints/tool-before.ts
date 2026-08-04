@@ -17,6 +17,7 @@ function handleShellBefore(event: HarnessEvent, ctx: HandlerContext): Decision {
     command: event.command ?? "",
     sessionKey: event.sessionKey,
     projectDir: event.projectDir,
+    mode: policy.mode,
     catastrophicAsk: policy.shell.catastrophicAsk,
     stallDetection: policy.shell.stallDetection,
     stallRepeatThreshold: policy.shell.stallRepeatThreshold,

@@ -12,6 +12,7 @@ function tempRoot(): string {
 
 function baseArgs(overrides: Partial<Parameters<typeof evaluateShellCommand>[0]> = {}) {
   return {
+    mode: "solo" as const,
     command: "",
     sessionKey: "session-a",
     projectDir: "",
@@ -168,4 +169,73 @@ test("text that merely mentions a dangerous command is not classified as running
 test("the worst class across a command list wins", () => {
   assert.equal(classifyShell("ls -la && curl https://example.com"), "network");
   assert.equal(classifyShell("npm test; sudo reboot"), "destructive");
+});
+
+// why: `paired` promised a check-in before a sizable non-destructive move and delivered text only. The matrix
+// below is the promise made testable: what asks, at which posture, and what is left alone.
+const MATRIX = [
+  { command: "git push origin main", effect: "network" },
+  { command: "curl https://example.com", effect: "network" },
+  { command: "cp a b", effect: "write" },
+  { command: "rm -rf node_modules", effect: "write" },
+  { command: "chmod 755 x", effect: "write" },
+] as const;
+
+test("paired asks before a shell move that changes something", () => {
+  for (const { command } of MATRIX) {
+    const decision = evaluateShellCommand(baseArgs({ command, mode: "paired" }));
+    assert.equal(decision.kind, "ask", command);
+    if (decision.kind === "ask") {
+      assert.match(decision.reason, /paired/, command);
+      // why: an ask that does not say how to stop being asked is a nag.
+      assert.match(decision.reason, /tlc harness mode solo/, command);
+    }
+  }
+});
+
+test("solo and focus do not ask on account of posture", () => {
+  for (const mode of ["solo", "focus"] as const) {
+    for (const { command } of MATRIX) {
+      assert.equal(evaluateShellCommand(baseArgs({ command, mode })).kind, "allow", `${mode}: ${command}`);
+    }
+  }
+});
+
+test("a read is untouched at every posture", () => {
+  for (const mode of ["paired", "solo", "focus"] as const) {
+    assert.equal(evaluateShellCommand(baseArgs({ command: "cat package.json", mode })).kind, "allow", mode);
+  }
+});
+
+// invariant: the posture rule and catastrophicAsk are independent. A posture that switched a capability off
+// would be the defect this feature exists to remove, and a capability switched off must not disable a posture.
+test("catastrophicAsk decides destructive at every posture, unchanged", () => {
+  for (const mode of ["paired", "solo", "focus"] as const) {
+    assert.equal(
+      evaluateShellCommand(baseArgs({ command: "rm -rf /", mode, catastrophicAsk: true })).kind,
+      "ask",
+      mode,
+    );
+  }
+});
+
+test("catastrophicAsk off does not disable the paired pre-check", () => {
+  const decision = evaluateShellCommand(
+    baseArgs({ command: "git push origin main", mode: "paired", catastrophicAsk: false }),
+  );
+  assert.equal(decision.kind, "ask");
+  assert.match(decision.kind === "ask" ? decision.reason : "", /paired/);
+});
+
+test("the paired pre-check does not consume the stall counter", () => {
+  // why: an ask is not an attempt. Counting it would make a watched operator look like a stalling agent.
+  const root = mkdtempSync(join(tmpdir(), "tlc-shell-paired-"));
+  try {
+    const args = { command: "cp a b", mode: "paired" as const, projectDir: root, stallDetection: true };
+    for (let i = 0; i < 5; i += 1) {
+      assert.equal(evaluateShellCommand(baseArgs(args)).kind, "ask", `attempt ${i + 1}`);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

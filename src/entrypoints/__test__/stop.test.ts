@@ -344,6 +344,7 @@ test("a gate pass clears the shell stall state", async () => {
   try {
     writeProjectPolicy(root, { shell: { stallDetection: true } });
     coreFacade.shellPolicy.evaluateShellCommand({
+      mode: "solo" as const,
       command: "npm test",
       sessionKey: "cursor-conv-1",
       projectDir: root,

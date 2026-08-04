@@ -1,5 +1,6 @@
 import type { Decision } from "../../contracts/decision.ts";
 import { type ShellWord, tokenizeShell } from "../floor/floor.tokenize.ts";
+import type { OperatorMode } from "../policy/policy.types.ts";
 import { trackShellCommand } from "./shell-policy.stall.ts";
 import type { ShellEffectClass } from "./shell-policy.types.ts";
 
@@ -84,10 +85,39 @@ export type EvaluateShellCommandArgs = {
   command: string;
   sessionKey: string;
   projectDir: string;
+  /** The active operator posture. Only `paired` lowers the interruption threshold. */
+  mode: OperatorMode;
   catastrophicAsk: boolean;
   stallDetection: boolean;
   stallRepeatThreshold: number;
 };
+
+// why: `paired` promises a check-in before a sizable non-destructive move, and until now promised it in text
+// only. `classifyShell` already answers what "sizable" means for a shell command: `write` and `network` change
+// something beyond the immediate code — git push, curl, rm, cp, mv, chmod, tee — while `read` does not.
+//
+// invariant: this is a separate rule from `catastrophicAsk`, not an override of it. That switch keeps deciding
+// `destructive` at every posture; posture decides the tier below it. A posture that switched a capability off
+// would be the defect this feature exists to remove.
+//
+// hazard: the threshold is deliberately not applied to tool edits. An `Edit` of one line is a write too, and
+// asking before every one turns a posture into a permission prompt.
+const PAIRED_ASK: ReadonlySet<ShellEffectClass> = new Set(["write", "network"]);
+
+function pairedPreCheck(command: string, mode: OperatorMode): Decision | null {
+  if (mode !== "paired") {
+    return null;
+  }
+  const effect = classifyShell(command);
+  if (!PAIRED_ASK.has(effect)) {
+    return null;
+  }
+  return {
+    kind: "ask",
+    reason: `Posture paired: this command ${effect === "network" ? "reaches the network" : "changes files"}, so it is a sizable non-destructive move and you asked to be shown these before they run. Approve it, or leave the posture with \`tlc harness mode solo\`.`,
+    userNote: `Paired posture: approve this ${effect} command or switch posture.`,
+  };
+}
 
 export function evaluateShellCommand(args: EvaluateShellCommandArgs): Decision {
   const command = args.command;
@@ -95,6 +125,8 @@ export function evaluateShellCommand(args: EvaluateShellCommandArgs): Decision {
     return { kind: "allow" };
   }
 
+  // why: destructive is decided first and identically at every posture — it is the one stop that never
+  // narrows. The paired rule governs what sits below it.
   if (args.catastrophicAsk && isCatastrophic(command)) {
     return {
       kind: "ask",
@@ -102,6 +134,11 @@ export function evaluateShellCommand(args: EvaluateShellCommandArgs): Decision {
         "The command was flagged as potentially catastrophic. Prefer scoped paths inside the repo or reversible operations.",
       userNote: "This shell command can destroy data outside the workspace. Approve only if you intend it.",
     };
+  }
+
+  const preCheck = pairedPreCheck(command, args.mode);
+  if (preCheck) {
+    return preCheck;
   }
 
   if (args.stallDetection) {
