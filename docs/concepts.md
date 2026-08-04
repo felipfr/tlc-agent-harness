@@ -1,28 +1,51 @@
 ---
 type: Concept
 title: "Concepts"
-description: "The operator-facing concepts behind the harness: grind, pause/resume, shipGate, subagent allowlist, comment policy, catastrophic shell, shell stall, the intelligence rails, observability planes, and cost estimates."
-tags: [concepts, policy, grind, shipgate, observability]
+description: "The operator-facing concepts behind the harness: operator posture, grind, pause/resume, shipGate, subagent allowlist, comment policy, catastrophic shell, shell stall, the intelligence rails, observability planes, and cost estimates."
+tags: [concepts, policy, posture, grind, shipgate, observability]
 timestamp: "2026-07-29"
 ---
 
 # Concepts
+
+## operator posture
+
+`mode`, or `tlc harness mode <paired|solo|focus>`. It sets how much the agent surfaces and what earns an
+interruption — nothing else. Verification is identical at all three: the same evidence bar, the same gates, the
+same done-criteria ([/decisions/ad-025.md](/decisions/ad-025.md)).
+
+- **paired** — explains as it goes, and asks before any sizable move. A `write` or `network` shell command is
+  asked about before it runs, so this posture is enforced rather than merely stated
+- **solo** (default) — works on its own. Three things reach you: an irreversible or destructive action, a real
+  dead-end after exhausting sources, and ambiguity that changes the outcome
+- **focus** — only a destructive action or a real dead-end reaches you. Ambiguity is the agent's to settle,
+  taking the most reasonable reading and stating the assumption in one line
+
+Precedence: the `harness-mode` state file, then a posture flag file, then `mode` in the config, then the default.
+Any other value is refused rather than absorbed — `tlc harness status` and `tlc harness doctor` name the rejected
+word and the posture running in its place.
+
+Posture never switches a gate or a capability on. `focus` used to force grind on, which meant a surfacing
+preference silently overrode a capability with its own switch and its own trade-off.
 
 ## grind
 
 `grind.enabled`. After each completed agent turn, run configured lint/test against **relevant** changed files:
 
 - **lint** — only when files under `codePaths` changed
-- **test** — when test files changed, or in `heads-down` mode when `codePaths` files changed. Policy-only /
-  non-code changes do **not** trigger the test gate
+- **test** — when test files or `codePaths` files changed. Policy-only / non-code changes do **not** trigger the
+  test gate. Posture does not narrow this: the change that most needs testing is the one with no test file in
+  the diff ([/decisions/ad-025.md](/decisions/ad-025.md))
 
 `grind.appendFiles` decides whether the changed files are appended to the lint/test argv. `auto` (default)
 appends them, except to a recipe runner — `just`, `make`, `task`, `mise`, `rake` — which takes a target name
 and would read the first path as a second target and abort. `always` and `never` force the behaviour; use
 `never` for any other runner that does not accept paths.
 
-Lint/test runs are serialized with `.tlc/harness/state/grind.lock` (wait up to 120s; locks older than 30
-minutes are stolen).
+Lint/test runs are serialized with `.tlc/harness/state/grind.lock` (wait up to 120s). A lock is reclaimed when
+it is older than 30 minutes, when it cannot be read, or when its owning process is gone — the last one only on
+the host that wrote it, since a pid means nothing on another machine
+([/decisions/ad-024.md](/decisions/ad-024.md)).
 
 Each lint/test invocation writes `.tlc/harness/state/last-gate.json` (`harness.gate.v1`) with exit code,
 command, files, `outputTail`, and `findings`. Follow-up gaps and stagnation fingerprints use that artifact.

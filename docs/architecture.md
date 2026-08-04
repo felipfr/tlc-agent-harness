@@ -152,17 +152,28 @@ Project hooks call `tlc-exec shim <handler>`. If `TLC_ACTIVE=1` (set by the user
 hook), the shim no-ops so hooks do not double-fire. Cloud agents without a user-level install run the real
 handler via the shim path.
 
-## Modes
+## Operator postures
 
-| Mode | Meaning |
-|------|---------|
-| `solo` | Normal day-to-day; agent decides; grind optional |
-| `paired` | More explanation; check in before large moves |
-| `focus` | Max autonomy + grind forced ON |
+Three postures, one dimension: how much the agent surfaces and what earns an interruption. Verification is
+identical at all three — the same evidence bar, the same gates, the same done-criteria
+([/decisions/ad-025.md](/decisions/ad-025.md)).
+
+| Posture | What reaches the operator |
+|---------|---------------------------|
+| `paired` | Any sizable move, asked before it happens — plus the three below |
+| `solo` | An irreversible or destructive action, a real dead-end, ambiguity that changes the outcome |
+| `focus` | A destructive action or a real dead-end only; ambiguity is settled under a stated assumption |
+
+`paired` is enforced, not only stated: a `write` or `network` shell command is asked about before it runs.
+`solo` and `focus` differ in what the agent raises, which is its judgement rather than a hook event, so their
+enforcement is the same.
+
+Set it with `tlc harness mode <paired|solo|focus>`, or `mode` in the project config. Any other value is
+refused — `status` and `doctor` name the rejected word and the posture running in its place.
 
 ## Day-to-day vs grind
 
-Grind is **off by default**. Enable with `tlc harness grind`. Focus mode forces grind on.
+Grind is **off by default** and independent of posture. Enable with `tlc harness grind`.
 
 ## Steering pillars (product core)
 
@@ -216,7 +227,8 @@ Each denial names its rule, so `rule=secret-access` in a message maps to a row h
 
 <!-- /generated -->
 
-Operator mode (`mode`: `solo`, `paired`, `heads-down`) is posture rather than a capability, so it is not in the generated table.
+Operator posture (`mode`: `paired`, `solo`, `focus`) governs surfacing rather than capability, so it is not in
+the generated table.
 
 ## See also
 

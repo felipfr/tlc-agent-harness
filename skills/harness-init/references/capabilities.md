@@ -10,7 +10,8 @@ assume Cursor — check what Step 1 detected).
 
 - `projectName` (optional string)
 - `codePaths` (dirs that count as code for grind)
-- starting `mode`: `solo` | `paired` | `heads-down` (default `solo`; `focus` maps to `heads-down`)
+- starting `mode`: `paired` | `solo` | `focus` (default `solo`) — how much the agent surfaces; verification is
+  identical at all three. No other value is accepted
 
 ## Capabilities (all optional)
 

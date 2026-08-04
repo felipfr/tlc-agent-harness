@@ -116,10 +116,10 @@ describe("resolvePolicy", () => {
 
   test("parses stdin JSON when --stdin-json is set", () => {
     const root = newRoot();
-    const policy = resolvePolicy(root, parseFlags(["--write", "--stdin-json"]), '{"mode":"heads-down"}') as {
+    const policy = resolvePolicy(root, parseFlags(["--write", "--stdin-json"]), '{"mode":"paired"}') as {
       mode: string;
     };
-    assert.equal(policy.mode, "heads-down");
+    assert.equal(policy.mode, "paired");
   });
 
   test("throws on empty stdin with --stdin-json", () => {

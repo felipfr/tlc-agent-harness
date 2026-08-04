@@ -39,5 +39,6 @@ Handoff section and a link back to this index.
 | [AD-022](/decisions/ad-022.md) | The policy surface is a floor rule, detection sits behind interception, and the operator/agent line is structural | active |
 | [AD-023](/decisions/ad-023.md) | One finding per failure, and lesson relevance is recurrence rather than exposure | active |
 | [AD-024](/decisions/ad-024.md) | The gate tells the truth about its own environment, its own lock, and the cause of a failure | active |
+| [AD-025](/decisions/ad-025.md) | Posture governs surfacing only, and each posture has exactly one name | active |
 
 Related: [/architecture.md](/architecture.md), [/concepts.md](/concepts.md), [/providers/index.md](/providers/index.md).

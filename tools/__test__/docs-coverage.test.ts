@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -111,6 +111,49 @@ test("concepts.md names every tunable obs field, and no more", () => {
   assert.ok(fields.length >= 5, `expected the obs defaults block, parsed ${fields.length}`);
   const missing = fields.filter((field) => !concepts.includes(`obs.${field}`));
   assert.deepEqual(missing, [], "obs fields absent from docs/concepts.md");
+});
+
+// hazard: the deepest posture once had two spellings — one the CLI accepted, one the config field stored — and
+// the documented word therefore matched no branch at all (AD-025). A regression here is silent: the second name
+// would work at whichever surface reintroduced it and be refused at every other. Decision records are excluded
+// on purpose; they describe the defect and have to be able to name it.
+test("no source file or operator-facing document carries a retired posture spelling", () => {
+  const surfaces = [
+    join(repoRoot, "src"),
+    join(repoRoot, "bin"),
+    join(repoRoot, "tools"),
+    join(repoRoot, "skills"),
+    join(repoRoot, "README.md"),
+    join(repoRoot, "docs", "architecture.md"),
+    join(repoRoot, "docs", "concepts.md"),
+  ];
+  const retired = ["heads-down", "headsDown"];
+
+  const files: string[] = [];
+  const walk = (path: string): void => {
+    const entry = statSync(path);
+    if (entry.isFile()) {
+      files.push(path);
+      return;
+    }
+    for (const child of readdirSync(path, { withFileTypes: true })) {
+      // why: a test asserting a word is absent has to contain it, so tests are not their own subject.
+      if (child.name === "__test__" || child.name === "node_modules" || child.name === "dist") {
+        continue;
+      }
+      walk(join(path, child.name));
+    }
+  };
+  for (const surface of surfaces) {
+    walk(surface);
+  }
+  assert.ok(files.length > 100, `expected the source tree, walked ${files.length} files`);
+
+  const hits = files.flatMap((file) => {
+    const text = readFileSync(file, "utf8");
+    return retired.filter((word) => text.includes(word)).map((word) => `${file}: ${word}`);
+  });
+  assert.deepEqual(hits, []);
 });
 
 // hazard: honouring the legacy key would have been back-compat this project refuses (AD-003), and leaving it
