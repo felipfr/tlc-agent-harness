@@ -254,6 +254,36 @@ test("paired leaves the routine commands alone", () => {
   }
 });
 
+// why: an operator reading "seven asks this session" needs to know which switch to reach for. Without the rule on
+// the decision, the only way to attribute one was to parse its English.
+test("each shell decision names the rule that produced it", () => {
+  const catastrophic = evaluateShellCommand(baseArgs({ command: "rm -rf /", mode: "solo" }));
+  const posture = evaluateShellCommand(baseArgs({ command: "git push origin main", mode: "paired" }));
+  assert.equal(catastrophic.kind === "ask" ? catastrophic.rule : null, "shell-catastrophic");
+  assert.equal(posture.kind === "ask" ? posture.rule : null, "shell-posture-paired");
+});
+
+// hazard: at `paired` a destructive command matches both rules. The catastrophic switch decides it first, so
+// attributing that ask to the posture would send an operator to the wrong switch — and would read as evidence
+// that the posture is noisy when it never fired.
+test("a destructive command at paired is attributed to the catastrophic rule, not the posture", () => {
+  const decision = evaluateShellCommand(baseArgs({ command: "rm -rf /", mode: "paired" }));
+  assert.equal(decision.kind === "ask" ? decision.rule : null, "shell-catastrophic");
+});
+
+test("a stall denial names the stall rule", () => {
+  const root = mkdtempSync(join(tmpdir(), "tlc-shell-rule-"));
+  try {
+    const args = { command: "ls", projectDir: root, stallDetection: true, stallRepeatThreshold: 2 };
+    evaluateShellCommand(baseArgs(args));
+    const decision = evaluateShellCommand(baseArgs(args));
+    assert.equal(decision.kind, "deny");
+    assert.equal(decision.kind === "deny" ? decision.rule : null, "shell-stall");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("solo and focus do not ask on account of posture", () => {
   for (const mode of ["solo", "focus"] as const) {
     for (const { command } of [...MATRIX, ...NOT_WORTH_ASKING.map((command) => ({ command }))]) {

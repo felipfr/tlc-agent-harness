@@ -1,8 +1,14 @@
+/**
+ * why: `rule` is the machine-readable form of a thing the codebase already wanted — the floor hand-writes
+ * `rule=policy-surface-write` into its reason prose, and anything wanting to attribute a decision had to parse
+ * English. Optional, because a decision is valid without one; a consumer that wants attribution and finds none
+ * reports it as unattributed rather than guessing.
+ */
 export type Decision =
   | { kind: "abstain" }
   | { kind: "allow" }
-  | { kind: "deny"; reason: string; userNote?: string }
-  | { kind: "ask"; reason: string; userNote?: string }
+  | { kind: "deny"; reason: string; userNote?: string; rule?: string }
+  | { kind: "ask"; reason: string; userNote?: string; rule?: string }
   | { kind: "context"; text: string; env?: Record<string, string> }
   | { kind: "continue"; text: string }
   | { kind: "rewriteInput"; input: Record<string, unknown>; reason: string };

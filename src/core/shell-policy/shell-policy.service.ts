@@ -126,6 +126,14 @@ export type EvaluateShellCommandArgs = {
  */
 const PAIRED_ASK: ReadonlySet<ShellEffectClass> = new Set(["write", "network"]);
 
+// why: named here rather than at the call sites so the recorded rate and the rule that produced it cannot drift
+// apart. An operator reading "seven asks" needs to know which switch to reach for.
+export const SHELL_RULES = {
+  catastrophic: "shell-catastrophic",
+  posture: "shell-posture-paired",
+  stall: "shell-stall",
+} as const;
+
 function atStake(effect: ShellEffectClass): string {
   return effect === "network"
     ? "reaches the network, so it leaves this machine and cannot be pulled back"
@@ -144,6 +152,7 @@ function pairedPreCheck(command: string, mode: OperatorMode): Decision | null {
     kind: "ask",
     reason: `Posture paired: this command ${atStake(effect)}, and you asked to be shown these before they run. Approve it, or leave the posture with \`tlc harness mode solo\`.`,
     userNote: `Paired posture: approve this ${effect} command or switch posture.`,
+    rule: SHELL_RULES.posture,
   };
 }
 
@@ -161,6 +170,7 @@ export function evaluateShellCommand(args: EvaluateShellCommandArgs): Decision {
       reason:
         "The command was flagged as potentially catastrophic. Prefer scoped paths inside the repo or reversible operations.",
       userNote: "This shell command can destroy data outside the workspace. Approve only if you intend it.",
+      rule: SHELL_RULES.catastrophic,
     };
   }
 
@@ -176,6 +186,7 @@ export function evaluateShellCommand(args: EvaluateShellCommandArgs): Decision {
         kind: "deny",
         reason: stallFollowup(command, hits),
         userNote: `Harness blocked a repeated shell command (${hits}x).`,
+        rule: SHELL_RULES.stall,
       };
     }
   }
