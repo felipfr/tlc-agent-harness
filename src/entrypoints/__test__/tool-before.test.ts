@@ -558,3 +558,78 @@ test("the rollup's shell ask counter stops being structurally unreachable", asyn
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// hazard: `policy.deny` fed `rollup.denials` and the report's "Policy denials" line and had no producer, so a
+// harness whose whole purpose is refusing things reported zero refusals.
+test("a floor denial of a shell command is recorded by the rail that owns shell decisions", async () => {
+  const root = tempRoot();
+  try {
+    const outcome = await runHandler(
+      toolBeforeHandler,
+      stdinOf(claudeShell(root, "python3 -c \"open('.tlc/harness/config.json','w')\"")),
+    );
+    assert.equal(outcome.decision.kind, "deny");
+
+    // invariant: one rail owns every shell decision. The floor short-circuits before that rail runs, so without
+    // the explicit hand-off a floor denial of a shell command was recorded by nothing at all.
+    const recorded = coreFacade.observability
+      .readSignalEvents(root, "obs.jsonl", 50)
+      .filter((event) => event.kind === "shell.start");
+    assert.equal(recorded.length, 1);
+    assert.equal(recorded[0]?.attrs.permission, "deny");
+    assert.equal(recorded[0]?.attrs.rule, "policy-surface-write");
+    assert.equal(coreFacade.observability.getRollup(root, "claude-sess-1")?.shell.deny, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// invariant: the shell rail already records its own decisions with a permission attribute. Recording them again
+// through the shared path would double every interruption an operator sees.
+test("a shell posture ask is not double-counted as a policy refusal", async () => {
+  const root = tempRoot();
+  try {
+    writeProjectPolicy(root, { version: 1, mode: "paired" });
+    await runHandler(toolBeforeHandler, stdinOf(claudeShell(root, "git push origin main")));
+    const events = coreFacade.observability.readSignalEvents(root, "obs.jsonl", 50);
+    assert.equal(events.filter((event) => event.kind === "shell.start").length, 1);
+    assert.equal(events.filter((event) => event.kind === "policy.deny").length, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an allowed tool call records no refusal", async () => {
+  const root = tempRoot();
+  try {
+    await runHandler(toolBeforeHandler, stdinOf(claudeShell(root, "ls -la")));
+    assert.equal(
+      coreFacade.observability
+        .readSignalEvents(root, "obs.jsonl", 50)
+        .filter((event) => event.kind === "policy.deny").length,
+      0,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// why: the non-shell half of the same rail. A credential read is refused by the floor on `read.before`, which the
+// shell rail does not own, so it is the shared refusal path that has to record it.
+test("a non-shell refusal is recorded as a policy refusal, carrying the floor rule", async () => {
+  const root = tempRoot();
+  try {
+    const outcome = await runHandler(toolBeforeHandler, stdinOf(cursorRead(root, "~/.ssh/id_rsa")));
+    assert.equal(outcome.decision.kind, "deny");
+
+    const refusals = coreFacade.observability
+      .readSignalEvents(root, "obs.jsonl", 50)
+      .filter((event) => event.kind === "policy.deny");
+    assert.equal(refusals.length, 1);
+    assert.equal(refusals[0]?.attrs.rule, "secret-access");
+    assert.equal(refusals[0]?.attrs.permission, "deny");
+    assert.equal(coreFacade.observability.getRollup(root, "cursor-conv-1")?.denials, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

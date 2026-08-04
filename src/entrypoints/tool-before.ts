@@ -43,6 +43,16 @@ function recordShellDecision(event: HarnessEvent, ctx: HandlerContext, decision:
   });
 }
 
+function recordShellDecisionIfShell(
+  event: HarnessEvent,
+  ctx: HandlerContext,
+  decision: Decision,
+): void {
+  if (event.event === "shell.before") {
+    recordShellDecision(event, ctx, decision);
+  }
+}
+
 function handleShellBefore(event: HarnessEvent, ctx: HandlerContext): Decision {
   const { policy } = ctx;
   const decision = coreFacade.shellPolicy.evaluateShellCommand({
@@ -132,6 +142,10 @@ export const toolBeforeHandler: Handler = (
     isReadEvent: event.event === "read.before",
   });
   if (floor.kind !== "allow") {
+    // invariant: one rail owns the record of every shell decision. The floor short-circuits before the shell
+    // rail runs, so without this a floor denial of a shell command was recorded by nothing at all — and the
+    // shared refusal path deliberately skips `shell.before` to avoid double-counting what this rail owns.
+    recordShellDecisionIfShell(event, ctx, floor);
     return floor;
   }
 
@@ -146,6 +160,7 @@ export const toolBeforeHandler: Handler = (
   if (!isReadOnlyEvent(event)) {
     const integrity = coreFacade.policy.checkPolicyBaseline(event.projectDir, event.sessionKey);
     if (integrity.kind !== "allow") {
+      recordShellDecisionIfShell(event, ctx, integrity);
       return integrity;
     }
   }

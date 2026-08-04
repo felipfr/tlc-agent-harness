@@ -42,8 +42,16 @@ function reason(rule: FloorRule, detail: string): string {
   ].join("\n");
 }
 
+// why: the rule was already written into the reason prose as `rule=<name>`. Carrying it structurally as well is
+// what lets a refusal be counted and attributed without parsing English
+// ([/decisions/ad-027.md](/decisions/ad-027.md)).
 function denial(rule: FloorRule, detail: string, note: string): Decision {
-  return { kind: "deny", reason: reason(rule, detail), userNote: `Floor rule ${rule}: ${note}` };
+  return {
+    kind: "deny",
+    reason: reason(rule, detail),
+    userNote: `Floor rule ${rule}: ${note}`,
+    rule,
+  };
 }
 
 function isMkfs(verb: string): boolean {

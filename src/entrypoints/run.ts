@@ -10,7 +10,7 @@ import {
   providers as providerRegistry,
   resolveFromRegistry,
 } from "../providers/index.ts";
-import { effectiveBlockedPatterns, sessionIdFromKey } from "./support.ts";
+import { effectiveBlockedPatterns, obsConfigFor, sessionIdFromKey } from "./support.ts";
 
 export type HandlerContext = {
   policy: Policy;
@@ -52,6 +52,39 @@ function recordAdapterEvent(root: string, kind: string, attrs: Record<string, un
       attrs,
     });
   } catch {}
+}
+
+/**
+ * hazard: `policy.deny` fed `rollup.denials` and the report's "Policy denials" line, and had no producer — so a
+ * harness whose whole purpose is refusing things reported zero refusals
+ * ([/decisions/ad-027.md](/decisions/ad-027.md)).
+ *
+ * why: recorded here, after `degrade`, because this is the one place every entrypoint's decision passes through
+ * and the only place that sees the decision the provider will actually render. A per-entrypoint recording would
+ * miss whichever entrypoint is added next, and would record a decision that degrade could still change.
+ *
+ * invariant: shell decisions are recorded by `tool-before` as `shell.start`, with their own permission attribute.
+ * Recording them here as well would double-count every interruption.
+ */
+function recordRefusal(event: HarnessEvent, policy: Policy, decision: Decision): void {
+  if (decision.kind !== "deny" && decision.kind !== "ask") {
+    return;
+  }
+  if (event.event === "shell.before") {
+    return;
+  }
+  coreFacade.observability.recordObs(event.projectDir, obsConfigFor(policy), {
+    provider: event.provider,
+    kind: "policy.deny",
+    sessionKey: event.sessionKey,
+    attrs: {
+      event: event.event,
+      tool_name: event.toolName,
+      permission: decision.kind,
+      // why: unattributed rather than guessed. A refusal an operator cannot trace to a rule is noise.
+      rule: decision.rule ?? "none",
+    },
+  });
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -122,6 +155,7 @@ export async function runHandler(handler: Handler, io: RunIo = {}): Promise<RunO
     const degraded = degrade(decision, event, capabilities, {
       contextBudgetChars: CONTEXT_BUDGET_CHARS,
     });
+    recordRefusal(event, policy, degraded);
     const rendered = provider.render(degraded, event);
     return { event, decision: degraded, rendered };
   } catch (error) {
