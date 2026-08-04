@@ -420,6 +420,9 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
     runtimePathExcludes: policy.shipGate.runtimePathExcludes,
     evidenceDir: policy.shipGate.evidenceDir,
     evidenceMaxAgeHours: policy.shipGate.evidenceMaxAgeHours,
+    // why: the changed-file list is already in hand, so ordering the evidence against the code costs a stat per
+    // file and no git call.
+    evidenceNotBeforeMs: coreFacade.ship.newestChangeMs(root, changedFiles),
   });
   if (shipEvidenceDecision.kind !== "abstain") {
     await coreFacade.handoff.patchHandoff(root, provider, {

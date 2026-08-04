@@ -110,6 +110,8 @@ export function evaluateShipEvidenceGate(args: {
   runtimePathExcludes: string[];
   evidenceDir: string | null;
   evidenceMaxAgeHours: number;
+  /** Newest mtime among the turn's changed code files. Evidence written before it certifies an older tree. */
+  evidenceNotBeforeMs?: number;
 }): Decision {
   if (!args.enabled || !args.recentShipClaim || args.changedFiles.length === 0) {
     return { kind: "abstain" };
@@ -118,7 +120,8 @@ export function evaluateShipEvidenceGate(args: {
     return { kind: "abstain" };
   }
   const hasEvidence =
-    args.evidenceDir !== null && hasRecentEvidence(args.evidenceDir, args.evidenceMaxAgeHours);
+    args.evidenceDir !== null &&
+    hasRecentEvidence(args.evidenceDir, args.evidenceMaxAgeHours, args.evidenceNotBeforeMs);
   if (hasEvidence) {
     return { kind: "abstain" };
   }
@@ -127,7 +130,8 @@ export function evaluateShipEvidenceGate(args: {
     text: [
       "BLOCKED: HARNESS_SHIP_CLAIM without recent production PASS evidence.",
       `TRIED: checked ${args.evidenceDir ?? "(no evidenceDir configured)"}/*/90-verdict.txt.`,
-      "NEED: produce evidence and cite the verdict path, or remove the ship claim line.",
+      // why: producer form. It names the move to make rather than the move to avoid.
+      "NEED: run the verification after the last code change, then cite the verdict path — evidence written before the change certifies the older tree.",
     ].join("\n"),
   };
 }

@@ -59,7 +59,12 @@ import { forProvider } from "./policy/policy.types.ts";
 import { checkCollision, heartbeat, register, release, sweepStale } from "./presence/presence.service.ts";
 import { evaluateShellCommand } from "./shell-policy/shell-policy.service.ts";
 import { clearShellStall } from "./shell-policy/shell-policy.stall.ts";
-import { appendShipLedger, hasRecentEvidence, readShipLedger } from "./ship/ship.ledger.ts";
+import {
+  appendShipLedger,
+  hasRecentEvidence,
+  newestChangeMs,
+  readShipLedger,
+} from "./ship/ship.ledger.ts";
 import {
   detectShipClaim,
   evaluateEmptyDiffAntiShip,
@@ -220,6 +225,7 @@ export const coreFacade = {
     appendShipLedger,
     readShipLedger,
     hasRecentEvidence,
+    newestChangeMs,
   },
   presence: {
     register,

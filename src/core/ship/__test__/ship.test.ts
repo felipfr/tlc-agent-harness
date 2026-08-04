@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { DEFAULTS } from "../../policy/policy.defaults.ts";
-import { appendShipLedger, hasRecentEvidence, readShipLedger } from "../ship.ledger.ts";
+import { appendShipLedger, hasRecentEvidence, newestChangeMs, readShipLedger } from "../ship.ledger.ts";
 import {
   detectShipClaim,
   evaluateEmptyDiffAntiShip,
@@ -223,4 +223,114 @@ test("evaluateShipEvidenceGate abstains when the changed files never touch runti
     evidenceMaxAgeHours: 48,
   });
   assert.equal(decision.kind, "abstain");
+});
+
+// hazard: freshness is not what makes evidence evidence. A verdict written ten minutes ago used to pass while the
+// code it certified changed five minutes ago — evidence that predates the change proves nothing about it, and the
+// gate accepted it in silence.
+function evidenceAt(dir: string, secondsAgo: number, body = "PASS\n"): string {
+  const run = join(dir, "evidence", `run-${secondsAgo}`);
+  mkdirSync(run, { recursive: true });
+  const verdict = join(run, "90-verdict.txt");
+  writeFileSync(verdict, body);
+  const at = (Date.now() - secondsAgo * 1000) / 1000;
+  utimesSync(verdict, at, at);
+  return join(dir, "evidence");
+}
+
+function codeAt(dir: string, secondsAgo: number): number {
+  const file = join(dir, "app.ts");
+  writeFileSync(file, "export const a = 1;\n");
+  const at = (Date.now() - secondsAgo * 1000) / 1000;
+  utimesSync(file, at, at);
+  return Date.now() - secondsAgo * 1000;
+}
+
+test("evidence older than the code it certifies does not count, however fresh it is", () => {
+  const dir = tempRoot();
+  try {
+    const evidence = evidenceAt(dir, 600);
+    const changedAt = codeAt(dir, 300);
+    // why: 48h window, so age alone would accept it. Ordering is what refuses.
+    assert.equal(hasRecentEvidence(evidence, 48), true, "age alone accepts it");
+    assert.equal(hasRecentEvidence(evidence, 48, changedAt), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("evidence newer than the code and inside the window counts", () => {
+  const dir = tempRoot();
+  try {
+    const changedAt = codeAt(dir, 600);
+    const evidence = evidenceAt(dir, 300);
+    assert.equal(hasRecentEvidence(evidence, 48, changedAt), true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// invariant: age keeps its job. It catches a verdict left from last week when nothing changed at all, which
+// ordering cannot see.
+test("with no code change the age window decides alone, exactly as before", () => {
+  const dir = tempRoot();
+  try {
+    const evidence = evidenceAt(dir, 3 * 60 * 60);
+    assert.equal(hasRecentEvidence(evidence, 48, undefined), true);
+    assert.equal(hasRecentEvidence(evidence, 1, undefined), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// why: a missing input must not fail closed on a gate that blocks a stop. Absent ordering means age decides.
+test("newestChangeMs returns undefined when no path resolves, and the gate falls back to age", () => {
+  const dir = tempRoot();
+  try {
+    assert.equal(newestChangeMs(dir, []), undefined);
+    assert.equal(newestChangeMs(dir, ["does/not/exist.ts"]), undefined);
+    const evidence = evidenceAt(dir, 60);
+    assert.equal(hasRecentEvidence(evidence, 48, newestChangeMs(dir, ["does/not/exist.ts"])), true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("newestChangeMs takes the newest of several paths", () => {
+  const dir = tempRoot();
+  try {
+    codeAt(dir, 900);
+    writeFileSync(join(dir, "b.ts"), "export const b = 2;\n");
+    const newer = (Date.now() - 60 * 1000) / 1000;
+    utimesSync(join(dir, "b.ts"), newer, newer);
+    const found = newestChangeMs(dir, ["app.ts", "b.ts"]);
+    assert.ok(found !== undefined);
+    assert.ok(Date.now() - (found as number) < 120_000, "expected the newer of the two");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// invariant: the ship gate itself refuses, not just the helper. A helper that is right while the gate ignores it
+// is the class of defect this project keeps finding.
+test("the ship gate blocks when the only evidence predates the change", () => {
+  const dir = tempRoot();
+  try {
+    const evidence = evidenceAt(dir, 600);
+    const changedAt = codeAt(dir, 120);
+    const decision = evaluateShipEvidenceGate({
+      enabled: true,
+      recentShipClaim: true,
+      changedFiles: ["src/app.ts"],
+      runtimePathPrefixes: ["src"],
+      runtimePathExcludes: [],
+      evidenceDir: evidence,
+      evidenceMaxAgeHours: 48,
+      evidenceNotBeforeMs: changedAt,
+    });
+    assert.equal(decision.kind, "continue");
+    assert.match(decision.kind === "continue" ? decision.text : "", /before the change/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
