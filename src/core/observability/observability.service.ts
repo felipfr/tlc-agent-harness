@@ -160,6 +160,14 @@ function updateRollup(root: string, config: ObservabilityConfig, event: ObsEvent
     } else if (event.kind === "shell.end") {
       rollup.shell.allow += 1;
     }
+    // hazard: a rollup written by an older build has no `byRule`, and incrementing into `undefined` would throw
+    // inside the one path that must never break a turn.
+    if (perm === "ask" || perm === "deny") {
+      const rule = String(event.attrs.rule ?? "none");
+      const byRule = rollup.shell.byRule ?? {};
+      byRule[rule] = (byRule[rule] ?? 0) + 1;
+      rollup.shell.byRule = byRule;
+    }
   }
 
   if (event.kind === "mcp.end" || event.kind === "mcp.start") {

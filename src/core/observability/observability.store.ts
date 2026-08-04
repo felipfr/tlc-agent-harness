@@ -19,7 +19,11 @@ export type SessionRollup = {
   responses: number;
   thoughts: number;
   comped: number;
-  shell: { allow: number; ask: number; deny: number };
+  /**
+   * why: `byRule` exists because a count on its own is not actionable. "Seven interruptions" tells an operator
+   * nothing about which switch to reach for; "six from the paired posture, one from the catastrophic rule" does.
+   */
+  shell: { allow: number; ask: number; deny: number; byRule: Record<string, number> };
   mcp: Record<string, number>;
   estimated_cost_usd: number;
   cost_incomplete: boolean;
@@ -177,7 +181,7 @@ export function newRollup(sessionKey: string, provider: string): SessionRollup {
     responses: 0,
     thoughts: 0,
     comped: 0,
-    shell: { allow: 0, ask: 0, deny: 0 },
+    shell: { allow: 0, ask: 0, deny: 0, byRule: {} },
     mcp: {},
     estimated_cost_usd: 0,
     cost_incomplete: false,

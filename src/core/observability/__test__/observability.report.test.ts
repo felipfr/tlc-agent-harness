@@ -63,3 +63,43 @@ test("sessionReportMarkdown flags an incomplete cost estimate", () => {
   const markdown = sessionReportMarkdown(rollup);
   assert.ok(markdown.includes("incomplete"));
 });
+
+// why: a count without an attribution names no switch. Six asks from the paired posture and one from the
+// catastrophic rule call for two different responses, and "7" calls for neither.
+test("sessionReportMarkdown attributes the interruptions to their rules", () => {
+  const rollup = newRollup("session-a", "provider-a");
+  rollup.shell.ask = 7;
+  rollup.shell.byRule = { "shell-posture-paired": 6, "shell-catastrophic": 1 };
+  const markdown = sessionReportMarkdown(rollup);
+  assert.match(markdown, /shell-posture-paired \| 6/);
+  assert.match(markdown, /shell-catastrophic \| 1/);
+  // why: ordered by weight, so the rule doing the interrupting is the first thing read.
+  assert.ok(
+    markdown.indexOf("shell-posture-paired") < markdown.indexOf("shell-catastrophic"),
+    "the breakdown is not ordered by count",
+  );
+});
+
+test("a session with no interruptions renders no breakdown", () => {
+  const markdown = sessionReportMarkdown(newRollup("session-a", "provider-a"));
+  assert.doesNotMatch(markdown, /↳/);
+});
+
+// invariant: the harness records the decisions it made. It never sees the operator's answer, and it cannot see
+// whether a question it did not ask would have helped — so precision and recall over blockers are outside what it
+// can compute. Naming the metric while measuring half of it is the class of claim this project keeps removing.
+test("the report claims no metric it cannot compute", () => {
+  const rollup = newRollup("session-a", "provider-a");
+  rollup.shell.byRule = { "shell-posture-paired": 2 };
+  const markdown = sessionReportMarkdown(rollup);
+  for (const claim of ["Ask-F1", "precision", "recall", "F1"]) {
+    assert.equal(markdown.includes(claim), false, claim);
+  }
+});
+
+// hazard: a rollup written by an older build has no `byRule`, and the report runs on whatever is on disk.
+test("a rollup from an older build renders instead of throwing", () => {
+  const rollup = newRollup("session-a", "provider-a");
+  (rollup.shell as { byRule?: Record<string, number> }).byRule = undefined;
+  assert.doesNotThrow(() => sessionReportMarkdown(rollup));
+});
