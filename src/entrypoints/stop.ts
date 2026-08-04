@@ -143,6 +143,12 @@ async function failGate(args: {
     });
   }
 
+  // why: the same failure identity, resolved before. Offered as a record of what happened rather than a list to
+  // edit — a previous resolution is evidence, and AD-024 established that a plan names files from evidence and
+  // never from proximity. Absent history changes nothing.
+  const resolution = coreFacade.stagnation.resolutionFor(args.root, fingerprint);
+  const historyLine = resolution ? coreFacade.stagnation.resolutionHistoryLine(resolution) : "";
+
   const lessonsBlock = intel.lessons.enabled
     ? formatLessonsBlock(
         (
@@ -180,6 +186,9 @@ async function failGate(args: {
         ),
       );
     }
+    if (historyLine) {
+      body.push("", historyLine);
+    }
     if (lessonsBlock) {
       body.push("", lessonsBlock);
     }
@@ -212,6 +221,9 @@ async function failGate(args: {
     if (intel.gapFeedback && gaps.length > 0) {
       parts.push("", coreFacade.turn.formatGapFeedback(gaps, suggestion));
     }
+  }
+  if (historyLine) {
+    parts.push("", historyLine);
   }
   if (lessonsBlock) {
     parts.push("", lessonsBlock);
@@ -526,6 +538,17 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
       gate: "ship",
       evidenceDir: policy.shipGate.evidenceDir,
       detail: handoff.last_ship_claim_snippet,
+    });
+  }
+
+  // why: the pairing of a failure with what resolved it is captured here, immediately before the record that
+  // holds the failure identity is cleared. This is the one moment both halves exist
+  // ([/decisions/ad-028.md](/decisions/ad-028.md)).
+  if (handoff.last_fingerprint && handoff.last_gate_result === "fail" && changedFiles.length > 0) {
+    coreFacade.stagnation.recordResolution(root, handoff.last_fingerprint, {
+      files: changedFiles,
+      at: new Date().toISOString(),
+      gate: handoff.last_failure_category ?? "gate",
     });
   }
 

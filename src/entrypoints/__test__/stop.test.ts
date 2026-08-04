@@ -830,3 +830,55 @@ test("an enforcing rail is not observed as well", async () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// why: the pairing of a failure with what resolved it is the one thing nothing else has, because nothing else
+// holds a failure fingerprint and the diff in the same process. It used to be deleted at the exact moment it
+// became true.
+test("a resolved failure is remembered, and its recurrence is offered as history", async () => {
+  const root = repoWithChange();
+  try {
+    writeProjectPolicy(root, {
+      version: 1,
+      codePaths: ["src"],
+      grind: { enabled: true, lintCommand: ["node", "-e", "process.exit(1)"] },
+    });
+    const failing = await runHandler(stopHandler, stdinOf(claudeStop(root)));
+    assert.equal(failing.decision.kind, "continue");
+    assert.doesNotMatch(failing.decision.kind === "continue" ? failing.decision.text : "", /History:/);
+
+    // the gate now passes, and a file changed — that pair is what gets recorded
+    writeProjectPolicy(root, {
+      version: 1,
+      codePaths: ["src"],
+      grind: { enabled: true, lintCommand: ["node", "-e", "process.exit(0)"] },
+    });
+    await runHandler(stopHandler, stdinOf(claudeStop(root)));
+
+    // the same failure returns
+    writeProjectPolicy(root, {
+      version: 1,
+      codePaths: ["src"],
+      grind: { enabled: true, lintCommand: ["node", "-e", "process.exit(1)"] },
+    });
+    const again = await runHandler(stopHandler, stdinOf(claudeStop(root)));
+    const text = again.decision.kind === "continue" ? again.decision.text : "";
+    assert.match(text, /History:/);
+    assert.match(text, /src\/app\.ts/);
+    // invariant: history, never instruction.
+    assert.match(text, /not a list to edit/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a failure with no recorded resolution leaves the follow-up unchanged", async () => {
+  const root = repoWithChange();
+  try {
+    writeProjectPolicy(root, ALWAYS_FAIL);
+    const outcome = await runHandler(stopHandler, stdinOf(claudeStop(root)));
+    assert.equal(outcome.decision.kind, "continue");
+    assert.doesNotMatch(outcome.decision.kind === "continue" ? outcome.decision.text : "", /History:/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

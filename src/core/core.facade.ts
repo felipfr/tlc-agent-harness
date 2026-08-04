@@ -78,6 +78,11 @@ import {
   touchesRuntime,
 } from "./ship/ship.service.ts";
 import { computeFingerprint } from "./stagnation/stagnation.service.ts";
+import {
+  recordResolution,
+  resolutionFor,
+  resolutionHistoryLine,
+} from "./stagnation/stagnation.resolution.ts";
 import { clearFingerprint, fingerprintHits, trackFingerprint } from "./stagnation/stagnation.store.ts";
 import {
   readParentModelState,
@@ -153,6 +158,9 @@ export const coreFacade = {
     trackFingerprint,
     fingerprintHits,
     clearFingerprint,
+    recordResolution,
+    resolutionFor,
+    resolutionHistoryLine,
   },
   handoff: {
     patchHandoff,
