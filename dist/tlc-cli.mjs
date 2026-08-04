@@ -3,9 +3,9 @@ var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/tlc-cli.ts
 import { spawnSync } from "node:child_process";
-import { existsSync as existsSync19, mkdirSync as mkdirSync14, readFileSync as readFileSync19, realpathSync, rmSync as rmSync4, writeFileSync as writeFileSync13 } from "node:fs";
+import { existsSync as existsSync20, mkdirSync as mkdirSync14, readFileSync as readFileSync20, realpathSync, rmSync as rmSync4, writeFileSync as writeFileSync13 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { delimiter, join as join20 } from "node:path";
+import { delimiter, join as join21 } from "node:path";
 
 // src/core/capability/capability.types.ts
 var ENABLE_HINT = 'Enable: ask the agent "setup harness" (harness-init skill) or edit .tlc/harness/config.json';
@@ -2780,8 +2780,8 @@ function detectDeviations(text) {
 }
 
 // src/core/policy/policy.loader.ts
-import { existsSync as existsSync10, readFileSync as readFileSync11 } from "node:fs";
-import { join as join11 } from "node:path";
+import { existsSync as existsSync11, readFileSync as readFileSync12 } from "node:fs";
+import { join as join12 } from "node:path";
 
 // src/core/policy/policy.defaults.ts
 var DEFAULT_LESSONS_POLICY = {
@@ -2875,13 +2875,51 @@ var DEFAULTS = {
   bootstrapExtra: []
 };
 
-// src/core/policy/policy.loader.ts
-function readJsonFile(path) {
+// src/core/policy/policy.posture.ts
+import { existsSync as existsSync10, readFileSync as readFileSync11 } from "node:fs";
+import { join as join11 } from "node:path";
+var OPERATOR_MODES = ["paired", "solo", "focus"];
+var DEFAULT_POSTURE = "solo";
+function isOperatorMode(value) {
+  return typeof value === "string" && OPERATOR_MODES.includes(value);
+}
+function readModeFile(root) {
+  const path = join11(projectStateDir(root), "harness-mode");
   if (!existsSync10(path)) {
     return null;
   }
   try {
-    return JSON.parse(readFileSync11(path, "utf8"));
+    return readFileSync11(path, "utf8").trim().toLowerCase();
+  } catch {
+    return null;
+  }
+}
+function resolvePosture(root, configured) {
+  const fromFile = readModeFile(root);
+  if (isOperatorMode(fromFile)) {
+    return { mode: fromFile, origin: "file" };
+  }
+  for (const mode of ["focus", "paired"]) {
+    if (existsSync10(join11(flagsDir(root), mode))) {
+      return { mode, origin: "flag" };
+    }
+  }
+  if (isOperatorMode(configured)) {
+    return { mode: configured, origin: "config" };
+  }
+  if (configured === undefined || configured === null) {
+    return { mode: DEFAULT_POSTURE, origin: "config" };
+  }
+  return { mode: DEFAULT_POSTURE, origin: "fallback", invalid: String(configured) };
+}
+
+// src/core/policy/policy.loader.ts
+function readJsonFile(path) {
+  if (!existsSync11(path)) {
+    return null;
+  }
+  try {
+    return JSON.parse(readFileSync12(path, "utf8"));
   } catch {
     return null;
   }
@@ -2914,35 +2952,23 @@ function deepMerge(base, patch) {
   };
 }
 function flagExists(root, flagName) {
-  return existsSync10(join11(flagsDir(root), flagName));
+  return existsSync11(join12(flagsDir(root), flagName));
 }
-function resolveMode(root, configured) {
-  const modeFile = join11(projectStateDir(root), "harness-mode");
-  if (existsSync10(modeFile)) {
-    const raw = readFileSync11(modeFile, "utf8").trim().toLowerCase();
-    if (raw === "paired" || raw === "solo" || raw === "heads-down") {
-      return raw;
-    }
-  }
-  if (flagExists(root, "heads-down")) {
-    return "heads-down";
-  }
-  if (flagExists(root, "paired")) {
-    return "paired";
-  }
-  return configured;
+function readConfigPair(root) {
+  return {
+    fromUser: readJsonFile(join12(runtimeHome(), "config.json")) ?? {},
+    fromProject: readJsonFile(projectConfigPath(root)) ?? {}
+  };
+}
+function resolveProjectPosture(root) {
+  const { fromUser, fromProject } = readConfigPair(root);
+  return resolvePosture(root, fromProject.mode ?? fromUser.mode);
 }
 function loadPolicy(root) {
-  const userFile = join11(runtimeHome(), "config.json");
-  const projectFile = projectConfigPath(root);
-  const fromUser = readJsonFile(userFile) ?? {};
-  const fromProject = readJsonFile(projectFile) ?? {};
+  const { fromUser, fromProject } = readConfigPair(root);
   const merged = deepMerge(deepMerge(DEFAULTS, fromUser), fromProject);
-  merged.mode = resolveMode(root, merged.mode);
+  merged.mode = resolvePosture(root, fromProject.mode ?? fromUser.mode).mode;
   if (flagExists(root, "grind-on")) {
-    merged.grind.enabled = true;
-  }
-  if (merged.mode === "heads-down") {
     merged.grind.enabled = true;
   }
   return merged;
@@ -2953,10 +2979,10 @@ function isUnderCodePaths(relativePath, codePaths) {
 }
 
 // src/core/ship/ship.ledger.ts
-import { existsSync as existsSync11, readdirSync as readdirSync2, readFileSync as readFileSync12, statSync as statSync2 } from "node:fs";
-import { join as join12 } from "node:path";
+import { existsSync as existsSync12, readdirSync as readdirSync2, readFileSync as readFileSync13, statSync as statSync2 } from "node:fs";
+import { join as join13 } from "node:path";
 function shipLedgerPath(root) {
-  return join12(projectStateDir(root), "ship-ledger.jsonl");
+  return join13(projectStateDir(root), "ship-ledger.jsonl");
 }
 function appendShipLedger(root, row) {
   const full = { ...row, ts: row.ts ?? new Date().toISOString() };
@@ -2966,21 +2992,21 @@ function readShipLedger(root) {
   return readTail(shipLedgerPath(root), Number.MAX_SAFE_INTEGER);
 }
 function hasRecentEvidence(evidenceDir, maxAgeHours) {
-  if (!existsSync11(evidenceDir)) {
+  if (!existsSync12(evidenceDir)) {
     return false;
   }
   const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
   const now = Date.now();
   for (const entry of readdirSync2(evidenceDir)) {
-    const verdictPath = join12(evidenceDir, entry, "90-verdict.txt");
-    if (!existsSync11(verdictPath)) {
+    const verdictPath = join13(evidenceDir, entry, "90-verdict.txt");
+    if (!existsSync12(verdictPath)) {
       continue;
     }
     try {
       if (now - statSync2(verdictPath).mtimeMs > maxAgeMs) {
         continue;
       }
-      if (/\bPASS\b/i.test(readFileSync12(verdictPath, "utf8"))) {
+      if (/\bPASS\b/i.test(readFileSync13(verdictPath, "utf8"))) {
         return true;
       }
     } catch {}
@@ -3169,18 +3195,18 @@ function guardPolicySurface(args) {
 
 // src/core/policy/policy.integrity.ts
 import { createHash as createHash4 } from "node:crypto";
-import { existsSync as existsSync12, mkdirSync as mkdirSync7, readdirSync as readdirSync3, readFileSync as readFileSync13, writeFileSync as writeFileSync6 } from "node:fs";
-import { join as join13 } from "node:path";
+import { existsSync as existsSync13, mkdirSync as mkdirSync7, readdirSync as readdirSync3, readFileSync as readFileSync14, writeFileSync as writeFileSync6 } from "node:fs";
+import { join as join14 } from "node:path";
 var ABSENT = "absent";
 var SCHEMA = "harness.policy-baseline.v1";
 var MODE_FILE = "harness-mode";
-var FLAG_FILES = ["grind-on", "skip-verify", "heads-down", "paired"];
+var FLAG_FILES = ["grind-on", "skip-verify", "focus", "paired"];
 function hashOf(path) {
-  if (!existsSync12(path)) {
+  if (!existsSync13(path)) {
     return ABSENT;
   }
   try {
-    return createHash4("sha256").update(readFileSync13(path)).digest("hex");
+    return createHash4("sha256").update(readFileSync14(path)).digest("hex");
   } catch {
     return "unreadable";
   }
@@ -3188,14 +3214,14 @@ function hashOf(path) {
 function policySourceFingerprint(root) {
   const paths = [
     projectConfigPath(root),
-    join13(runtimeHome(), "config.json"),
-    join13(projectStateDir(root), MODE_FILE),
-    ...FLAG_FILES.map((flag) => join13(flagsDir(root), flag))
+    join14(runtimeHome(), "config.json"),
+    join14(projectStateDir(root), MODE_FILE),
+    ...FLAG_FILES.map((flag) => join14(flagsDir(root), flag))
   ];
   return paths.map((path) => ({ path, hash: hashOf(path) }));
 }
 function baselinePath(root, sessionKey) {
-  return join13(policyBaselineDir(root), `${sanitizeSegment(sessionKey)}.json`);
+  return join14(policyBaselineDir(root), `${sanitizeSegment(sessionKey)}.json`);
 }
 function recordPolicyBaseline(root, sessionKey) {
   try {
@@ -3206,11 +3232,11 @@ function recordPolicyBaseline(root, sessionKey) {
 }
 function readBaseline(root, sessionKey) {
   const path = baselinePath(root, sessionKey);
-  if (!existsSync12(path)) {
+  if (!existsSync13(path)) {
     return null;
   }
   try {
-    const parsed = JSON.parse(readFileSync13(path, "utf8"));
+    const parsed = JSON.parse(readFileSync14(path, "utf8"));
     return Array.isArray(parsed.sources) ? parsed.sources : null;
   } catch {
     return null;
@@ -3220,7 +3246,7 @@ function firstDivergence(baseline, current) {
   const recorded = new Map(baseline.map((source) => [source.path, source.hash]));
   for (const source of current) {
     const was = recorded.get(source.path);
-    if (was === undefined || was !== source.hash) {
+    if (was !== undefined && was !== source.hash) {
       return source.path;
     }
   }
@@ -3249,7 +3275,7 @@ function checkPolicyBaseline(root, sessionKey) {
 }
 function refreshPolicyBaselines(root) {
   const dir = policyBaselineDir(root);
-  if (!existsSync12(dir)) {
+  if (!existsSync13(dir)) {
     return;
   }
   const sources = policySourceFingerprint(root);
@@ -3258,7 +3284,7 @@ function refreshPolicyBaselines(root) {
       continue;
     }
     try {
-      writeFileSync6(join13(dir, entry), `${JSON.stringify({ schema: SCHEMA, sources }, null, 2)}
+      writeFileSync6(join14(dir, entry), `${JSON.stringify({ schema: SCHEMA, sources }, null, 2)}
 `, "utf8");
     } catch {}
   }
@@ -3268,19 +3294,19 @@ function refreshPolicyBaselines(root) {
 var BASE = [
   "Harness: drive tasks to verified completion without babysitting the owner.",
   "Evidence or stop: no invented numbers, versions, or PASS claims. Cite paths, command output, or evidence files.",
-  "Ask the owner only for: irreversible or destructive actions, a real dead-end after searching, or costly ambiguity you cannot resolve.",
   "Otherwise assume the sensible default, proceed, and state the assumption in one line.",
+  "Verification does not change with posture: the same evidence bar, the same gates, the same done-criteria at every level. What changes is how much you surface and what earns an interruption.",
   "Before calling done: build, tests and lint must pass; no deleted tests; diff size matches the ask; the result matches the full request.",
   "If blocked, use exactly: BLOCKED / TRIED / NEED — one tight block, no preamble."
 ];
-var BY_MODE = {
-  paired: "Mode paired: explain reasoning more; check in before sizable non-destructive moves.",
-  "heads-down": "Mode focus: maximum autonomy — do not ask for confirmation on reversible work. Grind gates run on stop instead, so verify yourself rather than asking; ship claims need evidence when configured.",
-  solo: "Mode solo: work autonomously; premature ship claims are challenged when the ship gate is enabled."
+var BY_POSTURE = {
+  paired: "Posture paired: show your reasoning as you go, and check in before any sizable non-destructive move. Surface an irreversible action, a real dead-end after exhausting sources, and ambiguity that changes the outcome.",
+  solo: "Posture solo: work on your own. Surface exactly three things — an irreversible or destructive action, a real dead-end after exhausting sources, and ambiguity that changes the outcome.",
+  focus: "Posture focus: deepest autonomy, fewest interruptions. Only an irreversible or destructive action and a real dead-end reach the operator; ambiguity is yours to settle by taking the most reasonable reading and stating the assumption in one line."
 };
 function operatorBootstrapLines(policy, stateDir) {
   const lines = [...BASE, `Hold state on disk at ${stateDir}/handoff.json between turns and sessions.`];
-  lines.push(BY_MODE[policy.mode]);
+  lines.push(BY_POSTURE[policy.mode]);
   if (policy.shipGate.enabled) {
     lines.push("Ship protocol: the ship gate reacts only to an explicit line `HARNESS_SHIP_CLAIM: <summary>` — free-English done or shipped is ignored. After that claim, cite recent PASS evidence under the configured evidenceDir before stopping.");
   }
@@ -3309,21 +3335,21 @@ function forProvider(scoped, provider) {
 }
 
 // src/core/presence/presence.store.ts
-import { existsSync as existsSync13, mkdirSync as mkdirSync8, readdirSync as readdirSync4, readFileSync as readFileSync14, rmSync as rmSync2, writeFileSync as writeFileSync7 } from "node:fs";
-import { join as join14 } from "node:path";
+import { existsSync as existsSync14, mkdirSync as mkdirSync8, readdirSync as readdirSync4, readFileSync as readFileSync15, rmSync as rmSync2, writeFileSync as writeFileSync7 } from "node:fs";
+import { join as join15 } from "node:path";
 function presenceSessionKey(provider, session) {
   return `${provider}-${session}`;
 }
 function presencePath(root, provider, session) {
-  return join14(presenceDir(root), `${sanitizeSegment(presenceSessionKey(provider, session))}.json`);
+  return join15(presenceDir(root), `${sanitizeSegment(presenceSessionKey(provider, session))}.json`);
 }
 function readPresenceRecord(root, provider, session) {
   const path = presencePath(root, provider, session);
-  if (!existsSync13(path)) {
+  if (!existsSync14(path)) {
     return null;
   }
   try {
-    return JSON.parse(readFileSync14(path, "utf8"));
+    return JSON.parse(readFileSync15(path, "utf8"));
   } catch {
     return null;
   }
@@ -3342,7 +3368,7 @@ function deletePresenceRecord(root, provider, session) {
 }
 function listPresenceRecords(root) {
   const dir = presenceDir(root);
-  if (!existsSync13(dir)) {
+  if (!existsSync14(dir)) {
     return [];
   }
   const records = [];
@@ -3351,7 +3377,7 @@ function listPresenceRecords(root) {
       continue;
     }
     try {
-      records.push(JSON.parse(readFileSync14(join14(dir, entry), "utf8")));
+      records.push(JSON.parse(readFileSync15(join15(dir, entry), "utf8")));
     } catch {}
   }
   return records;
@@ -3435,18 +3461,18 @@ function release(root, provider, session) {
 }
 
 // src/core/shell-policy/shell-policy.stall.ts
-import { existsSync as existsSync14, mkdirSync as mkdirSync9, readFileSync as readFileSync15, writeFileSync as writeFileSync8 } from "node:fs";
-import { join as join15 } from "node:path";
+import { existsSync as existsSync15, mkdirSync as mkdirSync9, readFileSync as readFileSync16, writeFileSync as writeFileSync8 } from "node:fs";
+import { join as join16 } from "node:path";
 function storePath(root) {
-  return join15(projectStateDir(root), "shell-stall.json");
+  return join16(projectStateDir(root), "shell-stall.json");
 }
 function readStore(root) {
   const path = storePath(root);
-  if (!existsSync14(path)) {
+  if (!existsSync15(path)) {
     return {};
   }
   try {
-    return JSON.parse(readFileSync15(path, "utf8"));
+    return JSON.parse(readFileSync16(path, "utf8"));
   } catch {
     return {};
   }
@@ -3546,6 +3572,21 @@ function stallFollowup(command, hits) {
   ].join(`
 `);
 }
+var PAIRED_ASK = new Set(["write", "network"]);
+function pairedPreCheck(command, mode) {
+  if (mode !== "paired") {
+    return null;
+  }
+  const effect = classifyShell(command);
+  if (!PAIRED_ASK.has(effect)) {
+    return null;
+  }
+  return {
+    kind: "ask",
+    reason: `Posture paired: this command ${effect === "network" ? "reaches the network" : "changes files"}, so it is a sizable non-destructive move and you asked to be shown these before they run. Approve it, or leave the posture with \`tlc harness mode solo\`.`,
+    userNote: `Paired posture: approve this ${effect} command or switch posture.`
+  };
+}
 function evaluateShellCommand(args) {
   const command = args.command;
   if (!command) {
@@ -3557,6 +3598,10 @@ function evaluateShellCommand(args) {
       reason: "The command was flagged as potentially catastrophic. Prefer scoped paths inside the repo or reversible operations.",
       userNote: "This shell command can destroy data outside the workspace. Approve only if you intend it."
     };
+  }
+  const preCheck = pairedPreCheck(command, args.mode);
+  if (preCheck) {
+    return preCheck;
   }
   if (args.stallDetection) {
     const hits = trackShellCommand(args.projectDir, args.sessionKey, command);
@@ -3585,18 +3630,18 @@ function computeFingerprint(parts) {
 }
 
 // src/core/stagnation/stagnation.store.ts
-import { existsSync as existsSync15, mkdirSync as mkdirSync10, readFileSync as readFileSync16, writeFileSync as writeFileSync9 } from "node:fs";
-import { join as join16 } from "node:path";
+import { existsSync as existsSync16, mkdirSync as mkdirSync10, readFileSync as readFileSync17, writeFileSync as writeFileSync9 } from "node:fs";
+import { join as join17 } from "node:path";
 function storePath2(root) {
-  return join16(projectStateDir(root), "fingerprint.json");
+  return join17(projectStateDir(root), "fingerprint.json");
 }
 function readStore2(root) {
   const path = storePath2(root);
-  if (!existsSync15(path)) {
+  if (!existsSync16(path)) {
     return {};
   }
   try {
-    return JSON.parse(readFileSync16(path, "utf8"));
+    return JSON.parse(readFileSync17(path, "utf8"));
   } catch {
     return {};
   }
@@ -3626,19 +3671,19 @@ function clearFingerprint(root, sessionKey) {
 }
 
 // src/core/subagent-policy/subagent-policy.parent-model.ts
-import { existsSync as existsSync16, mkdirSync as mkdirSync11, readFileSync as readFileSync17, writeFileSync as writeFileSync10 } from "node:fs";
-import { join as join17 } from "node:path";
+import { existsSync as existsSync17, mkdirSync as mkdirSync11, readFileSync as readFileSync18, writeFileSync as writeFileSync10 } from "node:fs";
+import { join as join18 } from "node:path";
 var PARENT_MODEL_SCHEMA = "harness.parent-model.v1";
 function parentModelPath(root) {
-  return join17(projectStateDir(root), "parent-model.json");
+  return join18(projectStateDir(root), "parent-model.json");
 }
 function readFile(root) {
   const path = parentModelPath(root);
-  if (!existsSync16(path)) {
+  if (!existsSync17(path)) {
     return { schema: PARENT_MODEL_SCHEMA, bySession: {} };
   }
   try {
-    const parsed = JSON.parse(readFileSync17(path, "utf8"));
+    const parsed = JSON.parse(readFileSync18(path, "utf8"));
     if (parsed?.schema === PARENT_MODEL_SCHEMA && parsed.bySession) {
       return parsed;
     }
@@ -3994,6 +4039,11 @@ function fileLine(failing, changed) {
   }
   return null;
 }
+var POSTURE_STEP = {
+  paired: "Fix the reported issue with tool-backed evidence, showing your reasoning, and check in before any sizable non-destructive move.",
+  solo: "Fix the reported issue with tool-backed evidence; do not invent success. Surface only an irreversible action, a real dead-end, or ambiguity that changes the outcome.",
+  focus: "Keep going until the gates pass. Settle ambiguity yourself and state the assumption; escalate only for an irreversible action or a real dead-end, with BLOCKED / TRIED / NEED."
+};
 function resolveAutopilot(args) {
   const filesHint = fileLine(args.failingFiles, args.changedFiles);
   const base = suggestionFor(args.category, args.gate);
@@ -4058,7 +4108,7 @@ function resolveAutopilot(args) {
       return {
         next_action: base,
         steps: [
-          args.mode === "heads-down" ? "Focus mode: keep going until gates pass or you must escalate with BLOCKED/TRIED/NEED." : "Fix the reported issue with tool-backed evidence; do not invent success.",
+          POSTURE_STEP[args.mode],
           filesHint
         ].filter(Boolean)
       };
@@ -4076,18 +4126,18 @@ function formatAutopilotBlock(plan) {
 }
 
 // src/core/turn/turn.loop-counter.ts
-import { existsSync as existsSync17, mkdirSync as mkdirSync12, readFileSync as readFileSync18, writeFileSync as writeFileSync11 } from "node:fs";
-import { join as join18 } from "node:path";
+import { existsSync as existsSync18, mkdirSync as mkdirSync12, readFileSync as readFileSync19, writeFileSync as writeFileSync11 } from "node:fs";
+import { join as join19 } from "node:path";
 function loopPath(root, sessionKey) {
-  return join18(loopsDir(root), `${sanitizeSegment(sessionKey)}.json`);
+  return join19(loopsDir(root), `${sanitizeSegment(sessionKey)}.json`);
 }
 function readLoopState(root, sessionKey) {
   const path = loopPath(root, sessionKey);
-  if (!existsSync17(path)) {
+  if (!existsSync18(path)) {
     return null;
   }
   try {
-    return JSON.parse(readFileSync18(path, "utf8"));
+    return JSON.parse(readFileSync19(path, "utf8"));
   } catch {
     return null;
   }
@@ -4120,11 +4170,11 @@ function effectiveLoopCount(event, capabilities) {
   return currentLoopCount(event.projectDir, event.sessionKey);
 }
 function bootStampPath(root, sessionKey) {
-  return join18(bootDir(root), sanitizeSegment(sessionKey));
+  return join19(bootDir(root), sanitizeSegment(sessionKey));
 }
 function markBooted(root, sessionKey) {
   const path = bootStampPath(root, sessionKey);
-  if (existsSync17(path)) {
+  if (existsSync18(path)) {
     return { alreadyBooted: true };
   }
   try {
@@ -4174,16 +4224,16 @@ function detectUntrustedRead(input) {
 }
 
 // src/core/untrusted/untrusted.store.ts
-import { existsSync as existsSync18, mkdirSync as mkdirSync13, rmSync as rmSync3, writeFileSync as writeFileSync12 } from "node:fs";
-import { join as join19 } from "node:path";
+import { existsSync as existsSync19, mkdirSync as mkdirSync13, rmSync as rmSync3, writeFileSync as writeFileSync12 } from "node:fs";
+import { join as join20 } from "node:path";
 function markerDir(root) {
-  return join19(projectStateDir(root), "untrusted");
+  return join20(projectStateDir(root), "untrusted");
 }
 function markerPath(root, sessionKey) {
-  return join19(markerDir(root), `${sanitizeSegment(sessionKey)}.marker`);
+  return join20(markerDir(root), `${sanitizeSegment(sessionKey)}.marker`);
 }
 function wasFramingInjected(root, sessionKey) {
-  return existsSync18(markerPath(root, sessionKey));
+  return existsSync19(markerPath(root, sessionKey));
 }
 function markFramingInjected(root, sessionKey) {
   try {
@@ -4340,6 +4390,9 @@ var coreFacade = {
     refreshPolicyBaselines,
     operatorBootstrapLines,
     loadPolicy,
+    resolveProjectPosture,
+    OPERATOR_MODES,
+    isOperatorMode,
     isUnderCodePaths,
     forProvider
   },
@@ -4427,83 +4480,66 @@ function unknownFlags(args) {
 // bin/tlc-cli.ts
 class UsageError extends Error {
 }
-var MODE_ALIASES = {
-  solo: "solo",
-  paired: "paired",
-  focus: "heads-down",
-  "heads-down": "heads-down",
-  heads: "heads-down"
-};
 function resolveProjectRoot() {
   return process.env.TLC_PROJECT_DIR ?? process.cwd();
 }
 function modeFilePath(root) {
-  return join20(projectStateDir(root), "harness-mode");
+  return join21(projectStateDir(root), "harness-mode");
 }
 function grindFlagPath(root) {
-  return join20(flagsDir(root), "grind-on");
+  return join21(flagsDir(root), "grind-on");
 }
 function skipFlagPath(root) {
-  return join20(flagsDir(root), "skip-verify");
+  return join21(flagsDir(root), "skip-verify");
 }
-function headsDownFlagPath(root) {
-  return join20(flagsDir(root), "heads-down");
+function focusFlagPath(root) {
+  return join21(flagsDir(root), "focus");
 }
 function pairedFlagPath(root) {
-  return join20(flagsDir(root), "paired");
+  return join21(flagsDir(root), "paired");
 }
 function ensureFlagsDir(root) {
   mkdirSync14(flagsDir(root), { recursive: true });
 }
-function modeOrigin(root) {
-  const modeFile = modeFilePath(root);
-  if (existsSync19(modeFile)) {
-    const raw = readFileSync19(modeFile, "utf8").trim().toLowerCase();
-    if (raw === "solo" || raw === "paired" || raw === "heads-down") {
-      return "file";
-    }
-  }
-  if (existsSync19(headsDownFlagPath(root)) || existsSync19(pairedFlagPath(root))) {
-    return "flag";
-  }
-  return "config";
-}
-function operatorLabel(mode) {
-  return mode === "heads-down" ? "focus" : mode;
-}
 function readMode(root) {
-  return operatorLabel(coreFacade.policy.loadPolicy(root).mode);
+  return coreFacade.policy.loadPolicy(root).mode;
 }
 function grindOn(root) {
   return coreFacade.policy.loadPolicy(root).grind.enabled;
 }
 function gatesPaused(root) {
-  return existsSync19(skipFlagPath(root));
+  return existsSync20(skipFlagPath(root));
+}
+function acceptedModes() {
+  return coreFacade.policy.OPERATOR_MODES.join(" | ");
 }
 function statusText(root) {
   const report = statusJson(root);
-  const mode = report.mode;
+  const origin = report.modeInvalid === undefined ? `from ${report.modeOrigin}` : `${report.modeOrigin} — \`${report.modeInvalid}\` is not a posture; accepted: ${acceptedModes()}`;
   return [
     `harness @ ${root}`,
-    `  mode:   ${mode}${mode === "focus" ? " (max autonomy + grind)" : ""} [from ${report.modeOrigin}]`,
+    `  mode:   ${report.mode} [${origin}]`,
     `  grind:  ${report.grind ? "ON  — stop hook re-runs lint/tests and auto-retries on fail" : "OFF — no auto fix loops"}`,
     `  gates:  ${report.gatesPaused ? "PAUSED — stop checks disabled" : "active"}`,
     "",
     "Quick help:",
     "  grind ON  = after each agent turn, lint/test changed files; if fail → agent must fix",
     "  pause     = temporarily disable those stop checks",
-    "  focus     = solo on steroids: fewer questions + grind ON",
-    "  solo      = normal daily mode (grind not forced)",
-    "  paired    = explain more; check in before big moves"
+    "  posture   = how much the agent surfaces. Verification is identical at all three.",
+    "  paired    = explains as it goes, and asks before any sizable move",
+    "  solo      = works on its own; a destructive action, a dead-end or real ambiguity reaches you",
+    "  focus     = only a destructive action or a dead-end reaches you; it settles ambiguity itself"
   ].join(`
 `);
 }
 function statusJson(root) {
   const policy = coreFacade.policy.loadPolicy(root);
+  const posture = coreFacade.policy.resolveProjectPosture(root);
   return {
     root,
-    mode: operatorLabel(policy.mode),
-    modeOrigin: modeOrigin(root),
+    mode: posture.mode,
+    modeOrigin: posture.origin,
+    ...posture.invalid === undefined ? {} : { modeInvalid: posture.invalid },
     grind: policy.grind.enabled,
     gatesPaused: gatesPaused(root)
   };
@@ -4516,7 +4552,7 @@ function setGrind(root, on) {
     coreFacade.policy.refreshPolicyBaselines(root);
     return "grind ON — stop hook will lint/test and auto-retry on failure";
   }
-  if (existsSync19(path)) {
+  if (existsSync20(path)) {
     rmSync4(path);
   }
   coreFacade.policy.refreshPolicyBaselines(root);
@@ -4530,28 +4566,27 @@ function setPaused(root, on) {
     coreFacade.policy.refreshPolicyBaselines(root);
     return "gates PAUSED — stop checks disabled until `tlc harness resume`";
   }
-  if (existsSync19(path)) {
+  if (existsSync20(path)) {
     rmSync4(path);
   }
   coreFacade.policy.refreshPolicyBaselines(root);
   return "gates ACTIVE again";
 }
+var MODE_CONFIRMATION = {
+  paired: "mode paired — explains as it goes, and asks before any sizable move",
+  solo: "mode solo — a destructive action, a dead-end or real ambiguity reaches you",
+  focus: "mode focus — only a destructive action or a dead-end reaches you; ambiguity is settled for you"
+};
 function setMode(root, raw) {
-  const mapped = MODE_ALIASES[raw.toLowerCase()];
-  if (!mapped) {
-    throw new UsageError("mode must be: solo | paired | focus");
+  const mode = raw.toLowerCase();
+  if (!coreFacade.policy.isOperatorMode(mode)) {
+    throw new UsageError(`mode must be: ${acceptedModes()}`);
   }
   ensureFlagsDir(root);
-  writeFileSync13(modeFilePath(root), `${mapped}
+  writeFileSync13(modeFilePath(root), `${mode}
 `);
   coreFacade.policy.refreshPolicyBaselines(root);
-  if (mapped === "heads-down") {
-    return "mode focus — max autonomy + grind ON";
-  }
-  if (mapped === "paired") {
-    return "mode paired — explain more; check in before big moves";
-  }
-  return "mode solo — normal day-to-day (grind not forced by mode)";
+  return MODE_CONFIRMATION[mode];
 }
 var GATE_FIELDS = {
   "test-command": "test",
@@ -4561,13 +4596,13 @@ function resolveExecutable(name, env = process.env, platform = process.platform)
   const extensions = platform === "win32" ? (env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";") : [""];
   const candidates = (base) => [base, ...extensions.map((ext) => `${base}${ext}`)];
   if (name.includes("/") || name.includes("\\")) {
-    return candidates(name).find((candidate) => existsSync19(candidate)) ?? null;
+    return candidates(name).find((candidate) => existsSync20(candidate)) ?? null;
   }
   for (const dir of (env.PATH ?? "").split(delimiter)) {
     if (!dir) {
       continue;
     }
-    const found = candidates(join20(dir, name)).find((candidate) => existsSync19(candidate));
+    const found = candidates(join21(dir, name)).find((candidate) => existsSync20(candidate));
     if (found) {
       return found;
     }
@@ -4586,11 +4621,11 @@ function setGateCommand(root, field, argv, interactive) {
     throw new UsageError(`\`${binary}\` was not found on PATH, and a gate command that cannot run is a config fault (AD-021).`);
   }
   const path = projectConfigPath(root);
-  const parsed = existsSync19(path) ? JSON.parse(readFileSync19(path, "utf8")) : {};
+  const parsed = existsSync20(path) ? JSON.parse(readFileSync20(path, "utf8")) : {};
   const grind = { ...parsed.grind ?? {} };
   grind[field === "test" ? "testCommand" : "lintCommand"] = argv;
   parsed.grind = grind;
-  mkdirSync14(join20(root, ".tlc", "harness"), { recursive: true });
+  mkdirSync14(join21(root, ".tlc", "harness"), { recursive: true });
   writeFileSync13(path, `${JSON.stringify(parsed, null, 2)}
 `, "utf8");
   coreFacade.policy.refreshPolicyBaselines(root);
@@ -4652,10 +4687,10 @@ function resolveHarnessRoot() {
   }
 }
 function execBinPath() {
-  return join20(resolveHarnessRoot(), "bin", "tlc-exec");
+  return join21(resolveHarnessRoot(), "bin", "tlc-exec");
 }
 function buildBinPath() {
-  return join20(resolveHarnessRoot(), "bin", "tlc-build");
+  return join21(resolveHarnessRoot(), "bin", "tlc-build");
 }
 function route(args) {
   const cmd = (args[0] ?? "status").toLowerCase();
@@ -4792,12 +4827,12 @@ function runUpdate(root) {
   const dest = resolveHarnessRoot();
   const home = runtimeHome();
   console.log(`update: runtime → ${dest}`);
-  if (!existsSync19(join20(dest, "bin", "tlc-exec.mjs"))) {
+  if (!existsSync20(join21(dest, "bin", "tlc-exec.mjs"))) {
     console.error(`update: missing install at ${home}`);
     console.error("update: install once with the curl/irm installer from the README, then retry.");
     process.exit(1);
   }
-  if (existsSync19(join20(dest, ".git"))) {
+  if (existsSync20(join21(dest, ".git"))) {
     const fetch = spawnSync("git", ["-C", dest, "fetch", "origin"], {
       stdio: "inherit",
       env: process.env
@@ -4827,11 +4862,11 @@ function runUpdate(root) {
   } else {
     console.log("update: no .git at runtime path — skipped pull (linked checkout?).");
   }
-  const binDir = process.env.TLC_BIN_DIR || join20(homedir3(), ".local", "bin");
+  const binDir = process.env.TLC_BIN_DIR || join21(homedir3(), ".local", "bin");
   mkdirSync14(binDir, { recursive: true });
-  mkdirSync14(join20(home, "..", "skills"), { recursive: true });
+  mkdirSync14(join21(home, "..", "skills"), { recursive: true });
   if (process.platform === "win32") {
-    const installPs1 = join20(dest, "install.ps1");
+    const installPs1 = join21(dest, "install.ps1");
     const r = spawnSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", installPs1], {
       stdio: "inherit",
       env: { ...process.env, TLC_HOME: home },
@@ -4841,17 +4876,17 @@ function runUpdate(root) {
       process.exit(r.status ?? 1);
     }
   } else {
-    const tlcBin = join20(dest, "bin", "tlc");
-    const skillSrc = join20(dest, "skills", "harness-init");
-    const skillDest = join20(home, "..", "skills", "harness-init");
-    spawnSync("ln", ["-sfn", tlcBin, join20(binDir, "tlc")], { stdio: "inherit" });
-    if (!existsSync19(skillSrc)) {
+    const tlcBin = join21(dest, "bin", "tlc");
+    const skillSrc = join21(dest, "skills", "harness-init");
+    const skillDest = join21(home, "..", "skills", "harness-init");
+    spawnSync("ln", ["-sfn", tlcBin, join21(binDir, "tlc")], { stdio: "inherit" });
+    if (!existsSync20(skillSrc)) {
       console.error(`update: missing skill at ${skillSrc}`);
       process.exit(1);
     }
     spawnSync("ln", ["-sfn", skillSrc, skillDest], { stdio: "inherit" });
     console.log(`update: skill → ${skillDest}`);
-    const hooks = spawnSync(process.execPath, [join20(dest, "bin", "write-user-hooks.mjs")], {
+    const hooks = spawnSync(process.execPath, [join21(dest, "bin", "write-user-hooks.mjs")], {
       stdio: "inherit",
       env: { ...process.env, TLC_HOME: home }
     });
@@ -4859,7 +4894,7 @@ function runUpdate(root) {
       console.log("update: hooks unchanged (merge manually or: node bin/write-user-hooks.mjs --force)");
     }
   }
-  if (existsSync19(buildBinPath())) {
+  if (existsSync20(buildBinPath())) {
     const build = spawnSync(buildBinPath(), [], { stdio: "inherit", env: process.env });
     if ((build.status ?? 1) !== 0) {
       console.log("update: build skipped/failed — ok if dist/ already matches the pulled revision");
@@ -4999,18 +5034,17 @@ export {
   readMode,
   pricesHelpText,
   pairedFlagPath,
-  operatorLabel,
-  modeOrigin,
   modeFilePath,
   helpText,
-  headsDownFlagPath,
   grindOn,
   grindFlagPath,
   gatesPaused,
+  focusFlagPath,
   execBinPath,
   ensureFlagsDir,
   buildTestSteps,
   buildBinPath,
+  acceptedModes,
   UsageError,
   TEST_ENV_IMPORT
 };
