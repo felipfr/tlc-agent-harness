@@ -167,6 +167,28 @@ test("facade.turn.resolveAutopilot composes with formatAutopilotBlock", () => {
   assert.match(block, /AUTOPILOT/);
 });
 
+// why: the autopilot step encodes an interruption threshold, so it is posture and has to move with it. A single
+// generic sentence would tell an agent at `paired` to keep going and an agent at `focus` to come back and ask.
+// The category is `agent-quality` because that is the one the default branch answers, which is where the posture
+// step lives — the named categories carry their own steps and do not vary by posture.
+test("the autopilot's default step states the active posture's threshold, and the three differ", () => {
+  const stepFor = (mode: "paired" | "solo" | "focus"): string =>
+    coreFacade.turn.formatAutopilotBlock(
+      coreFacade.turn.resolveAutopilot({
+        category: "agent-quality",
+        gate: "test",
+        mode,
+        loopCount: 0,
+        maxLoops: 5,
+      }),
+    );
+
+  assert.match(stepFor("paired"), /check in before any sizable/);
+  assert.match(stepFor("solo"), /Surface only an irreversible action/);
+  assert.match(stepFor("focus"), /Settle ambiguity yourself/);
+  assert.equal(new Set([stepFor("paired"), stepFor("solo"), stepFor("focus")]).size, 3);
+});
+
 // hazard: the plan used to print `Focus files: <changed files>` under a category whose steps say "fix each item
 // explicitly". Measured naming a file no test imports while the gate output named the three real ones — an
 // instruction to go edit innocent code, which is the AD-021 harm through a different door.
