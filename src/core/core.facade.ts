@@ -19,6 +19,13 @@ import {
   isCommentLine,
   scanAddedComments,
 } from "./comment-policy/comment-policy.service.ts";
+import {
+  appendAttestation,
+  attestationPath,
+  fingerprintOf,
+  readAttestations,
+  verifyChain,
+} from "./attest/attest.service.ts";
 import { evaluateFloor } from "./floor/floor.service.ts";
 import { observeAttrs, shouldObserve } from "./observe/observe.service.ts";
 import { computeGateFingerprint, readLastGate, writeLastGate } from "./gate/gate.artifact.ts";
@@ -54,10 +61,12 @@ import { evaluatePlanGate, planVerdict } from "./plan/plan.service.ts";
 import { guardPolicySurface } from "./policy/policy.guard.ts";
 import {
   checkPolicyBaseline,
+  policySourceFingerprint,
   recordPolicyBaseline,
   refreshPolicyBaselines,
 } from "./policy/policy.integrity.ts";
 import { isUnderCodePaths, loadPolicy, resolveProjectPosture } from "./policy/policy.loader.ts";
+import { activeRails } from "./policy/policy.rails.ts";
 import { operatorBootstrapLines } from "./policy/policy.operator.ts";
 import { isOperatorMode, OPERATOR_MODES } from "./policy/policy.posture.ts";
 import { forProvider } from "./policy/policy.types.ts";
@@ -204,8 +213,10 @@ export const coreFacade = {
   policy: {
     guardPolicySurface,
     checkPolicyBaseline,
+    policySourceFingerprint,
     recordPolicyBaseline,
     refreshPolicyBaselines,
+    activeRails,
     operatorBootstrapLines,
     loadPolicy,
     resolveProjectPosture,
@@ -254,6 +265,13 @@ export const coreFacade = {
   observe: {
     shouldObserve,
     observeAttrs,
+  },
+  attest: {
+    appendAttestation,
+    readAttestations,
+    verifyChain,
+    attestationPath,
+    fingerprintOf,
   },
   turn: {
     readTurnActivity,

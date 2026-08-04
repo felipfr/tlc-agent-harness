@@ -39,6 +39,22 @@ export const sessionEndHandler: Handler = async (
     }
   }
 
+  // why: written at session end, when the rollup is complete. Every field is something the harness observed —
+  // there is no claim that the code is correct or that a human approved anything, because it cannot see either and
+  // an attestation implying them would be worse than none ([/decisions/ad-028.md](/decisions/ad-028.md)).
+  const rollup = coreFacade.observability.getRollup(root, event.sessionKey);
+  const sources = coreFacade.policy.policySourceFingerprint(root);
+  coreFacade.attest.appendAttestation(root, {
+    ts: new Date().toISOString(),
+    provider: event.provider,
+    session,
+    policyFingerprint: coreFacade.attest.fingerprintOf(sources),
+    policyDiverged: coreFacade.policy.checkPolicyBaseline(root, event.sessionKey).kind !== "allow",
+    railsActive: coreFacade.policy.activeRails(policy),
+    decisionsByRule: rollup?.railsByRule ?? {},
+    gates: rollup?.gates ?? { pass: 0, fail: 0 },
+  });
+
   return { kind: "abstain" };
 };
 

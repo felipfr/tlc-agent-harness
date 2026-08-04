@@ -160,6 +160,49 @@ export function setMode(root: string, raw: string): string {
   return MODE_CONFIRMATION[mode];
 }
 
+/**
+ * why: the artifact a reviewer can read. Everything in it is something the harness observed, and the chain is what
+ * makes a rewritten middle detectable ([/decisions/ad-028.md](/decisions/ad-028.md)).
+ */
+export function attestText(root: string): string {
+  const records = coreFacade.attest.readAttestations(root);
+  const verdict = coreFacade.attest.verifyChain(records);
+  const head = verdict.ok
+    ? `attestation chain OK — ${verdict.length} session(s)`
+    : `attestation chain BROKEN at record ${verdict.brokenAt} (${verdict.reason})`;
+  if (records.length === 0) {
+    return `${head}\n  no sessions recorded yet`;
+  }
+  const rows = records.slice(-10).map((record) => {
+    const rules = Object.entries(record.decisionsByRule)
+      .map(([rule, count]) => `${rule}=${count}`)
+      .join(" ");
+    return [
+      `  ${record.ts}  ${record.provider}/${record.session}`,
+      `    policy ${record.policyFingerprint}${record.policyDiverged ? " (DIVERGED mid-session)" : ""}`,
+      `    rails  ${record.railsActive.join(", ") || "none"}`,
+      `    gates  ${record.gates.pass} pass / ${record.gates.fail} fail${rules ? `  |  ${rules}` : ""}`,
+    ].join("\n");
+  });
+  return [head, ...rows].join("\n");
+}
+
+export type AttestReport = {
+  ok: boolean;
+  brokenAt?: number;
+  reason?: string;
+  sessions: number;
+  records: ReturnType<typeof coreFacade.attest.readAttestations>;
+};
+
+export function attestJson(root: string): AttestReport {
+  const records = coreFacade.attest.readAttestations(root);
+  const verdict = coreFacade.attest.verifyChain(records);
+  return verdict.ok
+    ? { ok: true, sessions: verdict.length, records }
+    : { ok: false, brokenAt: verdict.brokenAt, reason: verdict.reason, sessions: records.length, records };
+}
+
 export type GateField = "test" | "lint";
 
 const GATE_FIELDS: Record<string, GateField> = {
@@ -238,7 +281,7 @@ export function helpText(): string {
 
 Requires Node.js 24+ (Active LTS 24 or Current 26).
 
-Read commands accept --json: status, doctor, obs, lessons, prices lookup.
+Read commands accept --json: status, doctor, obs, lessons, prices lookup, attest.
 
 QUICK
   tlc harness status              mode / grind / gates
@@ -254,6 +297,7 @@ TOPICS
 CONTROL
   tlc harness grind [on|off]   tlc harness pause | resume   tlc harness mode solo|paired|focus
   tlc harness gate test-command <cmd> [args...]   tlc harness gate lint-command <cmd> [args...]
+  tlc harness attest              tamper-evident record of what each session ran under
 
 MEASURE
   tlc harness obs live|events|report|prune
@@ -310,6 +354,7 @@ export type Action =
   | { kind: "resume" }
   | { kind: "mode"; value: string }
   | { kind: "gate"; field: GateField; argv: string[] }
+  | { kind: "attest" }
   | { kind: "prices-help" }
   | { kind: "prices-refresh"; scope: string }
   | { kind: "prices-lookup"; modelId: string }
@@ -356,6 +401,8 @@ export function route(args: string[]): Action {
       }
       return { kind: "mode", value: modeArg };
     }
+    case "attest":
+      return { kind: "attest" };
     case "gate": {
       const field = GATE_FIELDS[(args[1] ?? "").toLowerCase()];
       if (!field) {
@@ -609,6 +656,23 @@ function main(argv: string[]): void {
       } else {
         console.log(statusText(root));
       }
+      break;
+    }
+    case "attest": {
+      const leftover = unknownFlags(args.slice(1));
+      if (leftover.length > 0) {
+        console.error(`unknown flag: ${leftover[0]}`);
+        console.error("usage: tlc harness attest [--json]");
+        process.exit(1);
+      }
+      const report = attestJson(root);
+      if (json) {
+        emitJson(report);
+      } else {
+        console.log(attestText(root));
+      }
+      // why: a broken chain exits non-zero so a pipeline can gate on it. An empty chain is not broken.
+      process.exit(report.ok ? 0 : 1);
       break;
     }
     case "help":

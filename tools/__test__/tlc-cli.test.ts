@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, test } from "node:test";
 import {
+  attestJson,
+  attestText,
   buildTestSteps,
   ensureFlagsDir,
   focusFlagPath,
@@ -670,5 +672,86 @@ describe("gate command", () => {
   test("help names the new subcommand", () => {
     assert.match(helpText(), /gate test-command/);
     assert.match(helpText(), /gate lint-command/);
+  });
+});
+
+describe("attest", () => {
+  test("an empty chain reports OK with no sessions, and does not read as tampering", () => {
+    const root = newRoot();
+    const report = attestJson(root);
+    assert.equal(report.ok, true);
+    assert.equal(report.sessions, 0);
+    assert.match(attestText(root), /no sessions recorded yet/);
+  });
+
+  // why: the artifact a reviewer reads. It has to name what the session ran under, not just that it ran.
+  test("the text form names the policy fingerprint, the rails and the gates", () => {
+    const root = newRoot();
+    coreFacade.attest.appendAttestation(root, {
+      ts: "2026-08-04T10:00:00Z",
+      provider: "provider-a",
+      session: "s1",
+      policyFingerprint: "deadbeef",
+      policyDiverged: false,
+      railsActive: ["grind", "comments"],
+      decisionsByRule: { comments: 2 },
+      gates: { pass: 3, fail: 1 },
+    });
+    const text = attestText(root);
+    assert.match(text, /deadbeef/);
+    assert.match(text, /grind, comments/);
+    assert.match(text, /3 pass \/ 1 fail/);
+    assert.match(text, /comments=2/);
+  });
+
+  // why: a mid-session policy change is the one fact a reviewer most needs, and it must be impossible to miss.
+  test("a diverged policy is called out in the text, not buried in a field", () => {
+    const root = newRoot();
+    coreFacade.attest.appendAttestation(root, {
+      ts: "2026-08-04T10:00:00Z",
+      provider: "provider-a",
+      session: "s1",
+      policyFingerprint: "abc",
+      policyDiverged: true,
+      railsActive: [],
+      decisionsByRule: {},
+      gates: { pass: 0, fail: 0 },
+    });
+    assert.match(attestText(root), /DIVERGED mid-session/);
+  });
+
+  test("a broken chain is reported as broken, with the index", () => {
+    const root = newRoot();
+    for (const session of ["s1", "s2"]) {
+      coreFacade.attest.appendAttestation(root, {
+        ts: `2026-08-04T10:00:0${session.slice(1)}Z`,
+        provider: "provider-a",
+        session,
+        policyFingerprint: "abc",
+        policyDiverged: false,
+        railsActive: [],
+        decisionsByRule: {},
+        gates: { pass: 0, fail: 0 },
+      });
+    }
+    const path = coreFacade.attest.attestationPath(root);
+    const rows = readFileSync(path, "utf8").trimEnd().split("\n");
+    const tampered = JSON.parse(rows[1] as string) as { gates: { pass: number; fail: number } };
+    tampered.gates = { pass: 42, fail: 0 };
+    rows[1] = JSON.stringify(tampered);
+    writeFileSync(path, `${rows.join("\n")}\n`);
+
+    const report = attestJson(root);
+    assert.equal(report.ok, false);
+    assert.equal(report.brokenAt, 1);
+    assert.match(attestText(root), /BROKEN at record 1/);
+  });
+
+  test("route recognises attest", () => {
+    assert.deepEqual(route(["attest"]), { kind: "attest" });
+  });
+
+  test("help names the subcommand", () => {
+    assert.match(helpText(), /tlc harness attest/);
   });
 });
