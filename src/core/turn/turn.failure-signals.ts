@@ -33,8 +33,6 @@ export function suggestionFor(category: FailureCategory, gate: string): string {
       return "Keep working on the task — do not summarize or end the turn early.";
     case "config":
       return "Check .tlc/harness/config.json commands/paths; run harness doctor.";
-    case "infra":
-      return "Check tooling availability (Node/runtime, lint/test CLIs) then retry.";
     default:
       return "Fix the reported issue and continue; do not invent success.";
   }

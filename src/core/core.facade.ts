@@ -40,16 +40,24 @@ import { describeHolder, withGateLock } from "./gate/gate.lock.ts";
 import { gapsFromArtifact } from "./gate/gate.service.ts";
 import { patchHandoff, readForeignSlices, readHandoff, readHandoffFile } from "./handoff/handoff.service.ts";
 import { authoredLessonId, buildAuthoredLesson } from "./lesson/lesson.authored.ts";
-import { gardenAndPersistLessons, renderLessonsMarkdown } from "./lesson/lesson.garden.ts";
-import { selectLessons as selectLessonsInner } from "./lesson/lesson.select.ts";
+import type { LessonVerdict } from "./lesson/lesson.credit.ts";
+import { effectivenessLine, helpRate, lessonEffectiveness } from "./lesson/lesson.credit.ts";
+import { gardenAndPersistLessons, promotionCount, renderLessonsMarkdown } from "./lesson/lesson.garden.ts";
+import { formatLessonLink, isStaleLesson, lessonLinkVerdict, parseLessonLink } from "./lesson/lesson.link.ts";
+import { appliesHere, isInjectable, selectLessons as selectLessonsInner } from "./lesson/lesson.select.ts";
 import { recordLessonFromFailure } from "./lesson/lesson.service.ts";
 import {
+  creditLessons as creditLessonsInner,
+  globalLessonsStorePath,
+  readGlobalLessons,
   readProjectLessons,
   touchAccessed as touchAccessedInner,
+  upsertLesson as upsertLessonInner,
   upsertProjectLesson as upsertProjectLessonInner,
   writeProjectLessons as writeProjectLessonsInner,
 } from "./lesson/lesson.store.ts";
-import type { HarnessLesson } from "./lesson/lesson.types.ts";
+import type { HarnessLesson, LessonTier } from "./lesson/lesson.types.ts";
+import { validityReason } from "./lesson/lesson.validity.ts";
 import {
   groupByProvider,
   railsNeverFired,
@@ -156,6 +164,23 @@ async function writeProjectLessons(root: string, lessons: HarnessLesson[]): Prom
   await writeProjectLessonsInner(root, lessons);
 }
 
+async function upsertLesson(
+  root: string,
+  lesson: HarnessLesson,
+  tier: Exclude<LessonTier, "core">,
+): Promise<HarnessLesson> {
+  return await upsertLessonInner(root, lesson, tier);
+}
+
+async function creditLessons(
+  root: string,
+  ids: readonly string[],
+  verdict: LessonVerdict,
+  now?: Date,
+): Promise<void> {
+  await creditLessonsInner(root, ids, verdict, now);
+}
+
 export const coreFacade = {
   capability: {
     ENABLE_HINT,
@@ -205,10 +230,25 @@ export const coreFacade = {
     selectLessons,
     touchAccessed,
     upsertProjectLesson,
+    upsertLesson,
     writeProjectLessons,
     readProjectLessons,
+    readGlobalLessons,
+    globalLessonsStorePath,
+    creditLessons,
     gardenAndPersistLessons,
     renderLessonsMarkdown,
+    promotionCount,
+    isInjectable,
+    appliesHere,
+    isStaleLesson,
+    lessonLinkVerdict,
+    parseLessonLink,
+    formatLessonLink,
+    validityReason,
+    lessonEffectiveness,
+    effectivenessLine,
+    helpRate,
   },
   observability: {
     DEFAULT_OBS,

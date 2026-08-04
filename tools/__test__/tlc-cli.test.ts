@@ -401,6 +401,7 @@ describe("harness test — step plan and runner", () => {
         "src suite",
         "tools suite",
         "check-boundaries",
+        "check-wiring",
         "check-docs-bundle",
         "capabilities in sync",
       ],
@@ -420,8 +421,9 @@ describe("harness test — step plan and runner", () => {
       "tools/__test__/*.test.ts",
     ]);
     assert.deepEqual(steps[4]?.args, ["tools/check-boundaries.ts"]);
-    assert.deepEqual(steps[5]?.args, ["tools/check-docs-bundle.ts"]);
-    assert.deepEqual(steps[6]?.args, ["tools/render-capabilities.ts", "--check"]);
+    assert.deepEqual(steps[5]?.args, ["tools/check-wiring.ts"]);
+    assert.deepEqual(steps[6]?.args, ["tools/check-docs-bundle.ts"]);
+    assert.deepEqual(steps[7]?.args, ["tools/render-capabilities.ts", "--check"]);
   });
 
   test("stops at the first failing step and does not run the rest", () => {

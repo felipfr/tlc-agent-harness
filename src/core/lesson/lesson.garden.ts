@@ -3,15 +3,22 @@ import { dirname, join } from "node:path";
 import { projectConfigPath } from "../../platform/paths.ts";
 import { isCommandResolutionFailure } from "../gate/gate.command.ts";
 import type { LessonsPolicyConfig } from "../policy/policy.types.ts";
+import { lessonLinkVerdict } from "./lesson.link.ts";
 import { hoursSince } from "./lesson.score.ts";
-import { packLessonsUnderBudget, rankLessonsForSync } from "./lesson.select.ts";
-import { gardenProjectLessons, readProjectLessons } from "./lesson.store.ts";
+import { isInjectable, packLessonsUnderBudget, rankLessonsForSync } from "./lesson.select.ts";
+import { gardenGlobalLessons, gardenProjectLessons, readProjectLessons } from "./lesson.store.ts";
 import type { HarnessLesson } from "./lesson.types.ts";
+import { validityReason } from "./lesson.validity.ts";
 
 export type GardenReport = {
   promoted: string[];
   quarantined: string[];
   pruned: string[];
+  /** Project lessons whose refs no longer resolve. Reported, never auto-deleted — a rename can be reverted. */
+  stale: string[];
+  /** Lessons whose staleness cleared because every ref resolves again. */
+  refreshed: string[];
+  expired: string[];
   active: number;
   candidates: number;
 };
@@ -31,75 +38,155 @@ function isStaleResolutionMisfile(lesson: HarnessLesson): boolean {
   );
 }
 
+/**
+ * invariant: promotion counts distinct sessions. `hitCount` counts fingerprint recurrences, which one stuck
+ * session can drive to any number, so it promoted lessons that had occurred once in the world.
+ *
+ * why: a record written before `sessionKeys` existed has none, and falling back to `hitCount` is what keeps it
+ * promotable rather than frozen as a candidate forever.
+ */
+export function promotionCount(lesson: HarnessLesson): number {
+  return lesson.sessionKeys.length > 0 ? lesson.sessionKeys.length : lesson.hitCount;
+}
+
+type StaleOutcome = { lesson: HarnessLesson; marked: boolean; cleared: boolean };
+
+/**
+ * invariant: only the tier whose store shares this repository is graded. A global lesson is read from many
+ * repositories, so one persisted flag cannot be true for all of them — that case is decided per repository at
+ * selection time instead.
+ */
+function applyStaleness(root: string, lesson: HarnessLesson, now: Date): StaleOutcome {
+  if (lesson.tier !== "project" || lesson.refs.length === 0) {
+    return { lesson, marked: false, cleared: false };
+  }
+  const verdict = lessonLinkVerdict(root, lesson.refs);
+  const checkedAt = now.toISOString();
+  if (verdict.stale) {
+    return {
+      lesson: { ...lesson, staleReason: verdict.status, staleCheckedAt: checkedAt, updatedAt: checkedAt },
+      marked: lesson.staleReason === undefined,
+      cleared: false,
+    };
+  }
+  if (lesson.staleReason === undefined) {
+    return { lesson: { ...lesson, staleCheckedAt: checkedAt }, marked: false, cleared: false };
+  }
+  const { staleReason: _dropped, ...rest } = lesson;
+  return {
+    lesson: { ...rest, staleCheckedAt: checkedAt, updatedAt: checkedAt },
+    marked: false,
+    cleared: true,
+  };
+}
+
+function gardenOne(
+  root: string,
+  lesson: HarnessLesson,
+  config: LessonsPolicyConfig,
+  now: Date,
+  report: GardenReport,
+): HarnessLesson | null {
+  if (isStaleResolutionMisfile(lesson)) {
+    report.pruned.push(lesson.id);
+    return null;
+  }
+
+  // why: an expired lesson is the one case the author already decided. Prune it, unlike a broken ref, which is
+  // a filesystem observation that a revert could undo.
+  if (validityReason(lesson, now) === "expired") {
+    report.expired.push(lesson.id);
+    return null;
+  }
+
+  const outcome = applyStaleness(root, lesson, now);
+  let candidate = outcome.lesson;
+  if (outcome.marked) {
+    report.stale.push(candidate.id);
+  }
+  if (outcome.cleared) {
+    report.refreshed.push(candidate.id);
+  }
+
+  if (candidate.status === "candidate" && promotionCount(candidate) >= config.promoteHitCount) {
+    candidate = {
+      ...candidate,
+      status: "active",
+      confidence: Math.max(candidate.confidence, 0.7),
+      updatedAt: now.toISOString(),
+    };
+    report.promoted.push(candidate.id);
+  }
+
+  const idleHours = hoursSince(candidate.lastSeenAt, now);
+  if (
+    candidate.status === "active" &&
+    idleHours > 24 * 90 &&
+    promotionCount(candidate) < config.promoteHitCount
+  ) {
+    candidate = { ...candidate, status: "quarantine", updatedAt: now.toISOString() };
+    report.quarantined.push(candidate.id);
+  }
+
+  if (candidate.status === "quarantine" && idleHours > 24 * 180) {
+    report.pruned.push(candidate.id);
+    return null;
+  }
+
+  // invariant: pruning measures the same clock the ranking does — recurrence, not injection. Reading
+  // lastAccessedAt here let an injected lesson postpone its own pruning indefinitely.
+  const decayed =
+    candidate.confidence * Math.exp(-config.decayLambda * hoursSince(candidate.lastSeenAt, now));
+  if (decayed < 0.05 && candidate.status !== "quarantine" && candidate.hitCount < 2) {
+    report.pruned.push(candidate.id);
+    return null;
+  }
+
+  return candidate;
+}
+
+function emptyReport(): GardenReport {
+  return {
+    promoted: [],
+    quarantined: [],
+    pruned: [],
+    stale: [],
+    refreshed: [],
+    expired: [],
+    active: 0,
+    candidates: 0,
+  };
+}
+
 export async function gardenLessons(
   root: string,
   config: LessonsPolicyConfig,
   now = new Date(),
 ): Promise<GardenReport> {
-  const promoted: string[] = [];
-  const quarantined: string[] = [];
-  const pruned: string[] = [];
-
-  const kept = await gardenProjectLessons(root, (current) => {
+  const report = emptyReport();
+  const sweep = (current: HarnessLesson[]): HarnessLesson[] => {
     const next: HarnessLesson[] = [];
     for (const lesson of current) {
       if (lesson.source === "core") {
         continue;
       }
-
-      if (isStaleResolutionMisfile(lesson)) {
-        pruned.push(lesson.id);
-        continue;
+      const kept = gardenOne(root, lesson, config, now, report);
+      if (kept) {
+        next.push(kept);
       }
-
-      let candidate = lesson;
-
-      if (candidate.status === "candidate" && candidate.hitCount >= config.promoteHitCount) {
-        candidate = {
-          ...candidate,
-          status: "active",
-          confidence: Math.max(candidate.confidence, 0.7),
-          updatedAt: now.toISOString(),
-        };
-        promoted.push(candidate.id);
-      }
-
-      const idleHours = hoursSince(candidate.lastSeenAt, now);
-      if (
-        candidate.status === "active" &&
-        idleHours > 24 * 90 &&
-        candidate.hitCount < config.promoteHitCount
-      ) {
-        candidate = { ...candidate, status: "quarantine", updatedAt: now.toISOString() };
-        quarantined.push(candidate.id);
-      }
-
-      if (candidate.status === "quarantine" && idleHours > 24 * 180) {
-        pruned.push(candidate.id);
-        continue;
-      }
-
-      // invariant: pruning measures the same clock the ranking does — recurrence, not injection. Reading
-      // lastAccessedAt here let an injected lesson postpone its own pruning indefinitely.
-      const decayed =
-        candidate.confidence * Math.exp(-config.decayLambda * hoursSince(candidate.lastSeenAt, now));
-      if (decayed < 0.05 && candidate.status !== "quarantine" && candidate.hitCount < 2) {
-        pruned.push(candidate.id);
-        continue;
-      }
-
-      next.push(candidate);
     }
     return next;
-  });
-
-  return {
-    promoted,
-    quarantined,
-    pruned,
-    active: kept.filter((l) => l.status === "active").length,
-    candidates: kept.filter((l) => l.status === "candidate").length,
   };
+
+  const project = await gardenProjectLessons(root, sweep);
+  // why: the global tier is gardened in the same pass. Decay, promotion and expiry apply to it identically;
+  // only staleness is tier-specific, and `applyStaleness` is what draws that line.
+  const global = await gardenGlobalLessons(sweep);
+  const kept = [...project, ...global];
+
+  report.active = kept.filter((l) => l.status === "active").length;
+  report.candidates = kept.filter((l) => l.status === "candidate").length;
+  return report;
 }
 
 const SYNC_TITLE = "Learned harness lessons (auto-synced; do not hand-edit):";
@@ -109,7 +196,10 @@ export function lessonsMarkdownPath(root: string): string {
 }
 
 export function renderLessonsMarkdown(root: string, lessons: HarnessLesson[], maxChars: number): string {
-  const ranked = rankLessonsForSync(lessons).slice(0, 12);
+  // invariant: the synced file is what an operator reads as current guidance, so it carries exactly what would
+  // be injected — a withheld lesson appearing here would contradict the store.
+  const now = new Date();
+  const ranked = rankLessonsForSync(lessons.filter((lesson) => isInjectable(lesson, now))).slice(0, 12);
   const { body } = packLessonsUnderBudget({ lessons: ranked, maxChars, title: SYNC_TITLE });
   const path = lessonsMarkdownPath(root);
   mkdirSync(dirname(path), { recursive: true });

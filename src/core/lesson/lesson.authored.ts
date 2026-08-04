@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { HarnessLesson } from "./lesson.types.ts";
+import type { HarnessLesson, LessonLink, LessonTier } from "./lesson.types.ts";
 
 /**
  * The lesson store had exactly one producer: gate stagnation. So a lesson learned by *reasoning* — a code review, an
@@ -28,6 +28,11 @@ export type AuthoredLessonInput = {
   gate?: string;
   /** Words that should pull this lesson up when they appear in the failure text. */
   triggerTokens?: string[];
+  /** What makes this lesson true. When any ref breaks, `garden` stops the lesson being injected. */
+  refs?: LessonLink[];
+  /** ISO bound after which this lesson stops being injected. */
+  validTo?: string;
+  tier?: Exclude<LessonTier, "core">;
   /**
    * True when the command ran inside an agent session. Recorded rather than refused: an agent that cannot write down
    * what it learned writes nothing down, which is the state this replaces. Marking it is what keeps it auditable.
@@ -60,6 +65,7 @@ export function buildAuthoredLesson(input: AuthoredLessonInput): HarnessLesson {
     prefer: input.prefer?.trim() ?? "",
     preRetryCheck: input.preRetryCheck?.trim() ?? "",
     source: "manual",
+    tier: input.tier ?? "project",
     // why: `active`, not `candidate`. A candidate exists because the automatic producer is guessing from output; an
     // author is not guessing, and making them wait for a promotion threshold that only recurrence can satisfy would
     // mean an authored lesson never activates.
@@ -67,7 +73,14 @@ export function buildAuthoredLesson(input: AuthoredLessonInput): HarnessLesson {
     confidence: 0.8,
     hitCount: 1,
     priority: 0.8,
-    projectScoped: true,
+    refs: input.refs ?? [],
+    ...(input.validTo ? { validTo: input.validTo } : {}),
+    // why: an authored lesson has no failing session behind it, so it carries none. Promotion reads distinct
+    // sessions and an authored lesson is already active, so it never consults this.
+    sessionKeys: [],
+    injectedCount: 0,
+    helpedCount: 0,
+    neutralCount: 0,
     firstSeenAt: now,
     lastSeenAt: now,
     lastAccessedAt: now,

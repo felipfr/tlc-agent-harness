@@ -20,6 +20,7 @@ test("recordLessonFromFailure creates a new candidate lesson on first sight", as
       category: "verification",
       fingerprint: "fp-1",
       output: "biome: 1 error",
+      sessionKey: "s-1",
     });
     assert.equal(lesson.status, "candidate");
     assert.equal(lesson.hitCount, 1);
@@ -38,6 +39,7 @@ test("a repeat of the same fingerprint increments hitCount and confidence on the
       category: "verification",
       fingerprint: "fp-1",
       output: "biome: 1 error",
+      sessionKey: "s-1",
     });
     const second = await recordLessonFromFailure({
       projectDir: root,
@@ -45,6 +47,7 @@ test("a repeat of the same fingerprint increments hitCount and confidence on the
       category: "verification",
       fingerprint: "fp-1",
       output: "biome: 1 error",
+      sessionKey: "s-1",
     });
     assert.equal(second.hitCount, 2);
     assert.equal(readProjectLessons(root).length, 1);
@@ -62,6 +65,7 @@ test("a different fingerprint on the same gate produces a separate lesson", asyn
       category: "verification",
       fingerprint: "fp-1",
       output: "biome: 1 error",
+      sessionKey: "s-1",
     });
     await recordLessonFromFailure({
       projectDir: root,
@@ -69,6 +73,7 @@ test("a different fingerprint on the same gate produces a separate lesson", asyn
       category: "verification",
       fingerprint: "fp-2",
       output: "biome: another error",
+      sessionKey: "s-1",
     });
     assert.equal(readProjectLessons(root).length, 2);
   } finally {
@@ -88,6 +93,7 @@ test("a recorded lesson does not restate the gate suggestion", async () => {
       category: "verification",
       fingerprint: "abc123",
       output: "not ok 1 - emits the metric\nAssertionError: values differ",
+      sessionKey: "s-1",
     });
 
     assert.doesNotMatch(lesson.instruction, /without suppressions or deleted tests/);
@@ -110,6 +116,7 @@ test("a lesson with no usable snippet still has a meaningful instruction", async
       category: "verification",
       fingerprint: "def456",
       output: "",
+      sessionKey: "s-1",
     });
 
     assert.ok(lesson.instruction.trim().length > 0);

@@ -107,11 +107,6 @@ export function resolveAutopilot(args: {
         next_action: base,
         steps: ["Run harness doctor.", "Fix .tlc/harness/config.json commands/paths.", "Retry the task."],
       };
-    case "infra":
-      return {
-        next_action: base,
-        steps: ["Verify lint/test CLIs are installed and on PATH.", "Retry the gate after tooling works."],
-      };
     default:
       return {
         next_action: base,

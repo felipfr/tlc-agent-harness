@@ -239,7 +239,8 @@ See `tlc harness help architecture` or [`docs/architecture.md`](docs/architectur
 | `tlc harness attest` | Tamper-evident record of what each session ran under |
 | `tlc harness obs live` / `obs report` | Signal / session rollup |
 | `tlc harness prices refresh` / `lookup` | Cost catalogs |
-| `tlc harness lessons list` | Project lessons |
+| `tlc harness lessons list` | Lessons across the three tiers, with staleness and effectiveness |
+| `tlc harness lessons add "…" [--ref path:symbol] [--global]` | Write a lesson; `--ref` retires it when that stops resolving |
 | `tlc harness init --minimal` | Project stub |
 
 ## Connect a project
@@ -259,11 +260,12 @@ provider. Records inside it (signal, debug, audit) carry a `provider` field per 
 | Path | Contents |
 |------|----------|
 | `~/.tlc/harness` | Runtime |
+| `~/.tlc/harness/state/lessons.json` | Global lesson tier — this machine, every product ([AD-040](docs/decisions/ad-040.md)) |
 | `<cursor config>/hooks.json` | Cursor user hooks (if Cursor installed) |
 | `<claude config>/settings.json` | Claude Code user hooks, `hooks` block (if Claude Code installed) |
 | `<provider config>/skills/harness-init` | Init skill, linked per detected provider from runtime `skills/harness-init` |
 | `<repo>/.tlc/harness/config.json` | Project policy (tracked) |
-| `<repo>/.tlc/harness/state/` | Handoff, obs, audit, `lessons.json`, ship ledger (gitignored) |
+| `<repo>/.tlc/harness/state/` | Handoff, obs, audit, project-tier `lessons.json`, ship ledger (gitignored) |
 
 Do not use `~/.tlc/harness` for anything other than the installed runtime — see
 [`docs/decisions/ad-002.md`](docs/decisions/ad-002.md) for why the layout is namespaced this way.

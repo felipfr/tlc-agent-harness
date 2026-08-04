@@ -1,11 +1,32 @@
 import type { LessonsPolicyConfig } from "../policy/policy.types.ts";
+import { isStaleLesson, lessonLinkVerdict } from "./lesson.link.ts";
 import { rankScore } from "./lesson.score.ts";
 import { allLessons, touchAccessed } from "./lesson.store.ts";
 import type { HarnessLesson } from "./lesson.types.ts";
+import { isWithinValidity } from "./lesson.validity.ts";
 
 export type SelectMode = "session" | "retry";
 
 const OMIT_NOTE_RESERVE = 96;
+
+// invariant: injectable is decided before ranking, not by scoring a withheld lesson low. A stale or out-of-window
+// lesson must not reach the turn at any score.
+export function isInjectable(lesson: HarnessLesson, now: Date): boolean {
+  return !isStaleLesson(lesson) && isWithinValidity(lesson, now);
+}
+
+/**
+ * why: a global lesson is read from many repositories, so one stored `staleReason` cannot be true for all of
+ * them — a ref that is missing here may be present in the product the lesson came from. Applicability is
+ * therefore computed per repository for the global tier, while a project lesson relies on the flag `garden`
+ * wrote against the same repository it lives in.
+ */
+export function appliesHere(root: string, lesson: HarnessLesson): boolean {
+  if (lesson.tier !== "global" || lesson.refs.length === 0) {
+    return true;
+  }
+  return !lessonLinkVerdict(root, lesson.refs).stale;
+}
 
 function allowedForMode(lesson: HarnessLesson, mode: SelectMode, gate?: string): boolean {
   if (lesson.status === "quarantine") {
@@ -23,9 +44,11 @@ function allowedForMode(lesson: HarnessLesson, mode: SelectMode, gate?: string):
   return false;
 }
 
+// why: the tier is rendered because it calibrates trust — a lesson carried in from another product is advice
+// about a different repository, and the turn should be able to tell.
 export function renderLessonBlock(lesson: HarnessLesson): string {
   const lines = [
-    `- [${lesson.failedGate}/${lesson.status}] ${lesson.instruction}`,
+    `- [${lesson.failedGate}/${lesson.status}/${lesson.tier}] ${lesson.instruction}`,
     `  avoid: ${lesson.avoid}`,
     `  prefer: ${lesson.prefer}`,
     `  before retrying: ${lesson.preRetryCheck}`,
@@ -133,7 +156,12 @@ export async function selectLessons(args: {
   const now = args.now ?? new Date();
 
   const ranked = allLessons(args.projectDir)
-    .filter((lesson) => allowedForMode(lesson, args.mode, args.gate))
+    .filter(
+      (lesson) =>
+        isInjectable(lesson, now) &&
+        appliesHere(args.projectDir, lesson) &&
+        allowedForMode(lesson, args.mode, args.gate),
+    )
     .map((lesson) => ({
       lesson,
       score: rankScore(lesson, {

@@ -21,6 +21,12 @@ export type CheckLevel = "ok" | "warn" | "fail";
 
 export type Check = { level: CheckLevel; name: string; detail: string };
 
+// why: written as a person would say it. "1 warning(s)" is what a machine writes, and reading the output as the
+// operator is the step that found this ([/decisions/ad-034.md](/decisions/ad-034.md)).
+export function plural(count: number, word: string): string {
+  return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
+
 const MIN_NODE = 24;
 
 export type SpawnProbe = (command: string, args: string[]) => { ok: boolean };
@@ -285,6 +291,66 @@ function checkObservedRails(root: string): Check[] {
 }
 
 /**
+ * Reports the three states a lesson can be in that make it worth an operator's attention: withheld because its
+ * refs stopped resolving, withheld because its window closed, and injected without ever being graded.
+ *
+ * invariant: `unproven` is a warning, not an `ok` row. A lesson nothing has tested is spending injected context
+ * on an unjustified claim, and reading it as healthy is what lets a store fill with text nobody can defend
+ * ([/decisions/ad-039.md](/decisions/ad-039.md)).
+ *
+ * why: silent when the tier is empty and when everything is healthy. A reassurance on every run is a line to skim
+ * past ([/decisions/ad-034.md](/decisions/ad-034.md)).
+ */
+export function checkLessonHealth(root: string): Check[] {
+  const policy = coreFacade.policy.loadPolicy(root);
+  if (!policy.intelligence.lessons.enabled) {
+    return [];
+  }
+  const now = new Date();
+  const writable = [...coreFacade.lesson.readProjectLessons(root), ...coreFacade.lesson.readGlobalLessons()];
+  if (writable.length === 0) {
+    return [];
+  }
+  const stale = writable.filter((lesson) => coreFacade.lesson.isStaleLesson(lesson));
+  const outOfWindow = writable.filter((lesson) => coreFacade.lesson.validityReason(lesson, now) !== "active");
+  // why: `unproven` already means injected-and-ungraded, so a second `injectedCount > 0` test here would be the
+  // same fact derived twice.
+  const unproven = writable.filter((lesson) => coreFacade.lesson.lessonEffectiveness(lesson) === "unproven");
+  const checks: Check[] = [];
+  if (stale.length > 0) {
+    checks.push({
+      level: "warn",
+      name: "stale lessons",
+      detail: `${plural(stale.length, "lesson")} name a path or symbol that no longer resolves, so ${stale.length === 1 ? "it is" : "they are"} withheld: ${stale.map((lesson) => lesson.id).join(", ")}. Run: tlc harness lessons list`,
+    });
+  }
+  if (outOfWindow.length > 0) {
+    checks.push({
+      level: "warn",
+      name: "lessons out of window",
+      detail: `${plural(outOfWindow.length, "lesson")} fall outside their validity window: ${outOfWindow.map((lesson) => lesson.id).join(", ")}. Run: tlc harness lessons garden`,
+    });
+  }
+  if (unproven.length > 0) {
+    checks.push({
+      level: "warn",
+      name: "unproven lessons",
+      detail: `${plural(unproven.length, "lesson")} have been injected and never graded by a following gate run, so nothing shows ${unproven.length === 1 ? "it" : "they"} help`,
+    });
+  }
+  if (checks.length === 0) {
+    return [
+      {
+        level: "ok",
+        name: "lesson health",
+        detail: `${plural(writable.length, "lesson")} across the writable tiers, none stale, none out of window`,
+      },
+    ];
+  }
+  return checks;
+}
+
+/**
  * hazard: a policy divergence blocks every acting tool call in a live session, and `doctor` — the one command an
  * operator runs to find out what is wrong — said nothing about it. Measured: a colleague's agent was fully blocked,
  * ran `status`, learned nothing, and stopped ([/decisions/ad-030.md](/decisions/ad-030.md)).
@@ -356,6 +422,7 @@ export function checkProjectPolicy(root: string): Check[] {
     },
     checkPosture(root),
     ...checkObservedRails(root),
+    ...checkLessonHealth(root),
     ...checkPolicyDivergence(root),
     ...checkGateScope(root),
   ];
@@ -453,9 +520,6 @@ export function formatReport(checks: readonly Check[]): string {
   lines.push("");
   // hazard: this said "all checks passed" under twelve warnings, which is a contradiction the reader has to resolve
   // by deciding one of the two is lying ([/decisions/ad-034.md](/decisions/ad-034.md)).
-  // why: written as a person would say it. "1 warning(s)" is what a machine writes, and this decision is partly
-  // about reading the output rather than only asserting it ([/decisions/ad-034.md](/decisions/ad-034.md)).
-  const plural = (count: number, word: string): string => `${count} ${word}${count === 1 ? "" : "s"}`;
   if (failed > 0) {
     lines.push(`doctor: ${plural(failed, "failure")}${warned > 0 ? `, ${plural(warned, "warning")}` : ""}`);
   } else if (warned > 0) {

@@ -15,7 +15,17 @@ export type {
   HandoffProviderSlice,
   HandoffShared,
 } from "./handoff/handoff.types.ts";
-export type { HarnessLesson, LessonSource, LessonStatus, LessonStoreFile } from "./lesson/lesson.types.ts";
+export type {
+  HarnessLesson,
+  LessonEffectiveness,
+  LessonLink,
+  LessonLinkStatus,
+  LessonSource,
+  LessonStatus,
+  LessonStoreFile,
+  LessonTier,
+  PendingLessonCredit,
+} from "./lesson/lesson.types.ts";
 export type { ProviderTotals } from "./observability/observability.report.ts";
 export type { SessionRollup } from "./observability/observability.store.ts";
 export type {

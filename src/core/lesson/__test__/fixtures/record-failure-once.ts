@@ -12,4 +12,5 @@ await recordLessonFromFailure({
   category: "verification",
   fingerprint,
   output: `${gate} failed`,
+  sessionKey: "s-1",
 });

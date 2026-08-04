@@ -28,7 +28,6 @@ export type FailureCategory =
   | "ship-evidence"
   | "policy"
   | "config"
-  | "infra"
   | "budget";
 
 export type GateGap = {

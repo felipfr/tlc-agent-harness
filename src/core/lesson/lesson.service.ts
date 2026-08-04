@@ -30,12 +30,24 @@ function tokensFrom(gate: string, output: string, category: string): string[] {
 // next_action from the same suggestionFor(category, gate) call, so every lesson opened by restating the line
 // the gate had already emitted — duplicated by construction, spending the lessons budget on an echo. What a
 // lesson uniquely knows is the recurring signature and the retry guidance, so that is all it carries.
+const MAX_SESSION_KEYS = 12;
+
+// why: a bounded set, because the count only has to reach `promoteHitCount` and an unbounded list would grow a
+// stored record without limit.
+function withSessionKey(existing: readonly string[], sessionKey: string): string[] {
+  if (!sessionKey || existing.includes(sessionKey)) {
+    return [...existing];
+  }
+  return [...existing, sessionKey].slice(-MAX_SESSION_KEYS);
+}
+
 export async function recordLessonFromFailure(args: {
   projectDir: string;
   gate: string;
   category: FailureCategory;
   fingerprint: string;
   output: string;
+  sessionKey: string;
 }): Promise<HarnessLesson> {
   const now = new Date().toISOString();
   const id = lessonId(args.gate, args.fingerprint);
@@ -52,6 +64,7 @@ export async function recordLessonFromFailure(args: {
     const updated: HarnessLesson = {
       ...existing,
       hitCount: existing.hitCount + 1,
+      sessionKeys: withSessionKey(existing.sessionKeys, args.sessionKey),
       lastSeenAt: now,
       lastAccessedAt: now,
       updatedAt: now,
@@ -76,11 +89,16 @@ export async function recordLessonFromFailure(args: {
     prefer: "Change approach using the gate output; verify with the same gate before claiming done.",
     preRetryCheck: `Re-read the ${args.gate} output and confirm the next edit targets a different root cause.`,
     source: "project",
+    tier: "project",
     status: "candidate",
     confidence: 0.55,
     hitCount: 1,
     priority: 70,
-    projectScoped: true,
+    refs: [],
+    sessionKeys: withSessionKey([], args.sessionKey),
+    injectedCount: 0,
+    helpedCount: 0,
+    neutralCount: 0,
     firstSeenAt: now,
     lastSeenAt: now,
     lastAccessedAt: now,

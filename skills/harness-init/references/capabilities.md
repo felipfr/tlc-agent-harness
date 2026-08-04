@@ -27,7 +27,7 @@ assume Cursor — check what Step 1 detected).
 | 6 | Block parent Fast mode for Task spawns | `subagents.blockParentFast` | off | Denies Task/subagentStart while the parent chat is in Fast mode (sticky from hooks), closing the gap where Task slugs omit *-fast. | Needs parent model hooks (sessionStart/obs/stop); false denials if you intentionally run Fast parent with workers. | recommend **on** |
 | 7 | Shell stall detection | `shell.stallDetection` | off | Blocks repeating the exact same shell command too many times. | Can false-positive on intentional retries. | `stallRepeatThreshold (default 3)` |
 | 8 | Catastrophic shell ask | `shell.catastrophicAsk` | **on** | Asks before destructive shell commands (rm -rf, drop db, force push, …). | Extra prompts on risky commands. | recommend **on** |
-| 9 | Lessons | `intelligence.lessons.enabled` | off | Records compact lessons on gate stagnation and reinjects them ranked under a char budget. | Uses context tokens; not a second brain / chat memory. | `maxInjectSession`, `maxCharsSession`, `maxInjectRetry`, `maxCharsRetry`, `promoteHitCount`, `decayLambda`, `projectBoost`, `syncRulesFile`, `gardenOnSessionEnd`; recommend **on** |
+| 9 | Lessons | `intelligence.lessons.enabled` | off | Records compact lessons on gate stagnation and reinjects them ranked under a char budget. A lesson can name the path or symbol that makes it true and is withheld once that stops resolving, can carry an end date, and is graded helped or neutral by the next run of the gate it was injected for. Three tiers: shipped core, a global tier read by every product on this machine, and this project's own. | Uses context tokens; not a second brain / chat memory. The grading is correlational, not causal — a gate passing after a lesson was injected does not prove the lesson caused it. Nothing is promoted between products automatically, so carrying a lesson to another product is an operator command. | `maxInjectSession`, `maxCharsSession`, `maxInjectRetry`, `maxCharsRetry`, `promoteHitCount`, `decayLambda`, `projectBoost`, `syncRulesFile`, `gardenOnSessionEnd`; recommend **on** |
 | 10 | Budget continue | `intelligence.budgetContinue` | off | Pushes the agent to keep working under context pressure instead of wrapping up early. | Can delay clean stops. | `budgetContinueAfterLoops` |
 | 11 | Gap feedback | `intelligence.gapFeedback` | **on** | Injects PREVIOUS_GAPS on gate failure so retries fix listed items. | Longer follow-ups. | — |
 | 12 | Failure classification | `intelligence.failureClassification` | **on** | Stores failure categories on the handoff for clearer next actions. | Extra handoff fields. | — |
@@ -46,25 +46,43 @@ assume Cursor — check what Step 1 detected).
 Stagnation fingerprinting is always on when grind gates fail (no separate toggle) — mention when discussing
 grind.
 
-## Lessons subsection (capability 14)
+## Lessons subsection (capability 9)
 
 If the user enables lessons, explain what runs automatically:
 
 | Event | What happens |
 |-------|--------------|
-| Gate stagnation (same fingerprint ≥ 2) | Upsert `candidate` lesson in `.tlc/harness/state/lessons.json` |
-| Stop retry / sessionStart | Inject ranked lessons under char budget |
-| sessionEnd | Promote / decay / quarantine when `gardenOnSessionEnd` |
+| Gate stagnation (same fingerprint ≥ 2) | Upsert `candidate` lesson in `.tlc/harness/state/lessons.json`, recording the session key |
+| Stop retry / sessionStart | Inject ranked lessons under char budget, skipping any that are stale or out of window |
+| Next run of the same gate | Grade the lessons injected for it: passed → `helped`, failed → `neutral` |
+| sessionEnd | Promote / decay / quarantine when `gardenOnSessionEnd`, mark or clear staleness, prune expired |
 | `syncRulesFile` | Rewrite the provider-native durable view when enabled — Cursor's `.cursor/rules/harness-lessons.mdc`, Claude's `CLAUDE.md` import line |
 
 Ask for lessons knobs (offer defaults):
 
 - `maxInjectSession` (5), `maxCharsSession` (900)
 - `maxInjectRetry` (8), `maxCharsRetry` (1400)
-- `promoteHitCount` (2), `decayLambda` (0.02), `projectBoost` (1.5)
+- `promoteHitCount` (2) — counted in **distinct sessions**, not raw recurrences
+- `decayLambda` (0.02), `projectBoost` (1.5) — the boost favours this project over the global tier
 - `syncRulesFile` (recommend **true** on Cursor — sessionStart `additional_context` can drop; also fine to
   recommend on Claude Code, where it just keeps `CLAUDE.md` current)
 - `gardenOnSessionEnd` (recommend true)
+
+**Nothing to configure for the tiers.** The global tier lives at `<runtime home>/state/lessons.json` and is read
+automatically; it is written only when the operator passes `--global` or runs `lessons promote`. There is no
+setting that makes promotion automatic, and that is deliberate — a lesson mined from one product's gate names that
+product's tooling ([/decisions/ad-040.md](/decisions/ad-040.md)).
+
+If the user asks how to record something they just learned, the commands are:
+
+```bash
+tlc harness lessons add "<what to do differently>" [--gate <name>] [--ref path[:symbol]] [--until <iso>] [--global]
+tlc harness lessons promote <id>
+tlc harness lessons list
+```
+
+Mention `--ref` when the lesson is about a file or a symbol: it is what makes the lesson retire itself instead of
+outliving what it was about. Mention `--global` when the lesson would be true in a different repository.
 
 Point deep docs to: `tlc harness help lessons` (load only if the user asks how decay/ranking works).
 

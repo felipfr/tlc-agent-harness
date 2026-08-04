@@ -54,6 +54,8 @@ export function rankScore(
   const now = args.now ?? new Date();
   const relevance = relevanceScore(lesson, { gate: args.gate, text: args.text });
   const confidence = decayedConfidence(lesson, args.decayLambda, now);
-  const boost = lesson.projectScoped ? args.projectBoost : 1;
+  // why: the boost favours the nearest tier. A lesson written for this repository outranks one carried in from
+  // another product, which is what keeps a cross-product tier from drowning local knowledge.
+  const boost = lesson.tier === "project" ? args.projectBoost : 1;
   return relevance * confidence * boost;
 }

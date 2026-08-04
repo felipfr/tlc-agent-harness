@@ -2,8 +2,6 @@ import type { HarnessEventKind } from "../../contracts/harness-event.ts";
 
 export type ObsLevel = "signal" | "debug";
 
-export type GenAiOutcome = "success" | "error" | "denied" | "timeout" | "aborted";
-
 export type ObsKind =
   | "session.start"
   | "session.end"
@@ -49,20 +47,18 @@ export type ObsEvent = {
   session_id?: string;
   model?: string;
   attrs: Record<string, unknown>;
+  // invariant: every field here is written by `usageGenAi`. `operation_name`, `provider_name`, `request_model`,
+  // `reasoning_tokens` and `outcome` were declared on the shipped schema and populated by nothing, which is the
+  // same defect as a consumer without a producer pointed the other way ([/decisions/ad-041.md](/decisions/ad-041.md)).
   gen_ai?: {
-    operation_name?: string;
-    provider_name?: string;
-    request_model?: string;
     input_tokens?: number;
     output_tokens?: number;
-    reasoning_tokens?: number;
     cache_read_tokens?: number;
     cache_write_tokens?: number;
     cost_usd?: number | null;
     cost_source?: CostSource;
     cost_pool?: CostPool;
     duration_ms?: number;
-    outcome?: GenAiOutcome;
   };
 };
 

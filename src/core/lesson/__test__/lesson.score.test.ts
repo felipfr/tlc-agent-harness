@@ -19,7 +19,12 @@ function lesson(overrides: Partial<HarnessLesson> = {}): HarnessLesson {
     confidence: 0.8,
     hitCount: 2,
     priority: 50,
-    projectScoped: true,
+    tier: "project",
+    refs: [],
+    sessionKeys: [],
+    injectedCount: 0,
+    helpedCount: 0,
+    neutralCount: 0,
     firstSeenAt: "2026-07-01T00:00:00.000Z",
     lastSeenAt: "2026-07-01T00:00:00.000Z",
     lastAccessedAt: "2026-07-01T00:00:00.000Z",
@@ -97,12 +102,12 @@ test("relevanceScore rewards a trigger token present in the free text", () => {
 
 test("rankScore applies the project boost only to project-scoped lessons", () => {
   const now = new Date("2026-07-01T00:00:00.000Z");
-  const projectScored = rankScore(lesson({ projectScoped: true }), {
+  const projectScored = rankScore(lesson({ tier: "project" }), {
     decayLambda: 0.02,
     projectBoost: 2,
     now,
   });
-  const coreScored = rankScore(lesson({ projectScoped: false }), {
+  const coreScored = rankScore(lesson({ tier: "core" }), {
     decayLambda: 0.02,
     projectBoost: 2,
     now,

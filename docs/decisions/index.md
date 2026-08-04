@@ -50,5 +50,11 @@ Handoff section and a link back to this index.
 | [AD-033](/decisions/ad-033.md) | The gate says what it costs, appendFiles stops promising what it cannot deliver, and a dead capability leaves | active |
 | [AD-034](/decisions/ad-034.md) | A warning that fires on a healthy install is not a warning, and the author reads the operator's output before anyone else does | active |
 | [AD-035](/decisions/ad-035.md) | A lesson learned by reasoning can be written down, and the harness never learns where lessons come from | active |
+| [AD-036](/decisions/ad-036.md) | A lesson names what makes it true, and stops being injected when that is gone | active |
+| [AD-037](/decisions/ad-037.md) | A lesson can be true for a period, and an unparseable bound withholds it | active |
+| [AD-038](/decisions/ad-038.md) | Promotion counts distinct sessions, because one stuck session is one observation | active |
+| [AD-039](/decisions/ad-039.md) | A lesson is graded by the gate it was injected for, and unproven is not a passing reading | active |
+| [AD-040](/decisions/ad-040.md) | Three lesson tiers, and nothing crosses between products by itself | active |
+| [AD-041](/decisions/ad-041.md) | A member something reads and nothing writes fails the gate | active |
 
 Related: [/architecture.md](/architecture.md), [/concepts.md](/concepts.md), [/providers/index.md](/providers/index.md).

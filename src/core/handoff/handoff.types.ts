@@ -1,4 +1,5 @@
 import type { FailureCategory, GateGap } from "../gate/gate.types.ts";
+import type { PendingLessonCredit } from "../lesson/lesson.types.ts";
 import type { PlanDeviation } from "../plan/plan.types.ts";
 import type { OperatorMode } from "../policy/policy.types.ts";
 
@@ -28,6 +29,9 @@ export type HandoffProviderSlice = {
   last_fingerprint?: string;
   fingerprint_hits?: number;
   last_failure_category?: FailureCategory;
+  // why: the lessons injected for a gate are graded by that gate's next run, which happens in a later process.
+  // The handoff is the only state that survives between the two ([/decisions/ad-039.md](/decisions/ad-039.md)).
+  pending_lesson_credit?: PendingLessonCredit;
   previous_gaps?: GateGap[];
   plan_paths?: string[];
   plan_at?: string;

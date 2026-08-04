@@ -1,13 +1,49 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { updateJsonAtomic } from "../../platform/fs-atomic.ts";
-import { projectStateDir } from "../../platform/paths.ts";
-import type { HarnessLesson, LessonStoreFile } from "./lesson.types.ts";
+import { projectStateDir, runtimeStateDir } from "../../platform/paths.ts";
+import { creditLesson, type LessonVerdict } from "./lesson.credit.ts";
+import type { HarnessLesson, LessonStoreFile, LessonTier } from "./lesson.types.ts";
+
+const EPOCH = "1970-01-01T00:00:00.000Z";
+
+type CoreLessonInput = Pick<
+  HarnessLesson,
+  | "id"
+  | "failedGate"
+  | "category"
+  | "triggerTokens"
+  | "instruction"
+  | "avoid"
+  | "prefer"
+  | "preRetryCheck"
+  | "priority"
+>;
+
+function coreLesson(input: CoreLessonInput): HarnessLesson {
+  return {
+    ...input,
+    scope: "gate-execution",
+    source: "core",
+    tier: "core",
+    status: "active",
+    confidence: 1,
+    hitCount: 1,
+    refs: [],
+    sessionKeys: [],
+    injectedCount: 0,
+    helpedCount: 0,
+    neutralCount: 0,
+    firstSeenAt: EPOCH,
+    lastSeenAt: EPOCH,
+    lastAccessedAt: EPOCH,
+    updatedAt: EPOCH,
+  };
+}
 
 export const CORE_LESSONS: readonly HarnessLesson[] = [
-  {
+  coreLesson({
     id: "core:gate:lint",
-    scope: "gate-execution",
     failedGate: "lint",
     category: "verification",
     triggerTokens: ["lint", "biome", "eslint", "ruff", "format"],
@@ -17,20 +53,10 @@ export const CORE_LESSONS: readonly HarnessLesson[] = [
     prefer: "Apply the smallest fix that clears each finding, then let the stop hook re-check.",
     preRetryCheck:
       "Confirm the lint command targets only the intended changed files and still fails for the same codes.",
-    source: "core",
-    status: "active",
-    confidence: 1,
-    hitCount: 1,
     priority: 90,
-    projectScoped: false,
-    firstSeenAt: "1970-01-01T00:00:00.000Z",
-    lastSeenAt: "1970-01-01T00:00:00.000Z",
-    lastAccessedAt: "1970-01-01T00:00:00.000Z",
-    updatedAt: "1970-01-01T00:00:00.000Z",
-  },
-  {
+  }),
+  coreLesson({
     id: "core:gate:test",
-    scope: "gate-execution",
     failedGate: "test",
     category: "verification",
     triggerTokens: ["test", "vitest", "jest", "pytest", "failing"],
@@ -39,20 +65,10 @@ export const CORE_LESSONS: readonly HarnessLesson[] = [
     avoid: "Do not delete failing tests, mark them skipped, or weaken assertions to force green.",
     prefer: "Reproduce the failure, fix root cause, re-run the same test target.",
     preRetryCheck: "Identify the failing test name/file from the gate output before editing.",
-    source: "core",
-    status: "active",
-    confidence: 1,
-    hitCount: 1,
     priority: 90,
-    projectScoped: false,
-    firstSeenAt: "1970-01-01T00:00:00.000Z",
-    lastSeenAt: "1970-01-01T00:00:00.000Z",
-    lastAccessedAt: "1970-01-01T00:00:00.000Z",
-    updatedAt: "1970-01-01T00:00:00.000Z",
-  },
-  {
+  }),
+  coreLesson({
     id: "core:gate:comments",
-    scope: "gate-execution",
     failedGate: "comments",
     category: "verification",
     triggerTokens: ["junk comment", "TODO", "FIXME", "banner"],
@@ -61,20 +77,10 @@ export const CORE_LESSONS: readonly HarnessLesson[] = [
     avoid: "Do not keep TODO markers or section banners 'for clarity'.",
     prefer: "Keep only comments that explain a non-obvious why (invariant, hazard, external constraint).",
     preRetryCheck: "Scan the listed file:line hits and remove each one.",
-    source: "core",
-    status: "active",
-    confidence: 1,
-    hitCount: 1,
     priority: 80,
-    projectScoped: false,
-    firstSeenAt: "1970-01-01T00:00:00.000Z",
-    lastSeenAt: "1970-01-01T00:00:00.000Z",
-    lastAccessedAt: "1970-01-01T00:00:00.000Z",
-    updatedAt: "1970-01-01T00:00:00.000Z",
-  },
-  {
+  }),
+  coreLesson({
     id: "core:gate:ship",
-    scope: "gate-execution",
     failedGate: "ship",
     category: "ship-evidence",
     triggerTokens: ["ship", "evidence", "90-verdict", "PASS"],
@@ -83,20 +89,10 @@ export const CORE_LESSONS: readonly HarnessLesson[] = [
     avoid: "Do not claim shipped based on unit tests alone when runtime paths changed.",
     prefer: "Run production E2E, write 90-verdict.txt PASS, cite the evidence path.",
     preRetryCheck: "Confirm evidenceDir and a recent PASS verdict exist for this change.",
-    source: "core",
-    status: "active",
-    confidence: 1,
-    hitCount: 1,
     priority: 95,
-    projectScoped: false,
-    firstSeenAt: "1970-01-01T00:00:00.000Z",
-    lastSeenAt: "1970-01-01T00:00:00.000Z",
-    lastAccessedAt: "1970-01-01T00:00:00.000Z",
-    updatedAt: "1970-01-01T00:00:00.000Z",
-  },
-  {
+  }),
+  coreLesson({
     id: "core:gate:empty-diff",
-    scope: "gate-execution",
     failedGate: "empty-diff",
     category: "ship-evidence",
     triggerTokens: ["empty", "diff", "no changes", "shipped"],
@@ -105,20 +101,10 @@ export const CORE_LESSONS: readonly HarnessLesson[] = [
     avoid: "Do not restate 'done' without a real diff or an explicit zero-change justification.",
     prefer: "Make the missing change, or clearly document why no files should change.",
     preRetryCheck: "Inspect git status / changed files before the next stop.",
-    source: "core",
-    status: "active",
-    confidence: 1,
-    hitCount: 1,
     priority: 92,
-    projectScoped: false,
-    firstSeenAt: "1970-01-01T00:00:00.000Z",
-    lastSeenAt: "1970-01-01T00:00:00.000Z",
-    lastAccessedAt: "1970-01-01T00:00:00.000Z",
-    updatedAt: "1970-01-01T00:00:00.000Z",
-  },
-  {
+  }),
+  coreLesson({
     id: "core:gate:stagnation",
-    scope: "gate-execution",
     failedGate: "stagnation",
     category: "stagnation",
     triggerTokens: ["stagnation", "identical", "fingerprint", "same fail"],
@@ -127,92 +113,172 @@ export const CORE_LESSONS: readonly HarnessLesson[] = [
     avoid: "Do not retry the exact same patch, command, or suppression.",
     prefer: "Diagnose root cause with a different path, or escalate with BLOCKED / TRIED / NEED.",
     preRetryCheck: "Diff your last edit against the gate output; ensure the next action is different.",
-    source: "core",
-    status: "active",
-    confidence: 1,
-    hitCount: 1,
     priority: 100,
-    projectScoped: false,
-    firstSeenAt: "1970-01-01T00:00:00.000Z",
-    lastSeenAt: "1970-01-01T00:00:00.000Z",
-    lastAccessedAt: "1970-01-01T00:00:00.000Z",
-    updatedAt: "1970-01-01T00:00:00.000Z",
-  },
+  }),
 ];
 
 export function lessonsStorePath(root: string): string {
   return join(projectStateDir(root), "lessons.json");
 }
 
-function lessonsLockPath(root: string): string {
-  return `${lessonsStorePath(root)}.lock`;
+// why: one store for every repository on the machine. The per-repo store stays authoritative for this
+// repository; this is the tier that follows the operator across products ([/decisions/ad-040.md](/decisions/ad-040.md)).
+export function globalLessonsStorePath(): string {
+  return join(runtimeStateDir(), "lessons.json");
 }
 
-export function readProjectLessons(root: string): HarnessLesson[] {
-  const path = lessonsStorePath(root);
+function storePathFor(root: string, tier: Exclude<LessonTier, "core">): string {
+  return tier === "global" ? globalLessonsStorePath() : lessonsStorePath(root);
+}
+
+// hazard: a record written before a field existed reads as `undefined`, and `undefined` propagated into
+// `hitCount + 1` or `refs.length` throws or poisons a comparator. Every read normalizes, so no consumer has to.
+function normalizeLesson(raw: HarnessLesson, tier: LessonTier): HarnessLesson {
+  return {
+    ...raw,
+    tier,
+    refs: Array.isArray(raw.refs) ? raw.refs : [],
+    sessionKeys: Array.isArray(raw.sessionKeys) ? raw.sessionKeys : [],
+    injectedCount: Number.isFinite(raw.injectedCount) ? raw.injectedCount : 0,
+    helpedCount: Number.isFinite(raw.helpedCount) ? raw.helpedCount : 0,
+    neutralCount: Number.isFinite(raw.neutralCount) ? raw.neutralCount : 0,
+  };
+}
+
+function readStore(path: string, tier: LessonTier): HarnessLesson[] {
   if (!existsSync(path)) {
     return [];
   }
   try {
     const file = JSON.parse(readFileSync(path, "utf8")) as LessonStoreFile;
-    return Array.isArray(file.lessons) ? file.lessons : [];
+    return Array.isArray(file.lessons) ? file.lessons.map((lesson) => normalizeLesson(lesson, tier)) : [];
   } catch {
     return [];
   }
 }
 
-export function allLessons(root: string): HarnessLesson[] {
-  return [...CORE_LESSONS, ...readProjectLessons(root)];
+export function readProjectLessons(root: string): HarnessLesson[] {
+  return readStore(lessonsStorePath(root), "project");
 }
 
-async function mutateProjectLessons(
-  root: string,
+export function readGlobalLessons(): HarnessLesson[] {
+  return readStore(globalLessonsStorePath(), "global");
+}
+
+// invariant: the nearer tier wins on a duplicate id. A project that has taken a global lesson and rewritten it
+// reads its own version, and the same lesson is never injected twice.
+export function allLessons(root: string): HarnessLesson[] {
+  const byId = new Map<string, HarnessLesson>();
+  for (const lesson of [...CORE_LESSONS, ...readGlobalLessons(), ...readProjectLessons(root)]) {
+    byId.set(lesson.id, lesson);
+  }
+  return [...byId.values()];
+}
+
+async function mutateStore(
+  path: string,
+  tier: LessonTier,
   mutate: (current: HarnessLesson[]) => HarnessLesson[],
 ): Promise<HarnessLesson[]> {
   const file = await updateJsonAtomic<LessonStoreFile>(
-    lessonsStorePath(root),
+    path,
     (current) => {
       const lessons = current && Array.isArray(current.lessons) ? current.lessons : [];
-      return { version: 1, lessons: mutate(lessons) };
+      return { version: 1, lessons: mutate(lessons.map((lesson) => normalizeLesson(lesson, tier))) };
     },
-    { lockPath: lessonsLockPath(root) },
+    { lockPath: `${path}.lock` },
   );
   return file.lessons;
 }
 
 export async function writeProjectLessons(root: string, lessons: HarnessLesson[]): Promise<void> {
-  await mutateProjectLessons(root, () => lessons);
+  await mutateStore(lessonsStorePath(root), "project", () => lessons);
+}
+
+function upsert(lessons: HarnessLesson[], lesson: HarnessLesson): HarnessLesson[] {
+  const index = lessons.findIndex((item) => item.id === lesson.id);
+  if (index < 0) {
+    return [...lessons, lesson];
+  }
+  const next = [...lessons];
+  next[index] = lesson;
+  return next;
 }
 
 export async function upsertProjectLesson(root: string, lesson: HarnessLesson): Promise<HarnessLesson> {
-  await mutateProjectLessons(root, (current) => {
-    const index = current.findIndex((item) => item.id === lesson.id);
-    if (index >= 0) {
-      const next = [...current];
-      next[index] = lesson;
-      return next;
-    }
-    return [...current, lesson];
-  });
-  return lesson;
+  const saved = { ...lesson, tier: "project" as const };
+  await mutateStore(lessonsStorePath(root), "project", (current) => upsert(current, saved));
+  return saved;
 }
 
-export async function touchAccessed(root: string, ids: string[], now = new Date()): Promise<void> {
+export async function upsertGlobalLesson(lesson: HarnessLesson): Promise<HarnessLesson> {
+  const saved = { ...lesson, tier: "global" as const };
+  await mutateStore(globalLessonsStorePath(), "global", (current) => upsert(current, saved));
+  return saved;
+}
+
+export async function upsertLesson(
+  root: string,
+  lesson: HarnessLesson,
+  tier: Exclude<LessonTier, "core">,
+): Promise<HarnessLesson> {
+  return tier === "global" ? upsertGlobalLesson(lesson) : upsertProjectLesson(root, lesson);
+}
+
+async function mutateWritableTiers(
+  root: string,
+  ids: readonly string[],
+  patch: (lesson: HarnessLesson) => HarnessLesson,
+): Promise<void> {
   if (ids.length === 0) {
     return;
   }
   const idSet = new Set(ids);
+  // why: an injected set can span both writable tiers, so both are visited. Core is skipped because it is
+  // shipped and identical everywhere — a counter on it would be a per-machine edit to a constant.
+  for (const tier of ["project", "global"] as const) {
+    const path = storePathFor(root, tier);
+    if (!existsSync(path)) {
+      continue;
+    }
+    await mutateStore(path, tier, (current) =>
+      current.map((lesson) => (idSet.has(lesson.id) ? patch(lesson) : lesson)),
+    );
+  }
+}
+
+export async function touchAccessed(root: string, ids: string[], now = new Date()): Promise<void> {
   const iso = now.toISOString();
-  await mutateProjectLessons(root, (current) =>
-    current.map((lesson) =>
-      idSet.has(lesson.id) ? { ...lesson, lastAccessedAt: iso, updatedAt: iso } : lesson,
-    ),
-  );
+  await mutateWritableTiers(root, ids, (lesson) => ({
+    ...lesson,
+    lastAccessedAt: iso,
+    updatedAt: iso,
+    injectedCount: lesson.injectedCount + 1,
+  }));
+}
+
+export async function creditLessons(
+  root: string,
+  ids: readonly string[],
+  verdict: LessonVerdict,
+  now = new Date(),
+): Promise<void> {
+  const iso = now.toISOString();
+  await mutateWritableTiers(root, ids, (lesson) => creditLesson(lesson, verdict, iso));
 }
 
 export async function gardenProjectLessons(
   root: string,
   mutate: (current: HarnessLesson[]) => HarnessLesson[],
 ): Promise<HarnessLesson[]> {
-  return mutateProjectLessons(root, mutate);
+  return mutateStore(lessonsStorePath(root), "project", mutate);
+}
+
+export async function gardenGlobalLessons(
+  mutate: (current: HarnessLesson[]) => HarnessLesson[],
+): Promise<HarnessLesson[]> {
+  if (!existsSync(globalLessonsStorePath())) {
+    return [];
+  }
+  return mutateStore(globalLessonsStorePath(), "global", mutate);
 }

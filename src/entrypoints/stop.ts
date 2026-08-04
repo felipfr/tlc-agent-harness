@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Decision, HarnessEvent } from "../contracts/index.ts";
-import { coreFacade, type LastGateArtifact, type Policy } from "../core/index.ts";
+import { coreFacade, type LastGateArtifact, type PendingLessonCredit, type Policy } from "../core/index.ts";
 import { filterCodeTargets, filterTestTargets, listChangedRepoFiles, runCommand } from "../platform/git.ts";
 import { flagsDir } from "../platform/paths.ts";
 import type { Handler, HandlerContext } from "./run.ts";
@@ -44,6 +44,33 @@ function recordGateOutcome(args: {
   });
 }
 
+/**
+ * Grades the lessons that were injected the last time this gate failed. `helped` means the gate the lessons were
+ * chosen for then passed; `neutral` means it failed again.
+ *
+ * invariant: consumed exactly once. The pending credit is cleared whether or not any lesson matched, so a single
+ * injection cannot be graded twice by two later runs of the same gate.
+ *
+ * hazard: the gate name is compared. Without it, lessons injected for `lint` would be credited by whichever gate
+ * ran next, which is `test` in this handler and would read as help the lesson never gave.
+ */
+async function creditPendingLessons(args: {
+  root: string;
+  provider: string;
+  pending: PendingLessonCredit | undefined;
+  gate: string;
+  passed: boolean;
+}): Promise<void> {
+  const { pending } = args;
+  if (!pending || pending.gate !== args.gate || pending.ids.length === 0) {
+    return;
+  }
+  await coreFacade.lesson.creditLessons(args.root, pending.ids, args.passed ? "helped" : "neutral");
+  await coreFacade.handoff.patchHandoff(args.root, args.provider, {
+    slice: { pending_lesson_credit: undefined },
+  });
+}
+
 async function runLockedGate(args: {
   root: string;
   provider: string;
@@ -54,6 +81,7 @@ async function runLockedGate(args: {
   recordFiles: string[];
   sessionKey: string;
   policy: Policy;
+  pendingCredit: PendingLessonCredit | undefined;
 }): Promise<LastGateArtifact> {
   const artifact = await coreFacade.gate.withGateLock(args.root, args.provider, args.session, async () => {
     const result = await runCommand(args.root, args.command, args.argvFiles);
@@ -69,6 +97,13 @@ async function runLockedGate(args: {
   });
   // invariant: recorded outside the lock. A measurement must not widen the window in which one gate blocks another.
   recordGateOutcome({ ...args, artifact });
+  await creditPendingLessons({
+    root: args.root,
+    provider: args.provider,
+    pending: args.pendingCredit,
+    gate: args.gate,
+    passed: artifact.passed,
+  });
   return artifact;
 }
 
@@ -135,6 +170,7 @@ async function failGate(args: {
       category,
       fingerprint,
       output: args.artifact.outputTail,
+      sessionKey: args.sessionKey,
     });
   }
 
@@ -144,20 +180,33 @@ async function failGate(args: {
   const resolution = coreFacade.stagnation.resolutionFor(args.root, fingerprint);
   const historyLine = resolution ? coreFacade.stagnation.resolutionHistoryLine(resolution) : "";
 
-  const lessonsBlock = intel.lessons.enabled
-    ? formatLessonsBlock(
-        (
-          await coreFacade.lesson.selectLessons({
-            projectDir: args.root,
-            config: intel.lessons,
-            mode: "retry",
-            gate: args.gate,
-            text: hits >= 2 ? `stagnation ${args.artifact.outputTail}` : args.artifact.outputTail,
-          })
-        ).lessons,
-        "Lessons for this gate (ranked — apply before inventing a new plan):",
-      )
-    : "";
+  const selected = intel.lessons.enabled
+    ? await coreFacade.lesson.selectLessons({
+        projectDir: args.root,
+        config: intel.lessons,
+        mode: "retry",
+        gate: args.gate,
+        text: hits >= 2 ? `stagnation ${args.artifact.outputTail}` : args.artifact.outputTail,
+      })
+    : { lessons: [], usedIds: [] };
+  const lessonsBlock = formatLessonsBlock(
+    selected.lessons,
+    "Lessons for this gate (ranked — apply before inventing a new plan):",
+  );
+
+  // why: written after the lessons are chosen and before the turn resumes, so the next run of this same gate is
+  // the thing that grades them ([/decisions/ad-039.md](/decisions/ad-039.md)).
+  if (selected.usedIds.length > 0) {
+    await coreFacade.handoff.patchHandoff(args.root, args.provider, {
+      slice: {
+        pending_lesson_credit: {
+          gate: args.gate,
+          ids: selected.usedIds,
+          at: new Date().toISOString(),
+        },
+      },
+    });
+  }
 
   if (hits >= 2) {
     const stagnationGaps = intel.gapFeedback
@@ -245,6 +294,9 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
   const codeTargets = filterCodeTargets(changedFiles, policy.codePaths);
   const testTargets = filterTestTargets(changedFiles);
   const handoff = coreFacade.handoff.readHandoff(root, provider);
+  // why: read from the snapshot taken before this handler patches anything, so a credit written by the previous
+  // stop is still visible when the gate it belongs to runs below.
+  const pendingCredit = handoff.pending_lesson_credit;
 
   await coreFacade.handoff.patchHandoff(root, provider, {
     slice: { last_stop_status: status, last_changed_files: changedFiles, last_gate_result: "skipped" },
@@ -327,6 +379,7 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
       root,
       provider,
       session,
+      pendingCredit,
       sessionKey,
       policy,
       gate: "lint",
@@ -352,6 +405,7 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
         root,
         provider,
         session,
+        pendingCredit,
         sessionKey,
         policy,
         gate: "test",
@@ -415,6 +469,7 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
       root,
       provider,
       session,
+      pendingCredit,
       sessionKey,
       policy,
       gate: "docs",

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, test } from "node:test";
 import type { HarnessLesson } from "../../src/core/lesson/lesson.types.ts";
 import { DEFAULTS } from "../../src/core/policy/policy.defaults.ts";
-import { flagValue, lessonRows, listReport, listText, positionalWords } from "../lessons-cli.ts";
+import { flagValue, gardenText, lessonRows, listReport, listText, positionalWords } from "../lessons-cli.ts";
 
 const cleanupRoots: string[] = [];
 
@@ -43,7 +43,12 @@ function lesson(overrides: Partial<HarnessLesson> = {}): HarnessLesson {
     confidence: 0.8,
     hitCount: 2,
     priority: 1,
-    projectScoped: true,
+    tier: "project",
+    refs: [],
+    sessionKeys: [],
+    injectedCount: 0,
+    helpedCount: 0,
+    neutralCount: 0,
     firstSeenAt: NOW.toISOString(),
     lastSeenAt: NOW.toISOString(),
     lastAccessedAt: NOW.toISOString(),
@@ -54,7 +59,7 @@ function lesson(overrides: Partial<HarnessLesson> = {}): HarnessLesson {
 
 describe("lessonRows", () => {
   test("projects the fields the text renderer prints, plus a computed score", () => {
-    const rows = lessonRows([lesson()], CONFIG, NOW);
+    const rows = lessonRows(newRoot(), [lesson()], CONFIG, NOW);
     assert.equal(rows.length, 1);
     const row = rows[0];
     assert.equal(row?.id, "lesson-1");
@@ -65,7 +70,7 @@ describe("lessonRows", () => {
   });
 
   test("an empty store projects to an empty list, not to a placeholder row", () => {
-    assert.deepEqual(lessonRows([], CONFIG, NOW), []);
+    assert.deepEqual(lessonRows(newRoot(), [], CONFIG, NOW), []);
   });
 });
 
@@ -95,15 +100,97 @@ describe("listText", () => {
     const root = newRoot();
     const report = listReport(root, [lesson()], CONFIG, NOW);
     const text = listText(report);
-    assert.match(text, /1 lesson\(s\)/);
+    assert.match(text, /1 lesson —/);
     assert.ok(text.includes(report.storePath));
-    assert.match(text, /gate=lint hits=2 src=project/);
+    assert.match(text, /gate=lint tier=project hits=2 sessions=0 src=project/);
   });
 
   test("an empty store still reports the count and the config line", () => {
     const text = listText(listReport(newRoot(), [], CONFIG, NOW));
-    assert.match(text, /0 lesson\(s\)/);
+    assert.match(text, /0 lessons —/);
     assert.match(text, /promoteHitCount=/);
+  });
+
+  // why: the operator has to be able to tell a withheld lesson from a listed one, or the list contradicts what
+  // the turn actually received.
+  test("a withheld lesson is marked, and a healthy one is not", () => {
+    const root = newRoot();
+    const stale = listText(listReport(root, [lesson({ staleReason: "path-missing" })], CONFIG, NOW));
+    assert.match(stale, /WITHHELD/);
+    assert.match(stale, /stale=path-missing/);
+    assert.doesNotMatch(listText(listReport(root, [lesson()], CONFIG, NOW)), /WITHHELD/);
+  });
+
+  // invariant: unproven is reported as its own state, never folded into a zero rate.
+  test("a lesson nothing has graded reads unproven rather than zero", () => {
+    const text = listText(listReport(newRoot(), [lesson({ injectedCount: 2 })], CONFIG, NOW));
+    assert.match(text, /effect=unproven \(injected 2x, graded 0x\)/);
+    assert.match(text, /unproven=1/);
+  });
+
+  test("the totals name each tier and both store paths", () => {
+    const report = listReport(newRoot(), [lesson()], CONFIG, NOW);
+    const text = listText(report);
+    assert.deepEqual(report.totals.byTier, { project: 1 });
+    assert.match(text, /project=1/);
+    assert.ok(text.includes(report.globalStorePath));
+  });
+
+  // hazard: a lesson nothing has shown yet was counted as unproven, so a fresh store reported every lesson as an
+  // unjustified claim — a number nobody can act on.
+  test("a lesson that was never injected is counted apart from an unproven one", () => {
+    const report = listReport(
+      newRoot(),
+      [lesson(), lesson({ id: "lesson-2", injectedCount: 4 })],
+      CONFIG,
+      NOW,
+    );
+    assert.equal(report.totals.notInjected, 1);
+    assert.equal(report.totals.unproven, 1);
+    const text = listText(report);
+    assert.match(text, /effect=not-injected/);
+    assert.match(text, /unproven=1 not-injected=1/);
+  });
+
+  // hazard: `sessions` came from the promotion helper, which falls back to `hitCount` for a record with no session
+  // keys — so an authored lesson that never had a session reported `sessions=1`.
+  test("sessions counts real session keys and never falls back to hitCount", () => {
+    const rows = lessonRows(newRoot(), [lesson({ hitCount: 9, sessionKeys: [] })], CONFIG, NOW);
+    assert.equal(rows[0]?.sessions, 0);
+    assert.equal(rows[0]?.hits, 9);
+  });
+});
+
+// why: the report used to be printed as raw JSON, so `"stale": ["manual:f70cc…"]` told the operator an id and not
+// what happened to it ([/decisions/ad-034.md](/decisions/ad-034.md)).
+describe("gardenText", () => {
+  const empty = {
+    promoted: [],
+    quarantined: [],
+    pruned: [],
+    stale: [],
+    refreshed: [],
+    expired: [],
+    active: 0,
+    candidates: 0,
+  };
+
+  test("each change says what it means from now on", () => {
+    const text = gardenText({ ...empty, stale: ["a"], expired: ["b"], promoted: ["c"], active: 3 });
+    assert.match(text, /now withheld — a named path or symbol no longer resolves: a/);
+    assert.match(text, /pruned — past its validity window: b/);
+    assert.match(text, /promoted to active .*: c/);
+    assert.match(text, /3 active/);
+  });
+
+  test("a no-op run says so rather than printing empty lists", () => {
+    const text = gardenText(empty);
+    assert.match(text, /nothing changed/);
+    assert.doesNotMatch(text, /\[\]/);
+  });
+
+  test("a cleared staleness is reported as a recovery, not as a new problem", () => {
+    assert.match(gardenText({ ...empty, refreshed: ["a"] }), /no longer withheld/);
   });
 });
 

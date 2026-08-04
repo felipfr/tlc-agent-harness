@@ -465,6 +465,26 @@ guessing from gate output, and an author is not. The id is a hash of the instruc
 updates it instead of adding a near-duplicate. A lesson written from inside an agent session says so in its category,
 so you can tell the two apart in `tlc harness lessons list`.
 
+**Say what makes it true, and it retires itself.** `--ref path[:symbol]` names the thing the lesson is about; when
+that stops resolving the lesson is withheld instead of sending the next turn after a file that no longer exists.
+`--until <iso>` gives it an end date. Both are optional and a lesson about conduct needs neither.
+
+```bash
+tlc harness lessons add "Run tools/check-dist-fresh.ts before the commit, never chained with &&." \
+  --ref tools/check-dist-fresh.ts --gate test
+tlc harness lessons add "Pin the formatter until the toolchain moves." --until 2026-12-01T00:00:00Z
+```
+
+**Decide who should read it.** A lesson about this repository stays here; one about engineering belongs to every
+product you work in. `--global` writes it to the machine tier, and `lessons promote <id>` moves an existing project
+lesson up. Nothing is promoted automatically — a lesson mined from one product's gate names that product's tooling
+([/decisions/ad-040.md](/decisions/ad-040.md)).
+
+```bash
+tlc harness lessons add "Run the gate itself, never an approximation of its steps." --global
+tlc harness lessons promote project:test:9f2c1a
+```
+
 **The harness never reads your documentation to find lessons.** No decision-record convention, no directory, no file
 format — it runs in many products, and one project's filing habits are not a feature of the tool. If you want your own
 ADRs or postmortems to produce lessons, that is a script in your repository calling this command
