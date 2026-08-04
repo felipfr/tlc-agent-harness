@@ -21,10 +21,20 @@ function fileLine(failing: string[] | undefined, changed: string[] | undefined):
   return null;
 }
 
+/**
+ * invariant: these render only from the default branch below, which is reached after a gate has already failed —
+ * late in the work by construction. That makes this the one place where the deadline for a question is a fact
+ * rather than a guess, so every posture states the same settle-and-state form and none invites a question about
+ * ambiguity. Asking at this point is measurably worse than deciding
+ * ([/decisions/ad-026.md](/decisions/ad-026.md)).
+ *
+ * `paired` keeps its check-in, because that one is about an action it is *about to take*, not about ambiguity
+ * it should have raised earlier.
+ */
 const POSTURE_STEP: Record<OperatorMode, string> = {
   paired:
-    "Fix the reported issue with tool-backed evidence, showing your reasoning, and check in before any sizable non-destructive move.",
-  solo: "Fix the reported issue with tool-backed evidence; do not invent success. Surface only an irreversible action, a real dead-end, or ambiguity that changes the outcome.",
+    "Fix the reported issue with tool-backed evidence, showing your reasoning, and check in before any sizable non-destructive move. The work is already under way, so settle any remaining ambiguity yourself and state the assumption.",
+  solo: "Fix the reported issue with tool-backed evidence; do not invent success. The work is already under way, so settle remaining ambiguity by taking the most reasonable reading and stating the assumption; escalate only an irreversible action or a real dead-end.",
   focus:
     "Keep going until the gates pass. Settle ambiguity yourself and state the assumption; escalate only for an irreversible action or a real dead-end, with BLOCKED / TRIED / NEED.",
 };

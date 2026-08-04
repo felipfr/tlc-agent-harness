@@ -184,9 +184,31 @@ test("the autopilot's default step states the active posture's threshold, and th
     );
 
   assert.match(stepFor("paired"), /check in before any sizable/);
-  assert.match(stepFor("solo"), /Surface only an irreversible action/);
+  assert.match(stepFor("solo"), /escalate only an irreversible action/);
   assert.match(stepFor("focus"), /Settle ambiguity yourself/);
   assert.equal(new Set([stepFor("paired"), stepFor("solo"), stepFor("focus")]).size, 3);
+});
+
+// invariant: this step renders only after a gate has already failed, so the work is late by construction — the
+// one place where the deadline for a question is a fact rather than a guess. Every posture settles and states;
+// none invites a question about ambiguity, because asking here is measurably worse than deciding.
+test("the autopilot step tells every posture to settle ambiguity, never to raise it", () => {
+  for (const mode of ["paired", "solo", "focus"] as const) {
+    const block = coreFacade.turn.formatAutopilotBlock(
+      coreFacade.turn.resolveAutopilot({
+        category: "agent-quality",
+        gate: "test",
+        mode,
+        loopCount: 0,
+        maxLoops: 5,
+      }),
+    );
+    assert.match(block, /settle/i, mode);
+    assert.match(block, /assumption/, mode);
+    // why: the words that would send the agent to the operator about ambiguity at the latest possible moment.
+    assert.doesNotMatch(block, /ambiguity that changes the outcome/, mode);
+    assert.doesNotMatch(block, /ask the operator/i, mode);
+  }
 });
 
 // hazard: the plan used to print `Focus files: <changed files>` under a category whose steps say "fix each item
