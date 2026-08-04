@@ -487,3 +487,11 @@ test("an unusable body is not judged by liveness", () => {
   assert.equal(isLockOwnerGone(null), false);
   assert.equal(isLockOwnerGone({ provider: "a" }), false);
 });
+
+test("a process that exists but is not ours counts as alive", () => {
+  // why: pid 1 always exists. Unprivileged, `process.kill(1, 0)` throws EPERM — the process is there and
+  // belongs to someone else, which is alive for our purposes. As root it succeeds, which is also alive, so the
+  // expected answer is the same either way and the case is portable.
+  // hazard: treating EPERM as gone would reclaim a lock held by a live process running under another user.
+  assert.equal(isLockOwnerGone(lockBody({ pid: 1 })), false);
+});

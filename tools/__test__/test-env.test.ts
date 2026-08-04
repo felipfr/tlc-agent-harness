@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { buildTestSteps, TEST_ENV_IMPORT } from "../../bin/tlc-cli.ts";
 import { PROJECT_SCOPED_ENV } from "../test-env.names.mjs";
 
@@ -37,4 +40,29 @@ test("both suites are launched through the setup module", () => {
 // it, so cleaning it would hide a different class of bug than the one this module exists for.
 test("TLC_HOME is not cleaned", () => {
   assert.ok(!PROJECT_SCOPED_ENV.includes("TLC_HOME"));
+});
+
+// hazard: the assertion above only fires when the variable is actually set, so from a clean shell it passes
+// even if the module were inert — the discrimination sensor proved exactly that by emptying the delete loop
+// with no test failing. This spawns a child with the variable set and asks whether the module removes it, which
+// tests the mechanism instead of the ambient state.
+test("the setup module removes each variable in a process that has them", () => {
+  const probe = PROJECT_SCOPED_ENV.map(
+    (name) => `if (process.env[${JSON.stringify(name)}] !== undefined) { process.exit(9); }`,
+  ).join("\n");
+
+  const result = spawnSync(
+    process.execPath,
+    ["--import", "./tools/test-env.mjs", "--input-type=module", "--eval", probe],
+    {
+      cwd: join(dirname(fileURLToPath(import.meta.url)), "..", ".."),
+      env: Object.fromEntries([
+        ...Object.entries(process.env),
+        ...PROJECT_SCOPED_ENV.map((name) => [name, "/leaked"]),
+      ]) as NodeJS.ProcessEnv,
+      encoding: "utf8",
+    },
+  );
+
+  assert.equal(result.status, 0, `a variable survived the setup module: ${result.stderr}`);
 });
