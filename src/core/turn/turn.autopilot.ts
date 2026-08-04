@@ -7,16 +7,32 @@ export type AutopilotPlan = {
   steps: string[];
 };
 
+// hazard: this line used to read `Focus files: <changed files>` under a category whose plan says "fix each
+// item explicitly". The changed files come from the diff, so under a failure they had nothing to do with, the
+// plan pointed an agent at innocent code — measured naming a file no test imports while the gate output named
+// the three real ones. Only evidence may read as an instruction; the diff has to say what it is.
+function fileLine(failing: string[] | undefined, changed: string[] | undefined): string | null {
+  if (failing && failing.length > 0) {
+    return `Failing files (named by the gate output): ${failing.slice(0, 8).join(", ")}.`;
+  }
+  if (changed && changed.length > 0) {
+    return `Files the gate ran (from the diff, not necessarily the cause): ${changed.slice(0, 8).join(", ")}.`;
+  }
+  return null;
+}
+
 export function resolveAutopilot(args: {
   category: FailureCategory;
   gate: string;
   mode: OperatorMode;
   loopCount: number;
   maxLoops: number;
-  files?: string[];
+  /** Files the gate output itself named — evidence of where the failure is. */
+  failingFiles?: string[];
+  /** Files the gate ran against, from the diff. Context, never a culprit. */
+  changedFiles?: string[];
 }): AutopilotPlan {
-  const filesHint =
-    args.files && args.files.length > 0 ? `Focus files: ${args.files.slice(0, 8).join(", ")}.` : null;
+  const filesHint = fileLine(args.failingFiles, args.changedFiles);
   const base = suggestionFor(args.category, args.gate);
 
   switch (args.category) {

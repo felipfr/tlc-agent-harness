@@ -76,7 +76,8 @@ async function failGate(args: {
         mode: policy.mode,
         loopCount: args.loopCount,
         maxLoops: args.maxLoops,
-        files: args.artifact.files,
+        failingFiles: coreFacade.gate.filesFromOutput(args.artifact.outputTail, args.root),
+        changedFiles: args.artifact.files,
       })
     : null;
 

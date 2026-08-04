@@ -149,3 +149,41 @@ export function findingsFromLines(lines: string[], exitCode: number, max: number
   const omitted = unique.length - kept.length;
   return [...kept, { summary: `…and ${omitted} more failures in the gate output` }];
 }
+
+const SOURCE_EXT = "ts|tsx|mts|cts|js|jsx|mjs|cjs|py|go|rb|rs|java|kt|swift|php|sh|sql";
+// why: the runner prints the file it failed in — `test at src/x.test.ts:12:1`, or a file:// URL inside a stack
+// frame. Those paths are evidence. The changed files from the diff are only context, and were being presented
+// as the thing to fix.
+const PATH_IN_OUTPUT = new RegExp(
+  `(?:file://)?((?:[A-Za-z]:)?[\\w./~@+-]*[\\w-]\\.(?:${SOURCE_EXT}))(?=[:)\\s,'"\`]|$)`,
+  "g",
+);
+
+/**
+ * Source files the gate output itself names, in first-appearance order, deduplicated.
+ *
+ * why: `projectDir` is taken so an absolute path inside the repository collapses onto the relative spelling of
+ * the same file. Node prints both forms for one failure — `test at src/x.test.ts:12` and a `file:///…` stack
+ * frame — and without this they would read as two separate places to look.
+ */
+export function filesFromOutput(outputTail: string, projectDir: string): string[] {
+  const seen = new Set<string>();
+  const files: string[] = [];
+  const prefix = `${projectDir.replace(/\/+$/, "")}/`;
+
+  for (const match of outputTail.matchAll(PATH_IN_OUTPUT)) {
+    const raw = match[1];
+    if (!raw) {
+      continue;
+    }
+    // hazard: a path outside the project stays as printed — the runner named it, so hiding it would lose the
+    // only pointer the reader has.
+    const path = raw.startsWith(prefix) ? raw.slice(prefix.length) : raw;
+    if (seen.has(path)) {
+      continue;
+    }
+    seen.add(path);
+    files.push(path);
+  }
+  return files;
+}

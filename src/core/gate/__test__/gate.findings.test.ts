@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { extractFindingsFromOutput, FINDINGS_MAX } from "../gate.artifact.ts";
-import { classifyLine, findingsFromLines } from "../gate.findings.ts";
+import { classifyLine, filesFromOutput, findingsFromLines } from "../gate.findings.ts";
 
 // why: the exact output that reached an operator as three separate gaps. 28 pass, 1 fail.
 const INCIDENT = `test-dispatch: bun test in bots/platform-agent (1 file(s))
@@ -150,4 +150,43 @@ test("one past the cap discloses two, because the disclosure costs a slot", () =
 
   assert.equal(findings.length, 3);
   assert.match(findings[2]?.summary ?? "", /and 2 more failures/);
+});
+
+// why: the shape of the real gate output from the incident, which named three failing test files while the
+// diff named one unrelated new file — and the plan pointed the agent at the diff.
+// invariant: neutral paths and no operator home. Core is provider-agnostic and a tracked file carries no
+// personal identity; both gates caught an earlier draft of this fixture that used the real paths verbatim.
+const INCIDENT_PATHS = `test at src/entrypoints/__test__/tool-after.test.ts:366:1
+\u2716 the first fetch of the turn is framed as data
+      at TestContext.<anonymous> (file:///repo/src/entrypoints/__test__/tool-after.test.ts:374:12)
+test at src/entrypoints/__test__/tool-before.test.ts:232:1
+\u2716 a spawn's minEffort violation is denied
+      at TestContext.<anonymous> (file:///repo/src/entrypoints/__test__/tool-before.test.ts:246:12)
+test at src/providers/vendor/__test__/vendor.inbound.test.ts:166:1`;
+
+test("the files come from the failure, and each file appears once", () => {
+  const files = filesFromOutput(INCIDENT_PATHS, "/repo");
+
+  assert.deepEqual(files, [
+    "src/entrypoints/__test__/tool-after.test.ts",
+    "src/entrypoints/__test__/tool-before.test.ts",
+    "src/providers/vendor/__test__/vendor.inbound.test.ts",
+  ]);
+});
+
+test("an absolute path inside the project collapses onto its relative spelling", () => {
+  // hazard: node prints both forms for one failure. Without collapsing them the reader is handed two places
+  // to look for one problem.
+  const files = filesFromOutput("test at src/a.test.ts:1:1\n at (file:///repo/src/a.test.ts:2:2)", "/repo");
+  assert.deepEqual(files, ["src/a.test.ts"]);
+});
+
+test("a path outside the project is still reported, as printed", () => {
+  const files = filesFromOutput("at (file:///elsewhere/src/b.test.ts:3:1)", "/repo");
+  assert.deepEqual(files, ["/elsewhere/src/b.test.ts"]);
+});
+
+test("output that names no source file yields nothing", () => {
+  assert.deepEqual(filesFromOutput("1 fail\n28 pass\nRan 29 tests", "/repo"), []);
+  assert.deepEqual(filesFromOutput("", "/repo"), []);
 });

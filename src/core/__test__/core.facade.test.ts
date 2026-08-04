@@ -165,3 +165,57 @@ test("facade.turn.resolveAutopilot composes with formatAutopilotBlock", () => {
   const block = coreFacade.turn.formatAutopilotBlock(plan);
   assert.match(block, /AUTOPILOT/);
 });
+
+// hazard: the plan used to print `Focus files: <changed files>` under a category whose steps say "fix each item
+// explicitly". Measured naming a file no test imports while the gate output named the three real ones — an
+// instruction to go edit innocent code, which is the AD-021 harm through a different door.
+test("the plan names the files the failure points at, not the ones that changed", () => {
+  const plan = coreFacade.turn.resolveAutopilot({
+    category: "verification",
+    gate: "test",
+    mode: "solo",
+    loopCount: 0,
+    maxLoops: 5,
+    failingFiles: ["src/entrypoints/__test__/tool-before.test.ts"],
+    changedFiles: ["src/core/policy/policy.posture.ts"],
+  });
+  const block = coreFacade.turn.formatAutopilotBlock(plan);
+
+  assert.match(block, /tool-before\.test\.ts/);
+  assert.doesNotMatch(block, /policy\.posture\.ts/);
+  assert.doesNotMatch(block, /Focus files/);
+});
+
+test("with no evidence the changed files are offered as what they are", () => {
+  const plan = coreFacade.turn.resolveAutopilot({
+    category: "verification",
+    gate: "test",
+    mode: "solo",
+    loopCount: 0,
+    maxLoops: 5,
+    failingFiles: [],
+    changedFiles: ["src/a.ts"],
+  });
+  const block = coreFacade.turn.formatAutopilotBlock(plan);
+
+  assert.match(block, /src\/a\.ts/);
+  // why: the wording has to say it came from the diff, so it is not read as the cause.
+  assert.match(block, /from the diff/);
+  assert.doesNotMatch(block, /Focus files/);
+});
+
+test("with neither list no file line is emitted", () => {
+  const plan = coreFacade.turn.resolveAutopilot({
+    category: "verification",
+    gate: "test",
+    mode: "solo",
+    loopCount: 0,
+    maxLoops: 5,
+  });
+  const block = coreFacade.turn.formatAutopilotBlock(plan);
+
+  // why: asserts the absence of a file *list*, not of the word. The standing fallback step still tells the
+  // agent to re-run against the changed files the gate used, which is guidance rather than an accusation.
+  assert.doesNotMatch(block, /Failing files/);
+  assert.doesNotMatch(block, /Files the gate ran/);
+});
