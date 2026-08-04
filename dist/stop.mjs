@@ -2253,6 +2253,14 @@ function groupByProvider(events) {
   }
   return groups;
 }
+function interruptionsByRule(rollup) {
+  const entries = Object.entries(rollup.shell.byRule ?? {}).sort((a, b) => b[1] - a[1]);
+  if (entries.length === 0) {
+    return "";
+  }
+  return entries.map(([rule, count]) => `| ↳ ${rule} | ${count} |`).join(`
+`);
+}
 function sessionReportMarkdown(rollup) {
   const models = Object.entries(rollup.models).sort((a, b) => b[1] - a[1]).map(([m, n]) => `| ${m} | ${n} |`).join(`
 `);
@@ -2288,6 +2296,7 @@ function sessionReportMarkdown(rollup) {
 | Policy denials | ${rollup.denials} |
 | Gates pass/fail | ${rollup.gates.pass} / ${rollup.gates.fail} |
 | Shell allow/ask/deny | ${rollup.shell.allow} / ${rollup.shell.ask} / ${rollup.shell.deny} |
+${interruptionsByRule(rollup)}
 
 ## Models
 
@@ -2474,7 +2483,7 @@ function newRollup(sessionKey, provider) {
     responses: 0,
     thoughts: 0,
     comped: 0,
-    shell: { allow: 0, ask: 0, deny: 0 },
+    shell: { allow: 0, ask: 0, deny: 0, byRule: {} },
     mcp: {},
     estimated_cost_usd: 0,
     cost_incomplete: false,
@@ -2574,7 +2583,7 @@ function resolveObsLevel(kind, attrs = {}, forceDebug = false) {
   if (forceDebug) {
     return "debug";
   }
-  if (kind === "shell.end") {
+  if (kind === "shell.end" || kind === "shell.start") {
     const permission = String(attrs.permission ?? "allow");
     return permission === "allow" ? "debug" : "signal";
   }
@@ -2743,6 +2752,12 @@ function updateRollup(root, config, event) {
       rollup.shell.deny += 1;
     } else if (event.kind === "shell.end") {
       rollup.shell.allow += 1;
+    }
+    if (perm === "ask" || perm === "deny") {
+      const rule = String(event.attrs.rule ?? "none");
+      const byRule = rollup.shell.byRule ?? {};
+      byRule[rule] = (byRule[rule] ?? 0) + 1;
+      rollup.shell.byRule = byRule;
     }
   }
   if (event.kind === "mcp.end" || event.kind === "mcp.start") {
@@ -3366,9 +3381,9 @@ var BASE = [
   "If blocked, use exactly: BLOCKED / TRIED / NEED — one tight block, no preamble."
 ];
 var BY_POSTURE = {
-  paired: "Posture paired: show your reasoning as you go, and check in before any sizable non-destructive move. Surface an irreversible action, a real dead-end after exhausting sources, and ambiguity that changes the outcome.",
-  solo: "Posture solo: work on your own. Surface exactly three things — an irreversible or destructive action, a real dead-end after exhausting sources, and ambiguity that changes the outcome.",
-  focus: "Posture focus: deepest autonomy, fewest interruptions. Only an irreversible or destructive action and a real dead-end reach the operator; ambiguity is yours to settle by taking the most reasonable reading and stating the assumption in one line."
+  paired: "Posture paired: show your reasoning as you go, and check in before any sizable non-destructive move. Surface an irreversible action, a real dead-end after exhausting sources, and ambiguity that changes the outcome. Raise an unclear goal in your first actions, before you have built anything on your reading of it.",
+  solo: "Posture solo: work on your own. Surface exactly three things — an irreversible or destructive action, a real dead-end after exhausting sources, and ambiguity that changes the outcome. An unclear goal belongs in your first actions; once the work is under way, asking costs more than deciding, so take the most reasonable reading and state the assumption in one line instead.",
+  focus: "Posture focus: deepest autonomy, fewest interruptions. Only an irreversible or destructive action and a real dead-end reach the operator. The one exception is a goal you cannot read before you start — ask that once, up front, because it is cheaper than everything you would build on a misreading. After that, ambiguity is yours to settle by taking the most reasonable reading and stating the assumption in one line."
 };
 function operatorBootstrapLines(policy, stateDir) {
   const lines = [...BASE, `Hold state on disk at ${stateDir}/handoff.json between turns and sessions.`];
@@ -3575,7 +3590,8 @@ function clearShellStall(root, sessionKey) {
 var WRAPPERS2 = new Set(["command", "doas", "env", "nice", "nohup", "sudo", "time", "xargs"]);
 var MACHINE = new Set(["halt", "poweroff", "reboot", "shutdown"]);
 var NETWORK = new Set(["curl", "ftp", "gh", "nc", "ncat", "rsync", "scp", "sftp", "ssh", "telnet", "wget"]);
-var WRITE = new Set(["chmod", "chown", "cp", "mv", "rm", "rmdir", "tee", "truncate"]);
+var WRITE = new Set(["cp", "mv", "rm", "rmdir", "tee", "truncate"]);
+var WRITE_PRESERVING = new Set(["chmod", "chown"]);
 var DEVICE = /^\/dev\/(sd|nvme|vd|hd|disk)/;
 function classifySegment(words2) {
   let index = 0;
@@ -3612,11 +3628,17 @@ function classifySegment(words2) {
     if (WRITE.has(verb) || verb === "sed" && argText.includes("-i")) {
       return "write";
     }
-    return argText.some((arg) => arg === ">" || arg === ">>") ? "write" : "read";
+    if (WRITE_PRESERVING.has(verb)) {
+      return "write-preserving";
+    }
+    if (argText.includes(">")) {
+      return "write";
+    }
+    return argText.includes(">>") ? "write-preserving" : "read";
   }
   return "read";
 }
-var ORDER = ["read", "write", "network", "destructive"];
+var ORDER = ["read", "write-preserving", "write", "network", "destructive"];
 function classifyShell(command) {
   let worst = "read";
   for (const segment of tokenizeShell(command)) {
@@ -3639,6 +3661,14 @@ function stallFollowup(command, hits) {
 `);
 }
 var PAIRED_ASK = new Set(["write", "network"]);
+var SHELL_RULES = {
+  catastrophic: "shell-catastrophic",
+  posture: "shell-posture-paired",
+  stall: "shell-stall"
+};
+function atStake(effect) {
+  return effect === "network" ? "reaches the network, so it leaves this machine and cannot be pulled back" : "can overwrite or remove a path that already exists";
+}
 function pairedPreCheck(command, mode) {
   if (mode !== "paired") {
     return null;
@@ -3649,8 +3679,9 @@ function pairedPreCheck(command, mode) {
   }
   return {
     kind: "ask",
-    reason: `Posture paired: this command ${effect === "network" ? "reaches the network" : "changes files"}, so it is a sizable non-destructive move and you asked to be shown these before they run. Approve it, or leave the posture with \`tlc harness mode solo\`.`,
-    userNote: `Paired posture: approve this ${effect} command or switch posture.`
+    reason: `Posture paired: this command ${atStake(effect)}, and you asked to be shown these before they run. Approve it, or leave the posture with \`tlc harness mode solo\`.`,
+    userNote: `Paired posture: approve this ${effect} command or switch posture.`,
+    rule: SHELL_RULES.posture
   };
 }
 function evaluateShellCommand(args) {
@@ -3662,7 +3693,8 @@ function evaluateShellCommand(args) {
     return {
       kind: "ask",
       reason: "The command was flagged as potentially catastrophic. Prefer scoped paths inside the repo or reversible operations.",
-      userNote: "This shell command can destroy data outside the workspace. Approve only if you intend it."
+      userNote: "This shell command can destroy data outside the workspace. Approve only if you intend it.",
+      rule: SHELL_RULES.catastrophic
     };
   }
   const preCheck = pairedPreCheck(command, args.mode);
@@ -3675,7 +3707,8 @@ function evaluateShellCommand(args) {
       return {
         kind: "deny",
         reason: stallFollowup(command, hits),
-        userNote: `Harness blocked a repeated shell command (${hits}x).`
+        userNote: `Harness blocked a repeated shell command (${hits}x).`,
+        rule: SHELL_RULES.stall
       };
     }
   }
@@ -4106,8 +4139,8 @@ function fileLine(failing, changed) {
   return null;
 }
 var POSTURE_STEP = {
-  paired: "Fix the reported issue with tool-backed evidence, showing your reasoning, and check in before any sizable non-destructive move.",
-  solo: "Fix the reported issue with tool-backed evidence; do not invent success. Surface only an irreversible action, a real dead-end, or ambiguity that changes the outcome.",
+  paired: "Fix the reported issue with tool-backed evidence, showing your reasoning, and check in before any sizable non-destructive move. The work is already under way, so settle any remaining ambiguity yourself and state the assumption.",
+  solo: "Fix the reported issue with tool-backed evidence; do not invent success. The work is already under way, so settle remaining ambiguity by taking the most reasonable reading and stating the assumption; escalate only an irreversible action or a real dead-end.",
   focus: "Keep going until the gates pass. Settle ambiguity yourself and state the assumption; escalate only for an irreversible action or a real dead-end, with BLOCKED / TRIED / NEED."
 };
 function resolveAutopilot(args) {
@@ -4435,6 +4468,7 @@ var coreFacade = {
     recordAudit,
     groupByProvider,
     sessionReportMarkdown,
+    readSignalEvents,
     getRollup,
     pruneObs,
     pruneSpool

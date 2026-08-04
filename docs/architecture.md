@@ -164,9 +164,18 @@ identical at all three — the same evidence bar, the same gates, the same done-
 | `solo` | An irreversible or destructive action, a real dead-end, ambiguity that changes the outcome |
 | `focus` | A destructive action or a real dead-end only; ambiguity is settled under a stated assumption |
 
-`paired` is enforced, not only stated: a `write` or `network` shell command is asked about before it runs.
-`solo` and `focus` differ in what the agent raises, which is its judgement rather than a hook event, so their
-enforcement is the same.
+Each posture also states a **deadline**: an unclear goal belongs in the first actions, and once work is under way
+the agent states an assumption rather than asking, because a late question is worse than a decision. `focus`
+admits exactly one early question ([/decisions/ad-026.md](/decisions/ad-026.md)).
+
+`paired` is enforced, not only stated: a shell command that reaches the network, or that can overwrite or remove
+an existing path, is asked about before it runs. Metadata changes and appends are not — a prompt the operator
+learns to clear without reading is the mechanism by which a consequential action gets waved through. `solo` and
+`focus` differ in what the agent raises, which is its judgement rather than a hook event, so their enforcement is
+the same.
+
+Every one of those decisions is recorded with its posture and its rule, so the interruption rate is attributable
+and the threshold can be calibrated from real sessions.
 
 Set it with `tlc harness mode <paired|solo|focus>`, or `mode` in the project config. Any other value is
 refused — `status` and `doctor` name the rejected word and the posture running in its place.

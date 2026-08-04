@@ -40,5 +40,6 @@ Handoff section and a link back to this index.
 | [AD-023](/decisions/ad-023.md) | One finding per failure, and lesson relevance is recurrence rather than exposure | active |
 | [AD-024](/decisions/ad-024.md) | The gate tells the truth about its own environment, its own lock, and the cause of a failure | active |
 | [AD-025](/decisions/ad-025.md) | Posture governs surfacing only, and each posture has exactly one name | active |
+| [AD-026](/decisions/ad-026.md) | An interruption is worth what it costs: narrower asks, a deadline on questions, and a rate the operator can see | active |
 
 Related: [/architecture.md](/architecture.md), [/concepts.md](/concepts.md), [/providers/index.md](/providers/index.md).

@@ -14,12 +14,25 @@ timestamp: "2026-07-29"
 interruption — nothing else. Verification is identical at all three: the same evidence bar, the same gates, the
 same done-criteria ([/decisions/ad-025.md](/decisions/ad-025.md)).
 
-- **paired** — explains as it goes, and asks before any sizable move. A `write` or `network` shell command is
-  asked about before it runs, so this posture is enforced rather than merely stated
+- **paired** — explains as it goes, and asks before any sizable move. A shell command that reaches the network, or
+  that can overwrite or remove a path that already exists, is asked about before it runs — so this posture is
+  enforced rather than merely stated
 - **solo** (default) — works on its own. Three things reach you: an irreversible or destructive action, a real
   dead-end after exhausting sources, and ambiguity that changes the outcome
 - **focus** — only a destructive action or a real dead-end reaches you. Ambiguity is the agent's to settle,
   taking the most reasonable reading and stating the assumption in one line
+
+**Every posture also carries a deadline, not just a threshold.** An unclear goal belongs in the agent's first
+actions; once the work is under way it takes the most reasonable reading and states the assumption instead of
+asking, because a late question is measurably worse than a decision. `focus` admits exactly one early question —
+a goal it cannot read before starting — so it means *ask early or not at all*, never simply never ask
+([/decisions/ad-026.md](/decisions/ad-026.md)).
+
+What `paired` does **not** ask about is deliberate: `chmod`, `chown` and appends change a path without losing a
+byte of it. Asking about those trains you to clear the prompt without reading it, and a habituated reviewer is
+how the one action that mattered gets waved through — approval fatigue is a security defect, not an ergonomics
+complaint. `cp`, `mv` and `tee` stay in the asking tier, because each can overwrite a destination and the harness
+cannot know whether that destination exists.
 
 Precedence: the `harness-mode` state file, then a posture flag file, then `mode` in the config, then the default.
 Any other value is refused rather than absorbed — `tlc harness status` and `tlc harness doctor` name the rejected
@@ -263,6 +276,19 @@ with the audit configuration, which forces debug on so the audit trail persists
 
 An `"observability": { … }` block is not read at all — it never was. It was removed rather than honoured,
 per [/decisions/ad-003.md](/decisions/ad-003.md). Full detail: [/measure.md](/measure.md).
+
+### interruption rate
+
+Every shell decision is recorded with the permission it produced, the active posture and the rule responsible —
+`shell-posture-paired`, `shell-catastrophic` or `shell-stall`. An allow resolves to debug level and is dropped by
+default, so only the interruptions reach disk. The session report shows them attributed by rule, because "seven
+interruptions" names no switch while "six from the posture, one from the catastrophic rule" does. That is how you
+calibrate the posture from your own sessions instead of trusting a threshold someone else chose
+([/decisions/ad-026.md](/decisions/ad-026.md)).
+
+What this is **not**: the harness records the decisions it made. It never learns your answer, and it cannot know
+whether a question it did not ask would have helped. So it reports a rate and its attribution — never a precision,
+a recall, or an accuracy of asking. Floor denials are outside it too: `rm -rf /` never reaches a policy layer.
 
 ## cost estimates
 
