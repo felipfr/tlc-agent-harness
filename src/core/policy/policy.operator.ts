@@ -15,12 +15,21 @@ const BASE = [
 // ambiguity. A varying rule cannot sit in the invariant block, so it moved here and is stated once.
 // invariant: no posture line names a gate, a capability or a config field. The old solo line named the ship
 // gate and the old deepest line named grind — both machinery, and machinery is what must not vary by posture.
+/**
+ * hazard: every line here used to state a threshold and no deadline, which licensed the worst case — asking at
+ * the twentieth action about a goal misread at the first. Measured across models and benchmarks: a question
+ * about the goal loses nearly all its value once the work is under way, and asking late is worse than never
+ * having asked ([/decisions/ad-026.md](/decisions/ad-026.md)). So each line now says *when* as well as *what*.
+ *
+ * invariant: no line names a percentage or a count of turns. The harness cannot measure where in a trajectory it
+ * is, and a number it cannot compute is a claim it cannot honour.
+ */
 const BY_POSTURE: Record<OperatorMode, string> = {
   paired:
-    "Posture paired: show your reasoning as you go, and check in before any sizable non-destructive move. Surface an irreversible action, a real dead-end after exhausting sources, and ambiguity that changes the outcome.",
-  solo: "Posture solo: work on your own. Surface exactly three things — an irreversible or destructive action, a real dead-end after exhausting sources, and ambiguity that changes the outcome.",
+    "Posture paired: show your reasoning as you go, and check in before any sizable non-destructive move. Surface an irreversible action, a real dead-end after exhausting sources, and ambiguity that changes the outcome. Raise an unclear goal in your first actions, before you have built anything on your reading of it.",
+  solo: "Posture solo: work on your own. Surface exactly three things — an irreversible or destructive action, a real dead-end after exhausting sources, and ambiguity that changes the outcome. An unclear goal belongs in your first actions; once the work is under way, asking costs more than deciding, so take the most reasonable reading and state the assumption in one line instead.",
   focus:
-    "Posture focus: deepest autonomy, fewest interruptions. Only an irreversible or destructive action and a real dead-end reach the operator; ambiguity is yours to settle by taking the most reasonable reading and stating the assumption in one line.",
+    "Posture focus: deepest autonomy, fewest interruptions. Only an irreversible or destructive action and a real dead-end reach the operator. The one exception is a goal you cannot read before you start — ask that once, up front, because it is cheaper than everything you would build on a misreading. After that, ambiguity is yours to settle by taking the most reasonable reading and stating the assumption in one line.",
 };
 
 export function operatorBootstrapLines(policy: Policy, stateDir: string): string[] {

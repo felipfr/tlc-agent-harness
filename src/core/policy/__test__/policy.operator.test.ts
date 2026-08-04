@@ -84,6 +84,39 @@ test("focus drops the ambiguity stop and hands it to the agent under a stated as
   assert.match(line, /stating the assumption/);
 });
 
+// hazard: a threshold with no deadline licenses the worst case — asking at the twentieth action about a goal
+// misread at the first. Measured: a late question is worse than no question, so every posture states when.
+test("every posture states a deadline for ambiguity, not only a threshold", () => {
+  for (const mode of OPERATOR_MODES) {
+    const line = postureLine(mode);
+    assert.match(line, /first actions|before you start/, mode);
+  }
+});
+
+test("solo names the deadline and the fallback that replaces the question after it", () => {
+  const line = postureLine("solo");
+  assert.match(line, /unclear goal belongs in your first actions/);
+  assert.match(line, /once the work is under way/);
+  assert.match(line, /state the assumption/);
+});
+
+// why: `focus` is not "never ask" — it is ask early or not at all. One question before the first action is
+// cheaper than everything built on a misreading, which is what the decay measurement shows.
+test("focus admits exactly one early question and keeps settling everything after it", () => {
+  const line = postureLine("focus");
+  assert.match(line, /before you start/);
+  assert.match(line, /ask that once/);
+  assert.match(line, /ambiguity is yours to settle/);
+});
+
+// invariant: the harness cannot measure where in a trajectory it is, so it must not print a position. A
+// percentage or a turn count here would be a number nothing computes — the AD-020 class, in prose.
+test("no posture line states a percentage or a turn count", () => {
+  for (const mode of OPERATOR_MODES) {
+    assert.doesNotMatch(postureLine(mode), /\d/, mode);
+  }
+});
+
 // invariant: posture governs surfacing. A posture line that names a gate or a config field is a posture that
 // changes machinery — the old solo line named the ship gate and the old deepest line named grind.
 test("no posture line names a gate, a capability or a config field", () => {
