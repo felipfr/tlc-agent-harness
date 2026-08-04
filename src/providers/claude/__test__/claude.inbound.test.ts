@@ -163,15 +163,28 @@ test("sessionKey falls back to default when session_id is absent", () => {
   assert.equal(event?.sessionKey, "claude-default");
 });
 
+// hazard: two of the three cases assert what happens with CLAUDE_PROJECT_DIR ABSENT, so the test has to make
+// it absent rather than inherit that from the shell. Trusting the ambient value made this pass locally and fail
+// inside a hook, where Claude Code always sets it — and it took 21 unrelated tests down with it. The variable
+// is owned for the whole test and restored once, so no case leaks state into the next.
 test("projectDir resolves CLAUDE_PROJECT_DIR over cwd over process.cwd()", () => {
-  const withoutEnv = claudeToEvent({ hook_event_name: "SessionStart", session_id: "s", cwd: "/from-cwd" });
-  assert.equal(withoutEnv?.projectDir, "/from-cwd");
-
   const previous = process.env.CLAUDE_PROJECT_DIR;
-  process.env.CLAUDE_PROJECT_DIR = "/from-env";
+  delete process.env.CLAUDE_PROJECT_DIR;
   try {
-    const withEnv = claudeToEvent({ hook_event_name: "SessionStart", session_id: "s", cwd: "/from-cwd" });
-    assert.equal(withEnv?.projectDir, "/from-env");
+    const fromCwd = claudeToEvent({ hook_event_name: "SessionStart", session_id: "s", cwd: "/from-cwd" });
+    assert.equal(fromCwd?.projectDir, "/from-cwd");
+
+    process.env.CLAUDE_PROJECT_DIR = "/from-env";
+    const fromEnv = claudeToEvent({ hook_event_name: "SessionStart", session_id: "s", cwd: "/from-cwd" });
+    assert.equal(fromEnv?.projectDir, "/from-env");
+
+    delete process.env.CLAUDE_PROJECT_DIR;
+    const fromProcess = claudeToEvent({
+      hook_event_name: "SessionStart",
+      session_id: "s",
+      transcript_path: "/t",
+    });
+    assert.equal(fromProcess?.projectDir, process.cwd());
   } finally {
     if (previous === undefined) {
       delete process.env.CLAUDE_PROJECT_DIR;
@@ -179,13 +192,6 @@ test("projectDir resolves CLAUDE_PROJECT_DIR over cwd over process.cwd()", () =>
       process.env.CLAUDE_PROJECT_DIR = previous;
     }
   }
-
-  const withoutCwd = claudeToEvent({
-    hook_event_name: "SessionStart",
-    session_id: "s",
-    transcript_path: "/t",
-  });
-  assert.equal(withoutCwd?.projectDir, process.cwd());
 });
 
 test("effort.level maps to the normalized EffortLevel when recognized", () => {
