@@ -82,7 +82,7 @@ The harness also hashes every policy source at session start. If one changes mid
 `tlc harness` command, the next tool call is refused and the change reported — the layer that covers what
 shell parsing cannot see.
 
-Everything else is opt-in: 22 capabilities, each presented with benefit, trade-off and default by the init
+Everything else is opt-in: 21 capabilities, each presented with benefit, trade-off and default by the init
 skill. Full list in [`docs/architecture.md`](docs/architecture.md).
 
 Runtime: `~/.tlc/harness`.

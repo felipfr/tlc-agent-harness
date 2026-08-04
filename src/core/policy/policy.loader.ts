@@ -20,7 +20,6 @@ function deepMerge(base: Policy, patch: PartialPolicy): Policy {
   return {
     ...base,
     ...patch,
-    format: { ...base.format, ...patch.format },
     grind: { ...base.grind, ...patch.grind },
     shipGate: { ...base.shipGate, ...patch.shipGate },
     subagents: { ...base.subagents, ...patch.subagents },

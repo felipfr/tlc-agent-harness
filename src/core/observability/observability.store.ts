@@ -32,6 +32,12 @@ export type SessionRollup = {
   railsByRule: Record<string, number>;
   /** Per-gate pass/fail, so a single flaky gate is distinguishable from a codebase that does not build. */
   gatesByName: Record<string, { pass: number; fail: number }>;
+  /**
+   * why: an operator reported thirty minutes and had no way to see where it went. The duration was already recorded
+   * on every gate outcome and surfaced nowhere. `worstMs` separates "one slow run" from "many runs"
+   * ([/decisions/ad-033.md](/decisions/ad-033.md)).
+   */
+  gateTime: Record<string, { runs: number; totalMs: number; worstMs: number }>;
   /** Characters of prose the harness injected at session start. The cost side of every rail, in one number. */
   injected_chars: number;
   mcp: Record<string, number>;
@@ -194,6 +200,7 @@ export function newRollup(sessionKey: string, provider: string): SessionRollup {
     shell: { allow: 0, ask: 0, deny: 0, byRule: {} },
     railsByRule: {},
     gatesByName: {},
+    gateTime: {},
     injected_chars: 0,
     mcp: {},
     estimated_cost_usd: 0,

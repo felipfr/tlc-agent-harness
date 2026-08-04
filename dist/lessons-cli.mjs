@@ -1407,6 +1407,9 @@ function computeGateFingerprint(artifact) {
 // src/core/gate/gate.command.ts
 import { basename as basename2 } from "node:path";
 var RECIPE_RUNNERS = new Set(["just", "make", "task", "mise", "rake"]);
+var SCRIPT_RUNNERS = new Set(["npm", "yarn", "pnpm"]);
+var TRANSPARENT_PREFIXES = new Set(["npx", "bunx", "dlx", "exec"]);
+var GLOB_CHARS = /[*?[\]]/;
 var RESOLUTION_FAILURE_PATTERNS = [
   /does not contain recipe/i,
   /no rule to make target/i,
@@ -1415,24 +1418,61 @@ var RESOLUTION_FAILURE_PATTERNS = [
   /task ".*" does not exist/i,
   /don't know how to build task/i
 ];
-function executableName(command) {
-  const argv0 = command[0] ?? "";
+function effectiveCommand(command) {
+  let rest = command;
+  while (rest.length > 1 && TRANSPARENT_PREFIXES.has(bareName(rest[0]))) {
+    rest = rest.slice(1);
+  }
+  if (rest.length > 2 && bareName(rest[0]) === "bun" && rest[1] === "run") {
+    return ["npm", ...rest.slice(1)];
+  }
+  return rest;
+}
+function bareName(argv0) {
   return basename2(argv0).replace(/\.(exe|cmd|bat)$/i, "").toLowerCase();
+}
+function executableName(command) {
+  return bareName(effectiveCommand(command)[0] ?? "");
 }
 function isRecipeRunner(command) {
   return RECIPE_RUNNERS.has(executableName(command));
 }
-function shouldAppendFiles(command, mode) {
+function isScriptRunner(command) {
+  return SCRIPT_RUNNERS.has(executableName(command));
+}
+function appendFilesVerdict(command, mode) {
   if (command.length === 0) {
-    return false;
+    return { appends: false, reason: "the command is empty" };
   }
   if (mode === "always") {
-    return true;
+    return { appends: true };
   }
   if (mode === "never") {
-    return false;
+    return { appends: false, reason: "appendFiles is set to never" };
   }
-  return !isRecipeRunner(command);
+  if (isRecipeRunner(command)) {
+    return {
+      appends: false,
+      reason: `\`${executableName(command)}\` takes a target name, so a file path would read as a second target`
+    };
+  }
+  if (isScriptRunner(command)) {
+    return {
+      appends: false,
+      reason: `\`${executableName(command)}\` invokes a script, and whether a path reaches the runner is not something the harness can know`
+    };
+  }
+  const glob = command.find((arg) => GLOB_CHARS.test(arg));
+  if (glob !== undefined) {
+    return {
+      appends: false,
+      reason: `the command already scopes itself with \`${glob}\`, so appending files would not narrow the run`
+    };
+  }
+  return { appends: true };
+}
+function shouldAppendFiles(command, mode) {
+  return appendFilesVerdict(command, mode).appends;
 }
 function isCommandResolutionFailure(args) {
   if (args.exitCode === 127) {
@@ -2313,6 +2353,25 @@ function gateDetail(rollup) {
   return entries.map(([gate, s]) => `| ↳ ${gate} | ${s.pass} / ${s.fail} |`).join(`
 `);
 }
+function gateTimeSection(rollup) {
+  const entries = Object.entries(rollup.gateTime ?? {}).sort((a, b) => b[1].totalMs - a[1].totalMs);
+  if (entries.length === 0) {
+    return "";
+  }
+  const seconds = (ms) => (ms / 1000).toFixed(1);
+  return [
+    "",
+    "## Gate time",
+    "",
+    "| Gate | Runs | Total s | Worst run s |",
+    "|------|------|---------|-------------|",
+    ...entries.map(([gate, t]) => `| ${gate} | ${t.runs} | ${seconds(t.totalMs)} | ${seconds(t.worstMs)} |`),
+    "",
+    "A gate's cost is paid once per attempt, so the total is the command's own time multiplied by how many times the",
+    "agent had to retry. Lowering it means a faster command or fewer failures, not a faster harness."
+  ].join(`
+`);
+}
 function sessionReportMarkdown(rollup, activeRules = []) {
   const models = Object.entries(rollup.models).sort((a, b) => b[1] - a[1]).map(([m, n]) => `| ${m} | ${n} |`).join(`
 `);
@@ -2374,6 +2433,7 @@ ${subs || "| — | 0 | {} |"}
 \`\`\`json
 ${JSON.stringify(rollup.mcp, null, 2)}
 \`\`\`
+${gateTimeSection(rollup)}
 ${railActivity(rollup, activeRules)}
 `;
 }
@@ -2512,6 +2572,7 @@ function newRollup(sessionKey, provider) {
     shell: { allow: 0, ask: 0, deny: 0, byRule: {} },
     railsByRule: {},
     gatesByName: {},
+    gateTime: {},
     injected_chars: 0,
     mcp: {},
     estimated_cost_usd: 0,
@@ -2769,6 +2830,14 @@ function updateRollup(root, config, event) {
     }
     byName[name] = slot;
     rollup.gatesByName = byName;
+    const ms = Number(event.attrs.duration_ms ?? 0);
+    const timing = rollup.gateTime ?? {};
+    const cell = timing[name] ?? { runs: 0, totalMs: 0, worstMs: 0 };
+    cell.runs += 1;
+    cell.totalMs += ms;
+    cell.worstMs = Math.max(cell.worstMs, ms);
+    timing[name] = cell;
+    rollup.gateTime = timing;
   }
   if (event.kind === "policy.deny") {
     rollup.denials += 1;
@@ -2952,10 +3021,6 @@ var DEFAULTS = {
   version: 1,
   mode: "solo",
   codePaths: ["src", "apps", "libs", "packages"],
-  format: {
-    enabled: false,
-    command: []
-  },
   grind: {
     enabled: false,
     maxLoops: 5,
@@ -3084,7 +3149,6 @@ function deepMerge(base, patch) {
   return {
     ...base,
     ...patch,
-    format: { ...base.format, ...patch.format },
     grind: { ...base.grind, ...patch.grind },
     shipGate: { ...base.shipGate, ...patch.shipGate },
     subagents: { ...base.subagents, ...patch.subagents },
@@ -4775,6 +4839,7 @@ var coreFacade = {
     withGateLock,
     describeHolder,
     shouldAppendFiles,
+    appendFilesVerdict,
     isRecipeRunner,
     isCommandResolutionFailure,
     filesFromOutput

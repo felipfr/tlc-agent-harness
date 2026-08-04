@@ -213,7 +213,6 @@ Each denial names its rule, so `rule=secret-access` in a message maps to a row h
 
 | Rail | Effect | Status |
 |------|--------|--------|
-| Format on edit | Runs your format command after Write so style stays consistent. | `format.enabled` |
 | Grind (lint/test on stop) | Re-checks lint/test after each completed turn and follow-ups until gates pass. | `grind.enabled` |
 | Ship gate | Blocks false done after an explicit HARNESS_SHIP_CLAIM when evidence is missing. | `shipGate.enabled` |
 | Empty-diff anti-ship | Blocks a ship claim when the working tree has zero changes. | `shipGate.emptyDiffAntiShip` |

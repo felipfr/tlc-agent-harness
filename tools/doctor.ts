@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync, readlinkSync } from "node:fs";
 import { homedir, platform as osPlatform } from "node:os";
 import { dirname, join } from "node:path";
@@ -21,7 +22,54 @@ export type CheckLevel = "ok" | "warn" | "fail";
 export type Check = { level: CheckLevel; name: string; detail: string };
 
 const MIN_NODE = 24;
-const BUN_COST_NOTE = "hook cost ~1 ms with Bun vs ~27 ms with Node — install: https://bun.sh";
+
+export type SpawnProbe = (command: string, args: string[]) => { ok: boolean };
+
+/**
+ * hazard: this line used to assert "hook cost ~1 ms with Bun vs ~27 ms with Node" on every machine it ran on, and had
+ * measured it on none of them. An operator reported the harness as slow and the one number `doctor` offered about
+ * speed was prose ([/decisions/ad-033.md](/decisions/ad-033.md)).
+ *
+ * why: the interpreter's cold start is the dominant term of per-hook overhead and the only part measurable without
+ * side effects — every entrypoint writes something, including on an unrecognised payload. The label says which it is,
+ * so the number is not read as the whole hook.
+ *
+ * why median: one scheduling hiccup on a loaded machine should not become the reported figure.
+ */
+export function medianMs(samples: readonly number[]): number | null {
+  if (samples.length === 0) {
+    return null;
+  }
+  const sorted = [...samples].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1
+    ? (sorted[middle] as number)
+    : ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2;
+}
+
+export function measureRuntimeStart(args: {
+  command: string;
+  args: string[];
+  samples?: number;
+  spawn?: SpawnProbe;
+  now?: () => number;
+}): number | null {
+  const spawn =
+    args.spawn ??
+    ((command: string, argv: string[]) => ({
+      ok: (spawnSync(command, argv, { stdio: "ignore" }).status ?? 1) === 0,
+    }));
+  const now = args.now ?? (() => Date.now());
+  const durations: number[] = [];
+  for (let i = 0; i < (args.samples ?? 3); i += 1) {
+    const started = now();
+    if (!spawn(args.command, args.args).ok) {
+      return null;
+    }
+    durations.push(now() - started);
+  }
+  return medianMs(durations);
+}
 
 export function checkNodeVersion(nodeVersion: string, bunPath: string | null = null): Check[] {
   const nodeMajor = Number.parseInt(nodeVersion.replace(/^v/, "").split(".")[0] ?? "0", 10);
@@ -74,11 +122,26 @@ export function checkRuntimePaths(home: string, platform: NodeJS.Platform): Chec
   ];
 }
 
-export function checkHookRuntime(_home: string, bunPath: string | null): Check {
-  if (bunPath) {
-    return { level: "ok", name: "hook runtime", detail: `Bun (${bunPath})` };
-  }
-  return { level: "warn", name: "hook runtime", detail: `Node + dist/ — ${BUN_COST_NOTE}` };
+export function checkHookRuntime(
+  _home: string,
+  bunPath: string | null,
+  measure: (args: { command: string; args: string[] }) => number | null = measureRuntimeStart,
+): Check {
+  const runtime = bunPath ?? process.execPath;
+  const label = bunPath ? `Bun (${bunPath})` : `Node + dist/ (${process.version})`;
+  const ms = measure({ command: runtime, args: ["-e", ""] });
+  // why: no number rather than a guessed one. A measurement that failed is not a slow machine.
+  const timing =
+    ms === null
+      ? " — interpreter start could not be measured on this machine"
+      : ` — interpreter start measured at ${ms} ms here, paid once per hook`;
+  return bunPath
+    ? { level: "ok", name: "hook runtime", detail: `${label}${timing}` }
+    : {
+        level: "warn",
+        name: "hook runtime",
+        detail: `${label}${timing}. Bun runs the source directly and starts faster — install: https://bun.sh`,
+      };
 }
 
 export type ProviderWiringStatus = "wired" | "detected-but-unwired" | "not-installed";
@@ -230,6 +293,41 @@ function checkPolicyDivergence(root: string): Check[] {
   ];
 }
 
+/**
+ * hazard: `appendFiles: "auto"` advertises narrowing the gate to the changed files, and for the two most common
+ * command shapes it cannot deliver — a package-manager script, and a command that already carries its own glob.
+ * Measured on a real install: an eslint command globbing the whole tree ran in full on every stop, three times per
+ * turn, and the operator experienced it as "the harness is slow" with nothing to point at
+ * ([/decisions/ad-033.md](/decisions/ad-033.md)).
+ *
+ * why: a warning, not a failure. Running the full suite is a legitimate choice; not knowing you are is not.
+ */
+function checkGateScope(root: string): Check[] {
+  const policy = coreFacade.policy.loadPolicy(root);
+  if (!policy.grind.enabled) {
+    return [];
+  }
+  const checks: Check[] = [];
+  for (const [label, command] of [
+    ["lintCommand", policy.grind.lintCommand],
+    ["testCommand", policy.grind.testCommand],
+  ] as const) {
+    if (!command || command.length === 0) {
+      continue;
+    }
+    const verdict = coreFacade.gate.appendFilesVerdict(command, policy.grind.appendFiles);
+    if (verdict.appends || policy.grind.appendFiles === "never") {
+      continue;
+    }
+    checks.push({
+      level: "warn",
+      name: `gate scope (${label})`,
+      detail: `runs in full on every attempt, up to maxLoops ${policy.grind.maxLoops}, because ${verdict.reason}. Scope the command itself, or accept the cost knowingly.`,
+    });
+  }
+  return checks;
+}
+
 export function checkProjectPolicy(root: string): Check[] {
   const configPath = projectConfigPath(root);
   const stateDir = projectStateDir(root);
@@ -247,6 +345,7 @@ export function checkProjectPolicy(root: string): Check[] {
     checkPosture(root),
     ...checkObservedRails(root),
     ...checkPolicyDivergence(root),
+    ...checkGateScope(root),
   ];
 }
 

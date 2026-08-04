@@ -2,23 +2,11 @@
   "catalogVersion": 8,
   "capabilities": [
     {
-      "id": "format",
-      "configPath": "format.enabled",
-      "title": "Format on edit",
-      "benefit": "Runs your format command after Write so style stays consistent.",
-      "tradeOff": "A wrong format command fights the agent on every edit.",
-      "defaultOn": false,
-      "sinceCatalogVersion": 1,
-      "asks": [
-        "command (exact argv array)"
-      ]
-    },
-    {
       "id": "grind",
       "configPath": "grind.enabled",
       "title": "Grind (lint/test on stop)",
       "benefit": "Re-checks lint/test after each completed turn and follow-ups until gates pass.",
-      "tradeOff": "Uses turns; flaky commands thrash the agent.",
+      "tradeOff": "Uses turns; flaky commands thrash the agent. The gate's cost is paid once per attempt, up to maxLoops \u2014 a four-minute suite with maxLoops 5 can spend twenty minutes on tests alone. tlc harness obs report shows the runs and the total.",
       "defaultOn": false,
       "sinceCatalogVersion": 1,
       "asks": [

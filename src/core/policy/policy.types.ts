@@ -37,10 +37,6 @@ export type Policy = {
   mode: OperatorMode;
   projectName?: string;
   codePaths: string[];
-  format: {
-    enabled: boolean;
-    command: string[];
-  };
   grind: {
     enabled: boolean;
     maxLoops: number;
@@ -115,7 +111,6 @@ export type Policy = {
 };
 
 export type PartialPolicy = Partial<Policy> & {
-  format?: Partial<Policy["format"]>;
   grind?: Partial<Policy["grind"]>;
   shipGate?: Partial<Policy["shipGate"]>;
   subagents?: Partial<Policy["subagents"]>;

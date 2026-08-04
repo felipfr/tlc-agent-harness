@@ -51,10 +51,22 @@ preference silently overrode a capability with its own switch and its own trade-
   test gate. Posture does not narrow this: the change that most needs testing is the one with no test file in
   the diff ([/decisions/ad-025.md](/decisions/ad-025.md))
 
-`grind.appendFiles` decides whether the changed files are appended to the lint/test argv. `auto` (default)
-appends them, except to a recipe runner — `just`, `make`, `task`, `mise`, `rake` — which takes a target name
-and would read the first path as a second target and abort. `always` and `never` force the behaviour; use
-`never` for any other runner that does not accept paths.
+`grind.appendFiles` decides whether the changed files are appended to the lint/test argv. `auto` (default) appends
+them, and refuses in three cases where appending cannot narrow the run:
+
+| Shape | Why it does not narrow |
+|-------|------------------------|
+| a recipe runner — `just`, `make`, `task`, `mise`, `rake` | takes a target name; the first path reads as a second target |
+| a package-manager script — `npm test`, `yarn test`, `bun run test` | the argument goes to somebody else's script, and whether it reaches the runner is not something the harness can know |
+| a command that already globs — `eslint "src/**/*.ts"` | it walks the glob regardless, so appending widens rather than narrows |
+
+`npx`, `bunx` and `dlx` are transparent: the tool named next is what decides, so `npx jest <file>` still narrows.
+`always` and `never` override all of it.
+
+**When `auto` cannot narrow, the gate runs in full on every attempt — up to `maxLoops`.** A four-minute suite with
+three attempts is twelve minutes of tests, and that is the shape behind most reports of the harness being slow.
+`tlc harness doctor` names any command in that state and says why; `tlc harness obs report` shows the runs and the
+total ([/decisions/ad-033.md](/decisions/ad-033.md)).
 
 Lint/test runs are serialized with `.tlc/harness/state/grind.lock` (wait up to 120s). A lock is reclaimed when
 it is older than 30 minutes, when it cannot be read, or when its owning process is gone — the last one only on
@@ -72,11 +84,6 @@ stagnation follow-up. Trade-off: catches breakage early; burns turns if gates ar
 A gate whose command never ran — exit 127, or a runner that could not resolve the target — is reported as
 `config`, not `verification`. The distinction matters: the verification follow-up tells the agent to fix the
 findings without deleting tests, which on a malformed command sends it to edit healthy code.
-
-## format on edit
-
-`format.enabled` with `format.command` (an exact argv array). Runs the project's formatter after a Write so
-style stays consistent without a turn spent on it. Trade-off: a wrong command fights the agent on every edit.
 
 ## pause / resume
 

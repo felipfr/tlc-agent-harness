@@ -102,6 +102,30 @@ function gateDetail(rollup: SessionRollup): string {
   return entries.map(([gate, s]) => `| ↳ ${gate} | ${s.pass} / ${s.fail} |`).join("\n");
 }
 
+/**
+ * why: the question an operator actually asks when a turn takes thirty minutes. The runs column is what makes the
+ * multiplication visible: the gate cost is paid once per attempt, so six runs of a four-minute suite is the answer
+ * and no amount of hook tuning would have changed it ([/decisions/ad-033.md](/decisions/ad-033.md)).
+ */
+function gateTimeSection(rollup: SessionRollup): string {
+  const entries = Object.entries(rollup.gateTime ?? {}).sort((a, b) => b[1].totalMs - a[1].totalMs);
+  if (entries.length === 0) {
+    return "";
+  }
+  const seconds = (ms: number): string => (ms / 1000).toFixed(1);
+  return [
+    "",
+    "## Gate time",
+    "",
+    "| Gate | Runs | Total s | Worst run s |",
+    "|------|------|---------|-------------|",
+    ...entries.map(([gate, t]) => `| ${gate} | ${t.runs} | ${seconds(t.totalMs)} | ${seconds(t.worstMs)} |`),
+    "",
+    "A gate's cost is paid once per attempt, so the total is the command's own time multiplied by how many times the",
+    "agent had to retry. Lowering it means a faster command or fewer failures, not a faster harness.",
+  ].join("\n");
+}
+
 export function sessionReportMarkdown(rollup: SessionRollup, activeRules: readonly string[] = []): string {
   const models = Object.entries(rollup.models)
     .sort((a, b) => b[1] - a[1])
@@ -171,6 +195,7 @@ ${subs || "| — | 0 | {} |"}
 \`\`\`json
 ${JSON.stringify(rollup.mcp, null, 2)}
 \`\`\`
+${gateTimeSection(rollup)}
 ${railActivity(rollup, activeRules)}
 `;
 }

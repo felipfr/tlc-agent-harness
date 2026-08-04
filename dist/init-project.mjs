@@ -243,10 +243,6 @@ var DEFAULTS = {
   version: 1,
   mode: "solo",
   codePaths: ["src", "apps", "libs", "packages"],
-  format: {
-    enabled: false,
-    command: []
-  },
   grind: {
     enabled: false,
     maxLoops: 5,

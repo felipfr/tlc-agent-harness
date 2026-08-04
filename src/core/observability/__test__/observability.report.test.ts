@@ -153,3 +153,29 @@ test("with no rail activity at all the report grows no rails section", () => {
   const markdown = sessionReportMarkdown(newRollup("session-a", "provider-a"), []);
   assert.doesNotMatch(markdown, /## Rails/);
 });
+
+// why: the question an operator asks when a turn takes thirty minutes. The runs column is what makes the
+// multiplication visible — six runs of a four-minute suite is the answer, and no hook tuning would have changed it.
+test("the report shows runs, total and worst per gate, worst-total first", () => {
+  const rollup = newRollup("session-a", "provider-a");
+  rollup.gateTime = {
+    lint: { runs: 3, totalMs: 9_000, worstMs: 3_500 },
+    test: { runs: 3, totalMs: 720_000, worstMs: 250_000 },
+  };
+  const markdown = sessionReportMarkdown(rollup, []);
+  assert.match(markdown, /## Gate time/);
+  assert.match(markdown, /\| test \| 3 \| 720\.0 \| 250\.0 \|/);
+  assert.ok(markdown.indexOf("| test |") < markdown.indexOf("| lint |"), "worst total must come first");
+  assert.match(markdown, /once per attempt/);
+});
+
+test("no gate time renders no section", () => {
+  assert.doesNotMatch(sessionReportMarkdown(newRollup("session-a", "provider-a"), []), /## Gate time/);
+});
+
+// hazard: a rollup written before this change has no gateTime, and the report runs on whatever is on disk.
+test("a rollup from an older build renders instead of throwing", () => {
+  const rollup = newRollup("session-a", "provider-a") as unknown as Record<string, unknown>;
+  rollup.gateTime = undefined;
+  assert.doesNotThrow(() => sessionReportMarkdown(rollup as never, []));
+});

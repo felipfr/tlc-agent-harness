@@ -28,7 +28,12 @@ import {
 } from "./comment-policy/comment-policy.service.ts";
 import { evaluateFloor } from "./floor/floor.service.ts";
 import { computeGateFingerprint, readLastGate, writeLastGate } from "./gate/gate.artifact.ts";
-import { isCommandResolutionFailure, isRecipeRunner, shouldAppendFiles } from "./gate/gate.command.ts";
+import {
+  appendFilesVerdict,
+  isCommandResolutionFailure,
+  isRecipeRunner,
+  shouldAppendFiles,
+} from "./gate/gate.command.ts";
 import { filesFromOutput } from "./gate/gate.findings.ts";
 import { describeHolder, withGateLock } from "./gate/gate.lock.ts";
 import { gapsFromArtifact } from "./gate/gate.service.ts";
@@ -170,6 +175,7 @@ export const coreFacade = {
     withGateLock,
     describeHolder,
     shouldAppendFiles,
+    appendFilesVerdict,
     isRecipeRunner,
     isCommandResolutionFailure,
     filesFromOutput,

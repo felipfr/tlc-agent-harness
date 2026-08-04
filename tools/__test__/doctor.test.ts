@@ -18,6 +18,8 @@ import {
   checkProviders,
   exitCodeFor,
   formatReport,
+  measureRuntimeStart,
+  medianMs,
   providerWiringStatus,
   runChecks,
   toReport,
@@ -69,11 +71,13 @@ describe("checkHookRuntime", () => {
     assert.equal(check.level, "ok");
   });
 
-  test("warn, never fail, naming the measured cost when Bun is absent", () => {
-    const check = checkHookRuntime("/opt/tlc-home", null);
+  // hazard: this asserted the two hardcoded figures. They were prose on every machine, which is what made a slow
+  // install undiagnosable ([/decisions/ad-033.md](/decisions/ad-033.md)).
+  test("warn, never fail, and the cost is measured rather than asserted", () => {
+    const check = checkHookRuntime("/opt/tlc-home", null, () => 19);
     assert.equal(check.level, "warn");
-    assert.match(check.detail, /1 ms/);
-    assert.match(check.detail, /27 ms/);
+    assert.match(check.detail, /19 ms/);
+    assert.doesNotMatch(check.detail, /~1 ms|~27 ms/);
   });
 });
 
@@ -492,5 +496,125 @@ describe("wiring health", () => {
     assert.match(check?.detail ?? "", /preToolUse/);
     assert.match(check?.detail ?? "", /no handler after the script/);
     assert.match(check?.detail ?? "", /tlc harness update/);
+  });
+});
+
+describe("measured hook cost", () => {
+  // hazard: this line asserted "~1 ms with Bun vs ~27 ms with Node" on every machine and had measured it on none.
+  // An operator reported the harness as slow and the one speed number doctor offered was prose.
+  test("the hook runtime detail carries a measured figure, not a claim", () => {
+    const check = checkHookRuntime("/opt/tlc", null, () => 42);
+    assert.match(check.detail, /42 ms/);
+    assert.match(check.detail, /measured/);
+  });
+
+  // why: the label names what was measured. The interpreter start is the dominant term, not the whole hook, and
+  // reporting it as the whole hook would be the same overclaim in a new number.
+  test("the label says it is the interpreter start, paid per hook", () => {
+    const check = checkHookRuntime("/opt/tlc", "/usr/bin/bun", () => 3);
+    assert.match(check.detail, /interpreter start/);
+    assert.match(check.detail, /once per hook/);
+  });
+
+  test("a failed measurement reports no number rather than a guess", () => {
+    const check = checkHookRuntime("/opt/tlc", null, () => null);
+    assert.match(check.detail, /could not be measured/);
+    assert.doesNotMatch(check.detail, /\d+ ms/);
+  });
+
+  test("Bun is still ok and Node is still a warn", () => {
+    assert.equal(checkHookRuntime("/opt/tlc", "/usr/bin/bun", () => 1).level, "ok");
+    assert.equal(checkHookRuntime("/opt/tlc", null, () => 30).level, "warn");
+  });
+
+  test("the median ignores one outlier rather than averaging it in", () => {
+    assert.equal(medianMs([2, 3, 900]), 3);
+    assert.equal(medianMs([2, 4]), 3);
+    assert.equal(medianMs([]), null);
+  });
+
+  test("a spawn that fails yields no measurement", () => {
+    assert.equal(measureRuntimeStart({ command: "x", args: [], spawn: () => ({ ok: false }) }), null);
+  });
+
+  test("the measurement takes the requested number of samples", () => {
+    let calls = 0;
+    let clock = 0;
+    const ms = measureRuntimeStart({
+      command: "x",
+      args: [],
+      samples: 3,
+      spawn: () => {
+        calls += 1;
+        clock += 5;
+        return { ok: true };
+      },
+      now: () => clock,
+    });
+    assert.equal(calls, 3);
+    assert.equal(ms, 5);
+  });
+});
+
+describe("gate scope", () => {
+  function writeGrind(root: string, grind: Record<string, unknown>): void {
+    const path = projectConfigPath(root);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify({ version: 1, grind }), "utf8");
+  }
+
+  // hazard: this is the reported configuration, verbatim. An eslint command globbing the whole tree and `npm test`
+  // with `appendFiles: "auto"` — both run in full on every attempt, three times per turn, and the operator
+  // experienced it as "the harness is slow" with nothing to point at.
+  test("the reported configuration produces a warning for each command, naming why", () => {
+    const root = newRoot();
+    writeGrind(root, {
+      enabled: true,
+      maxLoops: 3,
+      appendFiles: "auto",
+      lintCommand: ["npx", "eslint", "src/**/*.ts", "test/**/*.ts", "--no-fix"],
+      testCommand: ["npm", "test"],
+    });
+    const rows = checkProjectPolicy(root).filter((c) => c.name.startsWith("gate scope"));
+    assert.equal(rows.length, 2);
+    assert.ok(rows.every((row) => row.level === "warn"));
+    assert.match(rows.find((r) => r.name.includes("lint"))?.detail ?? "", /already scopes itself/);
+    assert.match(rows.find((r) => r.name.includes("test"))?.detail ?? "", /invokes a script/);
+    assert.ok(rows.every((row) => row.detail.includes("maxLoops 3")));
+  });
+
+  test("a command that does narrow produces no row", () => {
+    const root = newRoot();
+    writeGrind(root, { enabled: true, appendFiles: "auto", testCommand: ["npx", "jest"] });
+    assert.equal(
+      checkProjectPolicy(root).some((c) => c.name.startsWith("gate scope")),
+      false,
+    );
+  });
+
+  // why: running the full suite is a legitimate choice. `never` is the operator saying so, and saying it back to
+  // them would be noise.
+  test("appendFiles never is a choice, not a warning", () => {
+    const root = newRoot();
+    writeGrind(root, { enabled: true, appendFiles: "never", testCommand: ["npm", "test"] });
+    assert.equal(
+      checkProjectPolicy(root).some((c) => c.name.startsWith("gate scope")),
+      false,
+    );
+  });
+
+  test("grind disabled produces no row at all", () => {
+    const root = newRoot();
+    writeGrind(root, { enabled: false, appendFiles: "auto", testCommand: ["npm", "test"] });
+    assert.equal(
+      checkProjectPolicy(root).some((c) => c.name.startsWith("gate scope")),
+      false,
+    );
+  });
+
+  test("the warnings do not fail the doctor run", () => {
+    const root = newRoot();
+    writeGrind(root, { enabled: true, appendFiles: "auto", testCommand: ["npm", "test"] });
+    assert.equal(exitCodeFor(checkProjectPolicy(root)), 0);
   });
 });

@@ -147,6 +147,15 @@ function updateRollup(root: string, config: ObservabilityConfig, event: ObsEvent
     }
     byName[name] = slot;
     rollup.gatesByName = byName;
+
+    const ms = Number(event.attrs.duration_ms ?? 0);
+    const timing = rollup.gateTime ?? {};
+    const cell = timing[name] ?? { runs: 0, totalMs: 0, worstMs: 0 };
+    cell.runs += 1;
+    cell.totalMs += ms;
+    cell.worstMs = Math.max(cell.worstMs, ms);
+    timing[name] = cell;
+    rollup.gateTime = timing;
   }
   if (event.kind === "policy.deny") {
     rollup.denials += 1;
