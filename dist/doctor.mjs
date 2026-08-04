@@ -2674,6 +2674,39 @@ function readForeignSlices(root, provider) {
   return foreign;
 }
 
+// src/core/lesson/lesson.authored.ts
+import { createHash as createHash3 } from "node:crypto";
+function authoredLessonId(instruction) {
+  const digest = createHash3("sha256").update(instruction.trim().toLowerCase()).digest("hex").slice(0, 12);
+  return `manual:${digest}`;
+}
+var AUTHORED_GATE = "any";
+function buildAuthoredLesson(input) {
+  const now = input.now ?? new Date().toISOString();
+  const instruction = input.instruction.trim();
+  return {
+    id: authoredLessonId(instruction),
+    scope: "gate-execution",
+    failedGate: input.gate?.trim() || AUTHORED_GATE,
+    category: input.inAgentSession ? "authored-in-session" : "authored",
+    triggerTokens: (input.triggerTokens ?? []).map((token) => token.trim().toLowerCase()).filter(Boolean),
+    instruction,
+    avoid: input.avoid?.trim() ?? "",
+    prefer: input.prefer?.trim() ?? "",
+    preRetryCheck: input.preRetryCheck?.trim() ?? "",
+    source: "manual",
+    status: "active",
+    confidence: 0.8,
+    hitCount: 1,
+    priority: 0.8,
+    projectScoped: true,
+    firstSeenAt: now,
+    lastSeenAt: now,
+    lastAccessedAt: now,
+    updatedAt: now
+  };
+}
+
 // src/core/lesson/lesson.garden.ts
 import { mkdirSync as mkdirSync8, writeFileSync as writeFileSync7 } from "node:fs";
 import { dirname as dirname7, join as join13 } from "node:path";
@@ -3119,9 +3152,9 @@ function gardenAndPersistLessons(root, config, now = new Date) {
 }
 
 // src/core/lesson/lesson.service.ts
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash4 } from "node:crypto";
 function lessonId(gate, fingerprint) {
-  const digest = createHash3("sha256").update(`${gate}|${fingerprint}`).digest("hex").slice(0, 12);
+  const digest = createHash4("sha256").update(`${gate}|${fingerprint}`).digest("hex").slice(0, 12);
   return `project:${gate}:${digest}`;
 }
 function tokensFrom(gate, output, category) {
@@ -3342,7 +3375,7 @@ ${railActivity(rollup, activeRules)}
 }
 
 // src/core/observability/observability.service.ts
-import { createHash as createHash4, randomUUID } from "node:crypto";
+import { createHash as createHash5, randomUUID } from "node:crypto";
 
 // src/core/observability/observability.store.ts
 import { existsSync as existsSync12, mkdirSync as mkdirSync9, readdirSync, readFileSync as readFileSync13, unlinkSync as unlinkSync3, writeFileSync as writeFileSync8 } from "node:fs";
@@ -3632,7 +3665,7 @@ function shortId() {
 }
 function deriveTraceId(sessionKey) {
   const seed = sessionKey || randomUUID();
-  return createHash4("sha256").update(seed).digest("hex").slice(0, 32);
+  return createHash5("sha256").update(seed).digest("hex").slice(0, 32);
 }
 function truncateAttrs(attrs, max) {
   const out = {};
@@ -4336,7 +4369,7 @@ function guardPolicySurface(args) {
 }
 
 // src/core/policy/policy.integrity.ts
-import { createHash as createHash5 } from "node:crypto";
+import { createHash as createHash6 } from "node:crypto";
 import { existsSync as existsSync16, mkdirSync as mkdirSync10, readdirSync as readdirSync3, readFileSync as readFileSync17, writeFileSync as writeFileSync9 } from "node:fs";
 import { join as join18 } from "node:path";
 var ABSENT = "absent";
@@ -4348,7 +4381,7 @@ function hashOf(path) {
     return ABSENT;
   }
   try {
-    return createHash5("sha256").update(readFileSync17(path)).digest("hex");
+    return createHash6("sha256").update(readFileSync17(path)).digest("hex");
   } catch {
     return "unreadable";
   }
@@ -5029,7 +5062,7 @@ function resolutionHistoryLine(resolution) {
 }
 
 // src/core/stagnation/stagnation.service.ts
-import { createHash as createHash6 } from "node:crypto";
+import { createHash as createHash7 } from "node:crypto";
 function computeFingerprint(parts) {
   const normalizedOutput = parts.output.replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/g, "<ts>").replace(/\b\d{5,}\b/g, "<n>").slice(0, 1500);
   const raw = JSON.stringify({
@@ -5038,7 +5071,7 @@ function computeFingerprint(parts) {
     exitCode: parts.exitCode,
     output: normalizedOutput
   });
-  return createHash6("sha256").update(raw).digest("hex").slice(0, 16);
+  return createHash7("sha256").update(raw).digest("hex").slice(0, 16);
 }
 
 // src/core/stagnation/stagnation.store.ts
@@ -5759,6 +5792,8 @@ var coreFacade = {
   },
   lesson: {
     recordLessonFromFailure,
+    buildAuthoredLesson,
+    authoredLessonId,
     selectLessons: selectLessons2,
     touchAccessed: touchAccessed2,
     upsertProjectLesson: upsertProjectLesson2,

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, test } from "node:test";
 import type { HarnessLesson } from "../../src/core/lesson/lesson.types.ts";
 import { DEFAULTS } from "../../src/core/policy/policy.defaults.ts";
-import { lessonRows, listReport, listText } from "../lessons-cli.ts";
+import { flagValue, lessonRows, listReport, listText, positionalWords } from "../lessons-cli.ts";
 
 const cleanupRoots: string[] = [];
 
@@ -105,4 +105,17 @@ describe("listText", () => {
     assert.match(text, /0 lesson\(s\)/);
     assert.match(text, /promoteHitCount=/);
   });
+});
+
+test("flagValue reads the value after a flag and stops at the next flag", () => {
+  assert.equal(flagValue(["add", "x", "--gate", "test"], "--gate"), "test");
+  assert.equal(flagValue(["add", "x", "--gate", "--avoid"], "--gate"), undefined);
+  assert.equal(flagValue(["add", "x"], "--gate"), undefined);
+});
+
+// why: the instruction is everything before the first flag, so `add "a b c" --gate test` reads naturally without
+// shell quoting gymnastics.
+test("positionalWords takes everything before the first flag", () => {
+  assert.equal(positionalWords(["do", "the", "thing", "--gate", "test"]), "do the thing");
+  assert.equal(positionalWords(["--gate", "test"]), "");
 });

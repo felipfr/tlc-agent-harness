@@ -448,3 +448,24 @@ When something is wrong the detail names the event and the reason, bounded to th
 WARN  cursor wiring — detected but not wired — preToolUse: no handler after the
       script: `node /path/tlc-exec.mjs` — run: tlc harness update (~/.cursor/hooks.json)
 ```
+
+## writing a lesson yourself
+
+The store used to have one producer: the same gate failing twice. So anything learned another way — a review, an
+incident, a pattern you noticed across several changes — could not enter the one channel built to carry it back to the
+next turn.
+
+```bash
+tlc harness lessons add "Grep for a producer before calling a new field done." --tokens producer,dead
+tlc harness lessons add "Re-run the suite after the last edit." --gate test --avoid "citing a stale verdict"
+```
+
+It is recorded as `source: manual` and active immediately — a candidate exists because the automatic producer is
+guessing from gate output, and an author is not. The id is a hash of the instruction, so rewriting the same lesson
+updates it instead of adding a near-duplicate. A lesson written from inside an agent session says so in its category,
+so you can tell the two apart in `tlc harness lessons list`.
+
+**The harness never reads your documentation to find lessons.** No decision-record convention, no directory, no file
+format — it runs in many products, and one project's filing habits are not a feature of the tool. If you want your own
+ADRs or postmortems to produce lessons, that is a script in your repository calling this command
+([/decisions/ad-035.md](/decisions/ad-035.md)).

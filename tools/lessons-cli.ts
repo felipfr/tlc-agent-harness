@@ -79,6 +79,7 @@ export function listText(report: LessonsListReport): string {
 function usage(): never {
   console.log(`tlc harness lessons — durable gate lessons
 
+  tlc harness lessons add "<instruction>" [--gate <name>] [--avoid "..."] [--prefer "..."] [--tokens a,b]
   tlc harness lessons list [--all] [--json]
   tlc harness lessons show <id> [--json]
   tlc harness lessons garden [--json]
@@ -86,6 +87,19 @@ function usage(): never {
   tlc harness lessons path [--json]
 `);
   process.exit(1);
+}
+
+/** why: the value after a named flag, so an instruction can carry spaces without shell quoting gymnastics. */
+export function flagValue(argv: readonly string[], flag: string): string | undefined {
+  const at = argv.indexOf(flag);
+  const value = at >= 0 ? argv[at + 1] : undefined;
+  return value === undefined || value.startsWith("--") ? undefined : value;
+}
+
+/** why: the instruction is everything before the first flag, so `add "a b c" --gate test` reads naturally. */
+export function positionalWords(argv: readonly string[]): string {
+  const stop = argv.findIndex((token) => token.startsWith("--"));
+  return (stop >= 0 ? argv.slice(0, stop) : argv).join(" ").trim();
 }
 
 async function main(argv: string[]): Promise<void> {
@@ -137,6 +151,37 @@ async function main(argv: string[]): Promise<void> {
       emitJson(lesson);
     } else {
       console.log(JSON.stringify(lesson, null, 2));
+    }
+    return;
+  }
+
+  if (cmd === "add") {
+    const instruction = positionalWords(rest.slice(1));
+    if (!instruction) {
+      console.error(
+        'usage: tlc harness lessons add "<what to do differently>" [--gate <name>] [--avoid "..."]',
+      );
+      console.error("  The instruction is what gets injected, so write it as an instruction.");
+      process.exit(1);
+    }
+    const lesson = coreFacade.lesson.buildAuthoredLesson({
+      instruction,
+      gate: flagValue(rest, "--gate"),
+      avoid: flagValue(rest, "--avoid"),
+      prefer: flagValue(rest, "--prefer"),
+      triggerTokens: (flagValue(rest, "--tokens") ?? "").split(",").filter(Boolean),
+      // why: recorded, not refused. An agent that cannot write down what it learned writes nothing down, which is
+      // the state this replaces — marking it is what keeps it auditable
+      // ([/decisions/ad-035.md](/decisions/ad-035.md)).
+      inAgentSession: process.env.TLC_ACTIVE === "1",
+    });
+    const saved = await coreFacade.lesson.upsertProjectLesson(root, lesson);
+    if (json) {
+      emitJson(saved);
+    } else {
+      console.log(`lesson recorded (${saved.id}, ${saved.category})`);
+      console.log(`  ${saved.instruction}`);
+      console.log(`  gate: ${saved.failedGate} — injected at session start and on a matching retry`);
     }
     return;
   }

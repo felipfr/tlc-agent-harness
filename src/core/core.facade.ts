@@ -39,6 +39,7 @@ import { filesFromOutput } from "./gate/gate.findings.ts";
 import { describeHolder, withGateLock } from "./gate/gate.lock.ts";
 import { gapsFromArtifact } from "./gate/gate.service.ts";
 import { patchHandoff, readForeignSlices, readHandoff, readHandoffFile } from "./handoff/handoff.service.ts";
+import { authoredLessonId, buildAuthoredLesson } from "./lesson/lesson.authored.ts";
 import { gardenAndPersistLessons, renderLessonsMarkdown } from "./lesson/lesson.garden.ts";
 import { selectLessons as selectLessonsInner } from "./lesson/lesson.select.ts";
 import { recordLessonFromFailure } from "./lesson/lesson.service.ts";
@@ -199,6 +200,8 @@ export const coreFacade = {
   },
   lesson: {
     recordLessonFromFailure,
+    buildAuthoredLesson,
+    authoredLessonId,
     selectLessons,
     touchAccessed,
     upsertProjectLesson,
