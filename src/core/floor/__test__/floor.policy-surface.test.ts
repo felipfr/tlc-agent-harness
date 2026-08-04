@@ -226,3 +226,12 @@ test("the floor still allows the reads the bootstrap asks for", () => {
   assert.equal(evaluateFloor({ projectDir: PROJECT, command: `cat ${HANDOFF}` }).kind, "allow");
   assert.equal(evaluateFloor({ projectDir: PROJECT, command: `grep -n mode ${CONFIG}` }).kind, "allow");
 });
+
+// invariant: lock 1 of four. `tlc harness policy accept` exists to clear a tampering signal, so an agent able to
+// reach it would make the whole integrity rail decorative. It is refused by a floor rule with no config switch
+// ([/decisions/ad-030.md](/decisions/ad-030.md)).
+test("the command that clears a policy divergence is refused from inside a session", () => {
+  assertDenied(`tlc harness policy accept ${CONFIG}`);
+  assertDenied("tlc harness policy");
+  assertDenied("/usr/local/bin/tlc harness policy accept x");
+});

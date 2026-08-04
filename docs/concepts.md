@@ -369,3 +369,29 @@ record and does not prove authorship, because a key would mean key management. A
 harness observed: there is no assertion that the code is correct, that anyone reviewed it, or that a human approved
 anything. An attestation implying those would be worse than none, because a reviewer would stop looking
 ([/decisions/ad-028.md](/decisions/ad-028.md)).
+
+## accepting a policy edit you made
+
+If you edit `config.json`, a flag file or the mode file while a session is live, the next acting tool call in that
+session is refused and the changed path is named. That is the integrity check working: a mid-session policy change
+with no harness command behind it is what it exists to catch.
+
+```bash
+tlc harness policy                      # list what changed, change nothing
+tlc harness policy accept <path>...     # accept exactly those paths
+```
+
+Four things keep that second command out of an agent's reach, and no single one carries the weight
+([/decisions/ad-030.md](/decisions/ad-030.md)):
+
+- the floor refuses `tlc harness policy` from inside any agent session, with no config switch
+- it refuses without an interactive terminal, so a script cannot reach it either
+- you name each path, so accepting is an act rather than a keystroke
+- acceptance is per source, so anything you leave out keeps blocking
+
+Accepting records the hash as it is now. A later change to the same file diverges again — there is deliberately no
+way to say "stop watching this". And the acceptance is recorded rather than erased, so a reviewer reading the
+session's attestation sees that policy moved and was accepted, instead of seeing nothing.
+
+`status` and `doctor` never clear a divergence as a side effect of looking at it. `doctor` reports one when it
+exists, naming the paths and the command.

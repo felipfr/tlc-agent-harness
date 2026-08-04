@@ -165,10 +165,13 @@ function pairedPreCheck(command: string, mode: OperatorMode): Decision | null {
   if (!PAIRED_ASK.has(effect)) {
     return null;
   }
+  // hazard: the reason used to end "leave the posture with `tlc harness mode solo`" — an instruction aimed at the
+  // agent, which the floor refuses from inside a session. `reason` is the agent's half and `userNote` is the
+  // operator's; the way out of a posture belongs in the operator's ([/decisions/ad-030.md](/decisions/ad-030.md)).
   return {
     kind: "ask",
-    reason: `Posture paired: this command ${atStake(effect)}, and you asked to be shown these before they run. Approve it, or leave the posture with \`tlc harness mode solo\`.`,
-    userNote: `Paired posture: approve this ${effect} command or switch posture.`,
+    reason: `Posture paired: this command ${atStake(effect)}, and the operator asked to see these before they run. Wait for their answer — the posture is theirs to change, not yours.`,
+    userNote: `Paired posture: this ${effect} command ${atStake(effect)}. Approve it, or leave the posture with \`tlc harness mode solo\`.`,
     rule: SHELL_RULES.posture,
   };
 }

@@ -84,15 +84,100 @@ function readBaseline(root: string, sessionKey: string): PolicySource[] | null {
  * write is caught because the baseline records absent sources too, so that source goes from `absent` to a hash
  * on a path the baseline already knows — detection is untouched.
  */
-function firstDivergence(baseline: PolicySource[], current: PolicySource[]): string | null {
+function divergedIn(baseline: PolicySource[], current: PolicySource[]): string[] {
   const recorded = new Map(baseline.map((source) => [source.path, source.hash]));
-  for (const source of current) {
-    const was = recorded.get(source.path);
-    if (was !== undefined && was !== source.hash) {
-      return source.path;
+  return current
+    .filter((source) => {
+      const was = recorded.get(source.path);
+      return was !== undefined && was !== source.hash;
+    })
+    .map((source) => source.path);
+}
+
+/**
+ * why: every diverged path, not the first. Reporting one at a time makes an operator repair, get blocked again, and
+ * repair again — and accepting requires the full list anyway
+ * ([/decisions/ad-030.md](/decisions/ad-030.md)).
+ */
+export function divergedPaths(root: string, sessionKey: string): string[] {
+  const baseline = readBaseline(root, sessionKey);
+  return baseline === null ? [] : divergedIn(baseline, policySourceFingerprint(root));
+}
+
+/** why: the union across live sessions, so a listing shows what the operator has to deal with, not one session's view. */
+export function allDivergedPaths(root: string): string[] {
+  const dir = policyBaselineDir(root);
+  if (!existsSync(dir)) {
+    return [];
+  }
+  const found = new Set<string>();
+  const current = policySourceFingerprint(root);
+  for (const entry of readdirSync(dir)) {
+    if (!entry.endsWith(".json")) {
+      continue;
+    }
+    const baseline = readBaseline(root, entry.replace(/\.json$/, ""));
+    if (baseline) {
+      for (const path of divergedIn(baseline, current)) {
+        found.add(path);
+      }
     }
   }
-  return null;
+  return [...found].sort();
+}
+
+export type AcceptOutcome =
+  | { kind: "accepted"; paths: string[] }
+  | { kind: "not-a-source"; paths: string[]; sources: string[] }
+  | { kind: "nothing-to-accept" };
+
+/**
+ * invariant: per source. `refreshPolicyBaselines` rewrites the whole fingerprint, so using it here would silently
+ * accept every *other* change alongside the one named — which is the hole this closes. Each named path gets its
+ * current hash written into every live session's baseline; every other entry is left exactly as it was, so a second
+ * divergence still fires.
+ *
+ * invariant: no blanket permission is expressible. The accepted hash is the hash at this moment, so a later change
+ * to the same file diverges again. There is deliberately no way to stop watching a source.
+ *
+ * hazard: this is the one function in the codebase whose job is to clear a tampering signal. It reads no policy and
+ * makes no judgement — the four locks that keep it out of an agent's reach live at the CLI and in the floor, where
+ * they can be tested independently ([/decisions/ad-030.md](/decisions/ad-030.md)).
+ */
+export function acceptPolicySources(root: string, paths: string[]): AcceptOutcome {
+  const current = policySourceFingerprint(root);
+  const known = new Map(current.map((source) => [source.path, source.hash]));
+  const unknown = paths.filter((path) => !known.has(path));
+  if (unknown.length > 0) {
+    return { kind: "not-a-source", paths: unknown, sources: current.map((source) => source.path) };
+  }
+
+  const dir = policyBaselineDir(root);
+  if (!existsSync(dir) || paths.length === 0) {
+    return { kind: "nothing-to-accept" };
+  }
+
+  for (const entry of readdirSync(dir)) {
+    if (!entry.endsWith(".json")) {
+      continue;
+    }
+    const sessionKey = entry.replace(/\.json$/, "");
+    const baseline = readBaseline(root, sessionKey);
+    if (!baseline) {
+      continue;
+    }
+    const updated = baseline.map((source) =>
+      paths.includes(source.path) ? { path: source.path, hash: known.get(source.path) as string } : source,
+    );
+    try {
+      writeFileSync(
+        join(dir, entry),
+        `${JSON.stringify({ schema: SCHEMA, sources: updated }, null, 2)}\n`,
+        "utf8",
+      );
+    } catch {}
+  }
+  return { kind: "accepted", paths };
 }
 
 // invariant: this is the layer that covers what shell parsing cannot — `bash script.sh`, a compiled binary,
@@ -107,19 +192,29 @@ export function checkPolicyBaseline(root: string, sessionKey: string): Decision 
     return { kind: "allow" };
   }
 
-  const diverged = firstDivergence(baseline, policySourceFingerprint(root));
-  if (diverged === null) {
+  const diverged = divergedIn(baseline, policySourceFingerprint(root));
+  if (diverged.length === 0) {
     return { kind: "allow" };
   }
 
+  /**
+   * hazard: the reason used to end "the harness commands re-record the baseline when they write" — and the floor
+   * refuses every one of those commands from inside a session. A blocked agent read it as a route, tried one, and
+   * stayed blocked. `reason` reaches the agent and `userNote` reaches the operator; the fix is to stop putting the
+   * operator's instructions in the agent's half ([/decisions/ad-030.md](/decisions/ad-030.md)).
+   */
   return {
     kind: "deny",
     reason: [
-      `HARNESS: ${diverged} changed during this session, and no harness command changed it.`,
+      `HARNESS: ${diverged.join(", ")} changed during this session, and no harness command changed it.`,
       "The gates are now running a policy the operator did not set, so what they check cannot be trusted.",
-      "Tell the operator what changed and why; the harness commands re-record the baseline when they write.",
+      "Report this to the operator and name the paths above. Only they can clear it, from their own terminal — the harness commands that would are refused from inside a session, so there is nothing for you to run here.",
     ].join("\n"),
-    userNote: `Harness policy changed out of band during this session: ${diverged}`,
+    userNote: [
+      `Harness policy changed out of band during this session: ${diverged.join(", ")}.`,
+      `If that was you, accept it with: tlc harness policy accept ${diverged.join(" ")}`,
+    ].join(" "),
+    rule: "policy-baseline-divergence",
   };
 }
 

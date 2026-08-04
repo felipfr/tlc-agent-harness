@@ -5,7 +5,10 @@ import { join } from "node:path";
 import { afterEach, test } from "node:test";
 import { flagsDir, projectConfigPath, projectStateDir } from "../../../platform/paths.ts";
 import {
+  acceptPolicySources,
+  allDivergedPaths,
   checkPolicyBaseline,
+  divergedPaths,
   policySourceFingerprint,
   recordPolicyBaseline,
   refreshPolicyBaselines,
@@ -137,5 +140,121 @@ test("the fingerprint covers every source the loader reads", () => {
   assert.ok(paths.includes(join(projectStateDir(root), "harness-mode")));
   for (const flag of ["grind-on", "skip-verify", "focus", "paired"]) {
     assert.ok(paths.includes(join(flagsDir(root), flag)), flag);
+  }
+});
+
+// invariant: accepting one source leaves the others diverged. `refreshPolicyBaselines` rewrites the whole
+// fingerprint, so using it here would silently bless every other change alongside the one named — the hole this
+// closes ([/decisions/ad-030.md](/decisions/ad-030.md)).
+test("accepting one diverged source leaves a second one blocking", () => {
+  const root = newRoot();
+  recordPolicyBaseline(root, "s1");
+  writeFileSync(projectConfigPath(root), '{"version":2}', "utf8");
+  mkdirSync(flagsDir(root), { recursive: true });
+  writeFileSync(join(flagsDir(root), "skip-verify"), "", "utf8");
+
+  const diverged = divergedPaths(root, "s1");
+  assert.equal(diverged.length, 2);
+
+  const outcome = acceptPolicySources(root, [projectConfigPath(root)]);
+  assert.equal(outcome.kind, "accepted");
+  assert.equal(checkPolicyBaseline(root, "s1").kind, "deny", "the flag change must still block");
+
+  acceptPolicySources(root, [join(flagsDir(root), "skip-verify")]);
+  assert.equal(checkPolicyBaseline(root, "s1").kind, "allow");
+});
+
+test("accepting reaches every live session, because the CLI cannot know which are live", () => {
+  const root = newRoot();
+  recordPolicyBaseline(root, "s1");
+  recordPolicyBaseline(root, "s2");
+  writeFileSync(projectConfigPath(root), '{"version":3}', "utf8");
+  acceptPolicySources(root, [projectConfigPath(root)]);
+  assert.equal(checkPolicyBaseline(root, "s1").kind, "allow");
+  assert.equal(checkPolicyBaseline(root, "s2").kind, "allow");
+});
+
+// invariant: no blanket permission is expressible. The accepted hash is the hash at that moment, so the next change
+// to the same file diverges again.
+test("accepting does not stop the harness watching that source", () => {
+  const root = newRoot();
+  recordPolicyBaseline(root, "s1");
+  writeFileSync(projectConfigPath(root), '{"version":2}', "utf8");
+  acceptPolicySources(root, [projectConfigPath(root)]);
+  assert.equal(checkPolicyBaseline(root, "s1").kind, "allow");
+
+  writeFileSync(projectConfigPath(root), '{"version":3}', "utf8");
+  assert.equal(checkPolicyBaseline(root, "s1").kind, "deny", "a later change must diverge again");
+});
+
+test("a path the loader never reads is refused, and the real sources are named", () => {
+  const root = newRoot();
+  recordPolicyBaseline(root, "s1");
+  const outcome = acceptPolicySources(root, [join(root, "src", "app.ts")]);
+  assert.equal(outcome.kind, "not-a-source");
+  if (outcome.kind === "not-a-source") {
+    assert.ok(outcome.sources.includes(projectConfigPath(root)));
+  }
+});
+
+test("with no baseline recorded there is nothing to accept, and it is not an error", () => {
+  const root = newRoot();
+  assert.equal(acceptPolicySources(root, [projectConfigPath(root)]).kind, "nothing-to-accept");
+});
+
+test("a deleted source accepts as absent, which is its current state", () => {
+  const root = newRoot();
+  recordPolicyBaseline(root, "s1");
+  rmSync(projectConfigPath(root));
+  assert.equal(checkPolicyBaseline(root, "s1").kind, "deny");
+  acceptPolicySources(root, [projectConfigPath(root)]);
+  assert.equal(checkPolicyBaseline(root, "s1").kind, "allow");
+});
+
+test("allDivergedPaths is the union across sessions, sorted", () => {
+  const root = newRoot();
+  recordPolicyBaseline(root, "s1");
+  writeFileSync(projectConfigPath(root), '{"version":2}', "utf8");
+  recordPolicyBaseline(root, "s2");
+  mkdirSync(flagsDir(root), { recursive: true });
+  writeFileSync(join(flagsDir(root), "grind-on"), "", "utf8");
+
+  const all = allDivergedPaths(root);
+  assert.ok(all.includes(projectConfigPath(root)), "s1's divergence");
+  assert.ok(all.includes(join(flagsDir(root), "grind-on")), "s2's divergence");
+  assert.deepEqual(all, [...all].sort());
+});
+
+// hazard: the reason used to end "the harness commands re-record the baseline when they write", and the floor
+// refuses every one of those from inside a session. A blocked agent read it as a route, tried one, and stayed
+// blocked. `reason` reaches the agent; `userNote` reaches the operator.
+test("the refusal tells the agent to report and tells the operator the command", () => {
+  const root = newRoot();
+  recordPolicyBaseline(root, "s1");
+  writeFileSync(projectConfigPath(root), '{"version":9}', "utf8");
+  const decision = checkPolicyBaseline(root, "s1");
+  assert.equal(decision.kind, "deny");
+  if (decision.kind === "deny") {
+    assert.match(decision.reason, /Report this to the operator/);
+    assert.match(decision.reason, /nothing for you to run here/);
+    assert.match(decision.userNote ?? "", /tlc harness policy accept/);
+    assert.match(
+      decision.userNote ?? "",
+      new RegExp(projectConfigPath(root).replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")),
+    );
+    assert.equal(decision.rule, "policy-baseline-divergence");
+  }
+});
+
+test("the refusal names every diverged path, not just the first", () => {
+  const root = newRoot();
+  recordPolicyBaseline(root, "s1");
+  writeFileSync(projectConfigPath(root), '{"version":2}', "utf8");
+  mkdirSync(flagsDir(root), { recursive: true });
+  writeFileSync(join(flagsDir(root), "focus"), "", "utf8");
+  const decision = checkPolicyBaseline(root, "s1");
+  if (decision.kind === "deny") {
+    assert.match(decision.reason, /focus/);
+    assert.match(decision.reason, /config\.json/);
   }
 });

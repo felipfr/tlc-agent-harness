@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, test } from "node:test";
 import type { ProviderWiring } from "../../src/contracts/index.ts";
+import { coreFacade } from "../../src/core/index.ts";
 import { projectConfigPath } from "../../src/platform/paths.ts";
 import { mergeClaudeSettings } from "../../src/providers/claude/claude.wiring.ts";
 import type { ProviderPort } from "../../src/providers/provider.port.ts";
@@ -394,6 +395,47 @@ describe("checkObservedRails", () => {
   test("neither warn fails the doctor run", () => {
     const root = newRoot();
     writeConfig(root, { version: 1, observe: { enabled: true, rails: ["nope"] } });
+    assert.equal(exitCodeFor(checkProjectPolicy(root)), 0);
+  });
+});
+
+describe("checkPolicyDivergence", () => {
+  // hazard: a divergence blocks every acting tool call, and doctor — the one command an operator runs to find out
+  // what is wrong — said nothing about it. A colleague's agent was fully blocked, ran `status`, learned nothing.
+  test("a diverged source is reported, naming the path and the command", () => {
+    const root = newRoot();
+    const path = projectConfigPath(root);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify({ version: 1 }), "utf8");
+    coreFacade.policy.recordPolicyBaseline(root, "s1");
+    writeFileSync(path, JSON.stringify({ version: 2 }), "utf8");
+
+    const row = checkProjectPolicy(root).find((c) => c.name === "policy baseline");
+    assert.equal(row?.level, "warn");
+    assert.match(row?.detail ?? "", /changed out of band/);
+    assert.match(row?.detail ?? "", /tlc harness policy accept/);
+  });
+
+  // why: silent when healthy. A reassurance on every clean run is one more line to skim past.
+  test("a matching baseline adds no row at all", () => {
+    const root = newRoot();
+    const path = projectConfigPath(root);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify({ version: 1 }), "utf8");
+    coreFacade.policy.recordPolicyBaseline(root, "s1");
+    assert.equal(
+      checkProjectPolicy(root).some((c) => c.name === "policy baseline"),
+      false,
+    );
+  });
+
+  test("the warn does not fail the doctor run", () => {
+    const root = newRoot();
+    const path = projectConfigPath(root);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify({ version: 1 }), "utf8");
+    coreFacade.policy.recordPolicyBaseline(root, "s1");
+    writeFileSync(path, JSON.stringify({ version: 2 }), "utf8");
     assert.equal(exitCodeFor(checkProjectPolicy(root)), 0);
   });
 });

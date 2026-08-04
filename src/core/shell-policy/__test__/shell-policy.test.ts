@@ -248,8 +248,10 @@ test("paired asks before a shell move that can lose something", () => {
     assert.equal(decision.kind, "ask", command);
     if (decision.kind === "ask") {
       assert.match(decision.reason, /paired/, command);
-      // why: an ask that does not say how to stop being asked is a nag.
-      assert.match(decision.reason, /tlc harness mode solo/, command);
+      // why: an ask that does not say how to stop being asked is a nag — and the way out belongs in the operator's
+      // half of the message, because the floor refuses that command from inside a session.
+      assert.match(decision.userNote ?? "", /tlc harness mode solo/, command);
+      assert.doesNotMatch(decision.reason, /tlc harness/, command);
     }
   }
 });

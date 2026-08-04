@@ -935,7 +935,7 @@ var EXECUTES_STDIN = new Set([
   "zsh"
 ]);
 var HARNESS_BINS = new Set(["tlc", "tlc.cmd"]);
-var MUTATING_SUBCOMMANDS = new Set(["pause", "resume", "grind", "mode", "init", "gate"]);
+var MUTATING_SUBCOMMANDS = new Set(["pause", "resume", "grind", "mode", "init", "gate", "policy"]);
 function deny(detail, note) {
   return { kind: "deny", detail, note };
 }
@@ -3423,15 +3423,64 @@ function readBaseline(root, sessionKey) {
     return null;
   }
 }
-function firstDivergence(baseline, current) {
+function divergedIn(baseline, current) {
   const recorded = new Map(baseline.map((source) => [source.path, source.hash]));
-  for (const source of current) {
+  return current.filter((source) => {
     const was = recorded.get(source.path);
-    if (was !== undefined && was !== source.hash) {
-      return source.path;
+    return was !== undefined && was !== source.hash;
+  }).map((source) => source.path);
+}
+function divergedPaths(root, sessionKey) {
+  const baseline = readBaseline(root, sessionKey);
+  return baseline === null ? [] : divergedIn(baseline, policySourceFingerprint(root));
+}
+function allDivergedPaths(root) {
+  const dir = policyBaselineDir(root);
+  if (!existsSync13(dir)) {
+    return [];
+  }
+  const found = new Set;
+  const current = policySourceFingerprint(root);
+  for (const entry of readdirSync3(dir)) {
+    if (!entry.endsWith(".json")) {
+      continue;
+    }
+    const baseline = readBaseline(root, entry.replace(/\.json$/, ""));
+    if (baseline) {
+      for (const path of divergedIn(baseline, current)) {
+        found.add(path);
+      }
     }
   }
-  return null;
+  return [...found].sort();
+}
+function acceptPolicySources(root, paths) {
+  const current = policySourceFingerprint(root);
+  const known = new Map(current.map((source) => [source.path, source.hash]));
+  const unknown = paths.filter((path) => !known.has(path));
+  if (unknown.length > 0) {
+    return { kind: "not-a-source", paths: unknown, sources: current.map((source) => source.path) };
+  }
+  const dir = policyBaselineDir(root);
+  if (!existsSync13(dir) || paths.length === 0) {
+    return { kind: "nothing-to-accept" };
+  }
+  for (const entry of readdirSync3(dir)) {
+    if (!entry.endsWith(".json")) {
+      continue;
+    }
+    const sessionKey = entry.replace(/\.json$/, "");
+    const baseline = readBaseline(root, sessionKey);
+    if (!baseline) {
+      continue;
+    }
+    const updated = baseline.map((source) => paths.includes(source.path) ? { path: source.path, hash: known.get(source.path) } : source);
+    try {
+      writeFileSync6(join15(dir, entry), `${JSON.stringify({ schema: SCHEMA, sources: updated }, null, 2)}
+`, "utf8");
+    } catch {}
+  }
+  return { kind: "accepted", paths };
 }
 function checkPolicyBaseline(root, sessionKey) {
   const baseline = readBaseline(root, sessionKey);
@@ -3439,19 +3488,23 @@ function checkPolicyBaseline(root, sessionKey) {
     recordPolicyBaseline(root, sessionKey);
     return { kind: "allow" };
   }
-  const diverged = firstDivergence(baseline, policySourceFingerprint(root));
-  if (diverged === null) {
+  const diverged = divergedIn(baseline, policySourceFingerprint(root));
+  if (diverged.length === 0) {
     return { kind: "allow" };
   }
   return {
     kind: "deny",
     reason: [
-      `HARNESS: ${diverged} changed during this session, and no harness command changed it.`,
+      `HARNESS: ${diverged.join(", ")} changed during this session, and no harness command changed it.`,
       "The gates are now running a policy the operator did not set, so what they check cannot be trusted.",
-      "Tell the operator what changed and why; the harness commands re-record the baseline when they write."
+      "Report this to the operator and name the paths above. Only they can clear it, from their own terminal — the harness commands that would are refused from inside a session, so there is nothing for you to run here."
     ].join(`
 `),
-    userNote: `Harness policy changed out of band during this session: ${diverged}`
+    userNote: [
+      `Harness policy changed out of band during this session: ${diverged.join(", ")}.`,
+      `If that was you, accept it with: tlc harness policy accept ${diverged.join(" ")}`
+    ].join(" "),
+    rule: "policy-baseline-divergence"
   };
 }
 function refreshPolicyBaselines(root) {
@@ -3827,8 +3880,8 @@ function pairedPreCheck(command, mode) {
   }
   return {
     kind: "ask",
-    reason: `Posture paired: this command ${atStake(effect)}, and you asked to be shown these before they run. Approve it, or leave the posture with \`tlc harness mode solo\`.`,
-    userNote: `Paired posture: approve this ${effect} command or switch posture.`,
+    reason: `Posture paired: this command ${atStake(effect)}, and the operator asked to see these before they run. Wait for their answer — the posture is theirs to change, not yours.`,
+    userNote: `Paired posture: this ${effect} command ${atStake(effect)}. Approve it, or leave the posture with \`tlc harness mode solo\`.`,
     rule: SHELL_RULES.posture
   };
 }
@@ -4690,6 +4743,9 @@ var coreFacade = {
     policySourceFingerprint,
     recordPolicyBaseline,
     refreshPolicyBaselines,
+    acceptPolicySources,
+    divergedPaths,
+    allDivergedPaths,
     activeRails,
     operatorBootstrapLines,
     loadPolicy,
@@ -4932,6 +4988,48 @@ function attestJson(root) {
   const verdict = coreFacade.attest.verifyChain(records);
   return verdict.ok ? { ok: true, sessions: verdict.length, records } : { ok: false, brokenAt: verdict.brokenAt, reason: verdict.reason, sessions: records.length, records };
 }
+function acceptPolicy(root, paths, interactive) {
+  if (!interactive) {
+    throw new UsageError("tlc harness policy accept needs an interactive terminal — clearing a policy divergence is the operator's call, not a script's.");
+  }
+  if (paths.length === 0) {
+    throw new UsageError("usage: tlc harness policy accept <path> [path...]  (run `tlc harness policy` to list)");
+  }
+  const outcome = coreFacade.policy.acceptPolicySources(root, paths);
+  if (outcome.kind === "not-a-source") {
+    throw new UsageError([
+      `not a policy source: ${outcome.paths.join(", ")}`,
+      "The sources the loader reads are:",
+      ...outcome.sources.map((source) => `  ${source}`)
+    ].join(`
+`));
+  }
+  if (outcome.kind === "nothing-to-accept") {
+    return "nothing to accept — no session has recorded a baseline yet";
+  }
+  return `accepted: ${outcome.paths.join(", ")}
+  every live session now treats these as the policy the operator set`;
+}
+function policyText(root) {
+  const diverged = coreFacade.policy.allDivergedPaths(root);
+  if (diverged.length === 0) {
+    return "policy baseline matches — nothing changed out of band during any live session";
+  }
+  return [
+    `policy changed out of band during a live session (${diverged.length}):`,
+    ...diverged.map((path) => `  ${path}`),
+    "",
+    "If that was you, accept it from your own terminal with:",
+    `  tlc harness policy accept ${diverged.join(" ")}`,
+    "",
+    "Accepting is per path, so anything you leave out keeps blocking."
+  ].join(`
+`);
+}
+function policyJson(root) {
+  const diverged = coreFacade.policy.allDivergedPaths(root);
+  return { diverged, ok: diverged.length === 0 };
+}
 var GATE_FIELDS = {
   "test-command": "test",
   "lint-command": "lint"
@@ -4980,7 +5078,7 @@ function helpText() {
 
 Requires Node.js 24+ (Active LTS 24 or Current 26).
 
-Read commands accept --json: status, doctor, obs, lessons, prices lookup, attest.
+Read commands accept --json: status, doctor, obs, lessons, prices lookup, attest, policy.
 
 QUICK
   tlc harness status              mode / grind / gates
@@ -4997,6 +5095,7 @@ CONTROL
   tlc harness grind [on|off]   tlc harness pause | resume   tlc harness mode solo|paired|focus
   tlc harness gate test-command <cmd> [args...]   tlc harness gate lint-command <cmd> [args...]
   tlc harness attest              tamper-evident record of what each session ran under
+  tlc harness policy              show a policy that changed out of band; accept <path> to clear it
 
 MEASURE
   tlc harness obs live|events|report|prune
@@ -5079,6 +5178,16 @@ function route(args) {
     }
     case "attest":
       return { kind: "attest" };
+    case "policy": {
+      const sub = (args[1] ?? "").toLowerCase();
+      if (!sub) {
+        return { kind: "policy", accept: [] };
+      }
+      if (sub !== "accept") {
+        throw new UsageError("usage: tlc harness policy [accept <path> [path...]]");
+      }
+      return { kind: "policy", accept: args.slice(2) };
+    }
     case "gate": {
       const field = GATE_FIELDS[(args[1] ?? "").toLowerCase()];
       if (!field) {
@@ -5313,6 +5422,26 @@ function main(argv) {
       process.exit(report.ok ? 0 : 1);
       break;
     }
+    case "policy": {
+      if (action.accept.length === 0 && !args.includes("accept")) {
+        if (json) {
+          emitJson(policyJson(root));
+        } else {
+          console.log(policyText(root));
+        }
+        break;
+      }
+      try {
+        console.log(acceptPolicy(root, action.accept, Boolean(process.stdin.isTTY)));
+      } catch (error) {
+        if (error instanceof UsageError) {
+          console.error(error.message);
+          process.exit(1);
+        }
+        throw error;
+      }
+      break;
+    }
     case "help":
       console.log(helpText());
       break;
@@ -5396,6 +5525,8 @@ export {
   resolveExecutable,
   readMode,
   pricesHelpText,
+  policyText,
+  policyJson,
   pairedFlagPath,
   modeFilePath,
   helpText,
@@ -5410,6 +5541,7 @@ export {
   attestText,
   attestJson,
   acceptedModes,
+  acceptPolicy,
   UsageError,
   TEST_ENV_IMPORT
 };

@@ -203,6 +203,69 @@ export function attestJson(root: string): AttestReport {
     : { ok: false, brokenAt: verdict.brokenAt, reason: verdict.reason, sessions: records.length, records };
 }
 
+/**
+ * The one command whose job is to clear a tampering signal, which is why four independent locks sit between it and
+ * an agent ([/decisions/ad-030.md](/decisions/ad-030.md)):
+ *
+ * 1. the floor refuses `tlc harness policy` from inside any agent session, with no config switch;
+ * 2. this refuses without an interactive terminal, so a script cannot reach it either;
+ * 3. the operator names each path, so accepting is an act rather than a keystroke and its blast radius is exactly
+ *    what was typed;
+ * 4. acceptance is per source, so the other divergences keep blocking.
+ *
+ * hazard: `interactive` is a parameter rather than an `isTTY` read, so the refusal is testable without a pty. That
+ * matters most on the rail whose failure mode is silence.
+ */
+export function acceptPolicy(root: string, paths: string[], interactive: boolean): string {
+  if (!interactive) {
+    throw new UsageError(
+      "tlc harness policy accept needs an interactive terminal — clearing a policy divergence is the operator's call, not a script's.",
+    );
+  }
+  if (paths.length === 0) {
+    throw new UsageError(
+      "usage: tlc harness policy accept <path> [path...]  (run `tlc harness policy` to list)",
+    );
+  }
+  const outcome = coreFacade.policy.acceptPolicySources(root, paths);
+  if (outcome.kind === "not-a-source") {
+    throw new UsageError(
+      [
+        `not a policy source: ${outcome.paths.join(", ")}`,
+        "The sources the loader reads are:",
+        ...outcome.sources.map((source) => `  ${source}`),
+      ].join("\n"),
+    );
+  }
+  if (outcome.kind === "nothing-to-accept") {
+    return "nothing to accept — no session has recorded a baseline yet";
+  }
+  return `accepted: ${outcome.paths.join(", ")}\n  every live session now treats these as the policy the operator set`;
+}
+
+export function policyText(root: string): string {
+  const diverged = coreFacade.policy.allDivergedPaths(root);
+  if (diverged.length === 0) {
+    return "policy baseline matches — nothing changed out of band during any live session";
+  }
+  return [
+    `policy changed out of band during a live session (${diverged.length}):`,
+    ...diverged.map((path) => `  ${path}`),
+    "",
+    "If that was you, accept it from your own terminal with:",
+    `  tlc harness policy accept ${diverged.join(" ")}`,
+    "",
+    "Accepting is per path, so anything you leave out keeps blocking.",
+  ].join("\n");
+}
+
+export type PolicyReport = { diverged: string[]; ok: boolean };
+
+export function policyJson(root: string): PolicyReport {
+  const diverged = coreFacade.policy.allDivergedPaths(root);
+  return { diverged, ok: diverged.length === 0 };
+}
+
 export type GateField = "test" | "lint";
 
 const GATE_FIELDS: Record<string, GateField> = {
@@ -281,7 +344,7 @@ export function helpText(): string {
 
 Requires Node.js 24+ (Active LTS 24 or Current 26).
 
-Read commands accept --json: status, doctor, obs, lessons, prices lookup, attest.
+Read commands accept --json: status, doctor, obs, lessons, prices lookup, attest, policy.
 
 QUICK
   tlc harness status              mode / grind / gates
@@ -298,6 +361,7 @@ CONTROL
   tlc harness grind [on|off]   tlc harness pause | resume   tlc harness mode solo|paired|focus
   tlc harness gate test-command <cmd> [args...]   tlc harness gate lint-command <cmd> [args...]
   tlc harness attest              tamper-evident record of what each session ran under
+  tlc harness policy              show a policy that changed out of band; accept <path> to clear it
 
 MEASURE
   tlc harness obs live|events|report|prune
@@ -355,6 +419,7 @@ export type Action =
   | { kind: "mode"; value: string }
   | { kind: "gate"; field: GateField; argv: string[] }
   | { kind: "attest" }
+  | { kind: "policy"; accept: string[] }
   | { kind: "prices-help" }
   | { kind: "prices-refresh"; scope: string }
   | { kind: "prices-lookup"; modelId: string }
@@ -403,6 +468,16 @@ export function route(args: string[]): Action {
     }
     case "attest":
       return { kind: "attest" };
+    case "policy": {
+      const sub = (args[1] ?? "").toLowerCase();
+      if (!sub) {
+        return { kind: "policy", accept: [] };
+      }
+      if (sub !== "accept") {
+        throw new UsageError("usage: tlc harness policy [accept <path> [path...]]");
+      }
+      return { kind: "policy", accept: args.slice(2) };
+    }
     case "gate": {
       const field = GATE_FIELDS[(args[1] ?? "").toLowerCase()];
       if (!field) {
@@ -673,6 +748,26 @@ function main(argv: string[]): void {
       }
       // why: a broken chain exits non-zero so a pipeline can gate on it. An empty chain is not broken.
       process.exit(report.ok ? 0 : 1);
+      break;
+    }
+    case "policy": {
+      if (action.accept.length === 0 && !args.includes("accept")) {
+        if (json) {
+          emitJson(policyJson(root));
+        } else {
+          console.log(policyText(root));
+        }
+        break;
+      }
+      try {
+        console.log(acceptPolicy(root, action.accept, Boolean(process.stdin.isTTY)));
+      } catch (error) {
+        if (error instanceof UsageError) {
+          console.error(error.message);
+          process.exit(1);
+        }
+        throw error;
+      }
       break;
     }
     case "help":

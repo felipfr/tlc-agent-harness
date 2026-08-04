@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, test } from "node:test";
 import {
+  acceptPolicy,
   attestJson,
   attestText,
   buildTestSteps,
@@ -15,6 +16,8 @@ import {
   helpText,
   modeFilePath,
   pairedFlagPath,
+  policyJson,
+  policyText,
   pricesHelpText,
   readMode,
   resolveExecutable,
@@ -753,5 +756,74 @@ describe("attest", () => {
 
   test("help names the subcommand", () => {
     assert.match(helpText(), /tlc harness attest/);
+  });
+});
+
+describe("policy accept", () => {
+  function diverge(root: string): string {
+    const path = projectConfigPath(root);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify({ version: 1 }), "utf8");
+    coreFacade.policy.recordPolicyBaseline(root, "s1");
+    writeFileSync(path, JSON.stringify({ version: 2 }), "utf8");
+    return path;
+  }
+
+  // invariant: lock 2 of four. A script must not be able to clear a divergence, and the refusal writes nothing.
+  test("without an interactive terminal it refuses and writes nothing", () => {
+    const root = newRoot();
+    const path = diverge(root);
+    assert.throws(() => acceptPolicy(root, [path], false), UsageError);
+    assert.equal(coreFacade.policy.checkPolicyBaseline(root, "s1").kind, "deny");
+  });
+
+  // invariant: lock 3 of four. Naming the path is the confirmation — a bare accept would be a keystroke, and a
+  // keystroke becomes reflex.
+  test("with no path named it refuses and points at the listing", () => {
+    const root = newRoot();
+    diverge(root);
+    assert.throws(() => acceptPolicy(root, [], true), /run `tlc harness policy` to list/);
+  });
+
+  test("accepting a named diverged source clears it", () => {
+    const root = newRoot();
+    const path = diverge(root);
+    assert.match(acceptPolicy(root, [path], true), /accepted/);
+    assert.equal(coreFacade.policy.checkPolicyBaseline(root, "s1").kind, "allow");
+  });
+
+  test("a path the loader never reads is refused, naming the real sources", () => {
+    const root = newRoot();
+    diverge(root);
+    assert.throws(() => acceptPolicy(root, [join(root, "src", "app.ts")], true), /not a policy source/);
+  });
+
+  test("the listing changes nothing and names the command", () => {
+    const root = newRoot();
+    const path = diverge(root);
+    const text = policyText(root);
+    assert.match(text, /changed out of band/);
+    assert.match(text, /tlc harness policy accept/);
+    assert.equal(coreFacade.policy.checkPolicyBaseline(root, "s1").kind, "deny", "listing must not clear it");
+    assert.deepEqual(policyJson(root), { diverged: [path], ok: false });
+  });
+
+  test("a matching baseline reports ok without prescribing anything", () => {
+    const root = newRoot();
+    mkdirSync(dirname(projectConfigPath(root)), { recursive: true });
+    writeFileSync(projectConfigPath(root), JSON.stringify({ version: 1 }), "utf8");
+    coreFacade.policy.recordPolicyBaseline(root, "s1");
+    assert.equal(policyJson(root).ok, true);
+    assert.doesNotMatch(policyText(root), /accept/);
+  });
+
+  test("route parses the listing and the accept forms, and rejects a third", () => {
+    assert.deepEqual(route(["policy"]), { kind: "policy", accept: [] });
+    assert.deepEqual(route(["policy", "accept", "a", "b"]), { kind: "policy", accept: ["a", "b"] });
+    assert.throws(() => route(["policy", "bless"]), UsageError);
+  });
+
+  test("help names the subcommand", () => {
+    assert.match(helpText(), /tlc harness policy/);
   });
 });

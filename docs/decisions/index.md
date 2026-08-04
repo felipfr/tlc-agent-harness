@@ -44,5 +44,6 @@ Handoff section and a link back to this index.
 | [AD-027](/decisions/ad-027.md) | Evidence is ordered against the code, every rail's firing is recorded, and a checker can run with its rule off | active |
 | [AD-028](/decisions/ad-028.md) | A resolved failure is kept, a session attests to itself, and provider neutrality becomes a proof | active |
 | [AD-029](/decisions/ad-029.md) | A capability the init skill cannot correctly initialise is not shipped | active |
+| [AD-030](/decisions/ad-030.md) | Clearing a policy divergence is one operator command behind four independent locks, and a refusal never points an agent at a door the floor holds shut | active |
 
 Related: [/architecture.md](/architecture.md), [/concepts.md](/concepts.md), [/providers/index.md](/providers/index.md).

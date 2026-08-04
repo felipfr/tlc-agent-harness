@@ -1774,7 +1774,7 @@ var EXECUTES_STDIN = new Set([
   "zsh"
 ]);
 var HARNESS_BINS = new Set(["tlc", "tlc.cmd"]);
-var MUTATING_SUBCOMMANDS = new Set(["pause", "resume", "grind", "mode", "init", "gate"]);
+var MUTATING_SUBCOMMANDS = new Set(["pause", "resume", "grind", "mode", "init", "gate", "policy"]);
 function deny(detail, note) {
   return { kind: "deny", detail, note };
 }
@@ -4262,15 +4262,64 @@ function readBaseline(root, sessionKey) {
     return null;
   }
 }
-function firstDivergence(baseline, current) {
+function divergedIn(baseline, current) {
   const recorded = new Map(baseline.map((source) => [source.path, source.hash]));
-  for (const source of current) {
+  return current.filter((source) => {
     const was = recorded.get(source.path);
-    if (was !== undefined && was !== source.hash) {
-      return source.path;
+    return was !== undefined && was !== source.hash;
+  }).map((source) => source.path);
+}
+function divergedPaths(root, sessionKey) {
+  const baseline = readBaseline(root, sessionKey);
+  return baseline === null ? [] : divergedIn(baseline, policySourceFingerprint(root));
+}
+function allDivergedPaths(root) {
+  const dir = policyBaselineDir(root);
+  if (!existsSync16(dir)) {
+    return [];
+  }
+  const found = new Set;
+  const current = policySourceFingerprint(root);
+  for (const entry of readdirSync3(dir)) {
+    if (!entry.endsWith(".json")) {
+      continue;
+    }
+    const baseline = readBaseline(root, entry.replace(/\.json$/, ""));
+    if (baseline) {
+      for (const path of divergedIn(baseline, current)) {
+        found.add(path);
+      }
     }
   }
-  return null;
+  return [...found].sort();
+}
+function acceptPolicySources(root, paths) {
+  const current = policySourceFingerprint(root);
+  const known = new Map(current.map((source) => [source.path, source.hash]));
+  const unknown = paths.filter((path) => !known.has(path));
+  if (unknown.length > 0) {
+    return { kind: "not-a-source", paths: unknown, sources: current.map((source) => source.path) };
+  }
+  const dir = policyBaselineDir(root);
+  if (!existsSync16(dir) || paths.length === 0) {
+    return { kind: "nothing-to-accept" };
+  }
+  for (const entry of readdirSync3(dir)) {
+    if (!entry.endsWith(".json")) {
+      continue;
+    }
+    const sessionKey = entry.replace(/\.json$/, "");
+    const baseline = readBaseline(root, sessionKey);
+    if (!baseline) {
+      continue;
+    }
+    const updated = baseline.map((source) => paths.includes(source.path) ? { path: source.path, hash: known.get(source.path) } : source);
+    try {
+      writeFileSync9(join18(dir, entry), `${JSON.stringify({ schema: SCHEMA, sources: updated }, null, 2)}
+`, "utf8");
+    } catch {}
+  }
+  return { kind: "accepted", paths };
 }
 function checkPolicyBaseline(root, sessionKey) {
   const baseline = readBaseline(root, sessionKey);
@@ -4278,19 +4327,23 @@ function checkPolicyBaseline(root, sessionKey) {
     recordPolicyBaseline(root, sessionKey);
     return { kind: "allow" };
   }
-  const diverged = firstDivergence(baseline, policySourceFingerprint(root));
-  if (diverged === null) {
+  const diverged = divergedIn(baseline, policySourceFingerprint(root));
+  if (diverged.length === 0) {
     return { kind: "allow" };
   }
   return {
     kind: "deny",
     reason: [
-      `HARNESS: ${diverged} changed during this session, and no harness command changed it.`,
+      `HARNESS: ${diverged.join(", ")} changed during this session, and no harness command changed it.`,
       "The gates are now running a policy the operator did not set, so what they check cannot be trusted.",
-      "Tell the operator what changed and why; the harness commands re-record the baseline when they write."
+      "Report this to the operator and name the paths above. Only they can clear it, from their own terminal — the harness commands that would are refused from inside a session, so there is nothing for you to run here."
     ].join(`
 `),
-    userNote: `Harness policy changed out of band during this session: ${diverged}`
+    userNote: [
+      `Harness policy changed out of band during this session: ${diverged.join(", ")}.`,
+      `If that was you, accept it with: tlc harness policy accept ${diverged.join(" ")}`
+    ].join(" "),
+    rule: "policy-baseline-divergence"
   };
 }
 function refreshPolicyBaselines(root) {
@@ -4666,8 +4719,8 @@ function pairedPreCheck(command, mode) {
   }
   return {
     kind: "ask",
-    reason: `Posture paired: this command ${atStake(effect)}, and you asked to be shown these before they run. Approve it, or leave the posture with \`tlc harness mode solo\`.`,
-    userNote: `Paired posture: approve this ${effect} command or switch posture.`,
+    reason: `Posture paired: this command ${atStake(effect)}, and the operator asked to see these before they run. Wait for their answer — the posture is theirs to change, not yours.`,
+    userNote: `Paired posture: this ${effect} command ${atStake(effect)}. Approve it, or leave the posture with \`tlc harness mode solo\`.`,
     rule: SHELL_RULES.posture
   };
 }
@@ -5517,6 +5570,9 @@ var coreFacade = {
     policySourceFingerprint,
     recordPolicyBaseline,
     refreshPolicyBaselines,
+    acceptPolicySources,
+    divergedPaths,
+    allDivergedPaths,
     activeRails,
     operatorBootstrapLines,
     loadPolicy,
@@ -5745,6 +5801,19 @@ function checkObservedRails(root) {
     }
   ];
 }
+function checkPolicyDivergence(root) {
+  const diverged = coreFacade.policy.allDivergedPaths(root);
+  if (diverged.length === 0) {
+    return [];
+  }
+  return [
+    {
+      level: "warn",
+      name: "policy baseline",
+      detail: `changed out of band during a live session: ${diverged.join(", ")}. If that was you: tlc harness policy accept ${diverged.join(" ")}`
+    }
+  ];
+}
 function checkProjectPolicy(root) {
   const configPath = projectConfigPath(root);
   const stateDir = projectStateDir(root);
@@ -5760,7 +5829,8 @@ function checkProjectPolicy(root) {
       detail: existsSync24(stateDir) ? stateDir : `${stateDir} (created on first session)`
     },
     checkPosture(root),
-    ...checkObservedRails(root)
+    ...checkObservedRails(root),
+    ...checkPolicyDivergence(root)
   ];
 }
 function checkGlobalCommands(home) {

@@ -66,7 +66,10 @@ import { detectDeviations, detectPlan } from "./plan/plan.detect.ts";
 import { evaluatePlanGate, planVerdict } from "./plan/plan.service.ts";
 import { guardPolicySurface } from "./policy/policy.guard.ts";
 import {
+  acceptPolicySources,
+  allDivergedPaths,
   checkPolicyBaseline,
+  divergedPaths,
   policySourceFingerprint,
   recordPolicyBaseline,
   refreshPolicyBaselines,
@@ -217,6 +220,9 @@ export const coreFacade = {
     policySourceFingerprint,
     recordPolicyBaseline,
     refreshPolicyBaselines,
+    acceptPolicySources,
+    divergedPaths,
+    allDivergedPaths,
     activeRails,
     operatorBootstrapLines,
     loadPolicy,

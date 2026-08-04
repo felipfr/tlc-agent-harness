@@ -174,6 +174,27 @@ function checkObservedRails(root: string): Check[] {
   ];
 }
 
+/**
+ * hazard: a policy divergence blocks every acting tool call in a live session, and `doctor` — the one command an
+ * operator runs to find out what is wrong — said nothing about it. Measured: a colleague's agent was fully blocked,
+ * ran `status`, learned nothing, and stopped ([/decisions/ad-030.md](/decisions/ad-030.md)).
+ *
+ * why: silent when nothing diverged. A reassurance printed on every healthy run is one more line to skim past.
+ */
+function checkPolicyDivergence(root: string): Check[] {
+  const diverged = coreFacade.policy.allDivergedPaths(root);
+  if (diverged.length === 0) {
+    return [];
+  }
+  return [
+    {
+      level: "warn",
+      name: "policy baseline",
+      detail: `changed out of band during a live session: ${diverged.join(", ")}. If that was you: tlc harness policy accept ${diverged.join(" ")}`,
+    },
+  ];
+}
+
 export function checkProjectPolicy(root: string): Check[] {
   const configPath = projectConfigPath(root);
   const stateDir = projectStateDir(root);
@@ -190,6 +211,7 @@ export function checkProjectPolicy(root: string): Check[] {
     },
     checkPosture(root),
     ...checkObservedRails(root),
+    ...checkPolicyDivergence(root),
   ];
 }
 
