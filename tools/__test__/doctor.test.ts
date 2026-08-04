@@ -11,6 +11,7 @@ import { cursorWiring, formatWiringProblems } from "../../src/providers/cursor/c
 import type { ProviderPort } from "../../src/providers/provider.port.ts";
 import {
   type Check,
+  checkCapabilities,
   checkHookRuntime,
   checkId,
   checkNodeVersion,
@@ -287,7 +288,7 @@ describe("exitCodeFor / formatReport", () => {
     assert.match(report, /OK {2}.*a — fine/);
     assert.match(report, /WARN.*b — meh/);
     assert.match(report, /FAIL.*c — broken/);
-    assert.match(report, /1 issue\(s\)/);
+    assert.match(report, /1 failure/);
   });
 });
 
@@ -617,4 +618,71 @@ describe("gate scope", () => {
     writeGrind(root, { enabled: true, appendFiles: "auto", testCommand: ["npm", "test"] });
     assert.equal(exitCodeFor(checkProjectPolicy(root)), 0);
   });
+});
+
+describe("noise", () => {
+  // hazard: every capability that was merely not enabled produced a warning, so a healthy install printed nine of
+  // them and the rows that needed attention — a diverged policy, a gate running in full — sat in the middle. A
+  // warning that fires on a healthy install teaches the reader to skip warnings, which is how the row that mattered
+  // got missed ([/decisions/ad-034.md](/decisions/ad-034.md)).
+  test("unenabled capabilities are one ok inventory row, never a wall of warnings", () => {
+    const checks: Check[] = [
+      {
+        level: "ok",
+        name: "capabilities",
+        detail: "6 available and not enabled: a, b, c, d, e, f. Enable: …",
+      },
+      { level: "warn", name: "gate scope (testCommand)", detail: "runs in full" },
+    ];
+    const report = formatReport(checks);
+    assert.equal(report.split("WARN").length - 1, 1, "exactly one warning must survive the noise");
+    assert.match(report, /gate scope/);
+  });
+
+  // hazard: the summary said "all checks passed" under twelve warnings — a contradiction the reader resolves by
+  // deciding one of the two is lying.
+  test("the summary never claims everything passed while printing a warning", () => {
+    const report = formatReport([{ level: "warn", name: "x", detail: "y" }]);
+    assert.doesNotMatch(report, /all checks passed/);
+    assert.match(report, /no failures, 1 warning to read/);
+  });
+
+  test("a clean run still says all checks passed", () => {
+    assert.match(formatReport([{ level: "ok", name: "x", detail: "y" }]), /all checks passed/);
+  });
+
+  test("a failure is counted as a failure, and warnings alongside it are named too", () => {
+    const report = formatReport([
+      { level: "fail", name: "a", detail: "" },
+      { level: "warn", name: "b", detail: "" },
+    ]);
+    assert.match(report, /1 failure, 1 warning$/m);
+  });
+});
+
+// hazard: the noise test above builds its rows by hand, so it passed with the inventory row marked `warn` — a sensor
+// caught it surviving. The level `checkCapabilities` chooses is the thing that decides whether a healthy install
+// prints a wall ([/decisions/ad-034.md](/decisions/ad-034.md)).
+test("the capability inventory row is ok, because not enabling something is not a fault", () => {
+  const root = newRoot();
+  const runtime = join(root, "runtime");
+  mkdirSync(join(runtime, "capabilities"), { recursive: true });
+  writeFileSync(
+    join(runtime, "capabilities", "catalog.json"),
+    JSON.stringify({
+      catalogVersion: 1,
+      capabilities: [
+        { id: "shipGate", configPath: "shipGate.enabled", title: "Ship gate", benefit: "b", tradeOff: "t" },
+        { id: "observe", configPath: "observe.enabled", title: "Observation", benefit: "b", tradeOff: "t" },
+      ],
+    }),
+  );
+  const config = projectConfigPath(root);
+  mkdirSync(dirname(config), { recursive: true });
+  writeFileSync(config, JSON.stringify({ version: 1 }), "utf8");
+
+  const rows = checkCapabilities(root, runtime);
+  assert.equal(rows.length, 1, "one inventory row, never one per capability");
+  assert.equal(rows[0]?.level, "ok");
+  assert.match(rows[0]?.detail ?? "", /2 available and not enabled/);
 });

@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  formatAvailableInventory,
   formatCapabilityDigest,
   formatDoctorWarn,
   isAvailableNotEnabled,
@@ -136,13 +137,26 @@ test("the digest names each capability with its benefit, trade-off and the enabl
   assert.ok(digest.includes(ENABLE_HINT));
 });
 
-test("the doctor warning is non-failing and carries the trade-off and the hint", () => {
+// hazard: this asserted the string starts with "WARN:", which is what made an operator read the word twice — the row
+// it lands in already carries its level ([/decisions/ad-034.md](/decisions/ad-034.md)).
+test("the doctor detail carries the trade-off and the hint, and does not restate its own level", () => {
   const cap = capability({ title: "Grind", tradeOff: "slower stops" });
   const warn = formatDoctorWarn(cap);
-  assert.ok(warn.startsWith("WARN:"));
+  assert.equal(warn.startsWith("WARN:"), false);
   assert.ok(warn.includes("Grind"));
   assert.ok(warn.includes("slower stops"));
   assert.ok(warn.includes(ENABLE_HINT));
+});
+
+// why: one inventory row replaces a wall of warnings. The ids are enough — `update` lists each with its benefit and
+// trade-off, which is where an operator actually chooses.
+test("the inventory names the count, the ids and how to enable", () => {
+  const line = formatAvailableInventory([
+    capability({ id: "shipGate", title: "Ship gate" }),
+    capability({ id: "observe", title: "Observation" }),
+  ]);
+  assert.match(line, /^2 available and not enabled: shipGate, observe\./);
+  assert.ok(line.includes(ENABLE_HINT));
 });
 
 test("runtime-seen starts at zero, survives a corrupt file, and round-trips", async () => {

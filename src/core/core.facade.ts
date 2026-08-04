@@ -6,6 +6,7 @@ import {
   verifyChain,
 } from "./attest/attest.service.ts";
 import {
+  formatAvailableInventory,
   formatCapabilityDigest,
   formatDoctorWarn,
   isAvailableNotEnabled,
@@ -166,6 +167,7 @@ export const coreFacade = {
     listNewlyAnnounceable,
     formatCapabilityDigest,
     formatDoctorWarn,
+    formatAvailableInventory,
   },
   gate: {
     writeLastGate,

@@ -23,7 +23,12 @@ function frontmatterField(text: string, field: string): string | undefined {
   // quoted strings by convention, and the bundle check is what enforces that.
   const match = new RegExp(`^${field}:\\s*"?(.+?)"?\\s*$`, "m").exec(text);
   const value = match?.[1]?.trim();
-  return value === undefined || value === "" ? undefined : value;
+  if (value === undefined || value === "") {
+    return undefined;
+  }
+  // hazard: an escaped quote inside the value survived the outer-quote strip and reached the operator as a literal
+  // `\"` in their terminal. Seen in a real update run ([/decisions/ad-034.md](/decisions/ad-034.md)).
+  return value.replace(/\\(["'\\])/g, "$1");
 }
 
 export function decisionsDir(repoRoot: string): string {
@@ -75,31 +80,40 @@ export function needsAction(decisions: readonly DecisionSummary[]): DecisionSumm
   return decisions.filter((decision) => decision.migration !== undefined);
 }
 
+/** why: `AD-031 — Some title` → `AD-031`, so an id can trail a sentence instead of leading it. */
+function idOf(decision: DecisionSummary): string {
+  return decision.id;
+}
+
 /**
- * why: the shape the capability digest established — what is new, what it costs you, and never repeated. The
- * needs-action half is separated and put first, because a note an operator scrolls past is a note that did not
- * arrive.
+ * hazard: the first version led with each decision's *title*, which describes the author's reasoning rather than the
+ * operator's situation, and printed `NEEDS YOUR ACTION` for every note. In a real update run both notes said "run
+ * `tlc harness doctor`" — which `update` then did automatically, three lines below — and neither applied to that
+ * project. An alarm that fires on every update is one the reader learns to scroll past, and the next one that matters
+ * goes with it ([/decisions/ad-034.md](/decisions/ad-034.md)).
+ *
+ * invariant: the note is the headline and the decision id trails it. The heading appears only when a note exists, and
+ * it says what a note now means: something `doctor` cannot detect for you.
  */
 export function formatDecisionDigest(decisions: readonly DecisionSummary[]): string {
   if (decisions.length === 0) {
     return "";
   }
   const action = needsAction(decisions);
-  const lines: string[] = [`Decisions that landed (${decisions.length}):`];
+  const lines: string[] = [
+    `Harness updated. ${decisions.length} decision(s) landed; doctor runs below and reports what applies here.`,
+  ];
   if (action.length > 0) {
-    lines.push("", `NEEDS YOUR ACTION (${action.length}):`);
+    lines.push("", `Needs a change doctor cannot detect for you (${action.length}):`);
     for (const decision of action) {
-      // why: the title already carries its own id, so prefixing would print it twice.
-      lines.push(`  ${decision.title}`, `    → ${decision.migration}`);
+      lines.push(`  ${decision.migration}  (${idOf(decision)})`);
     }
   }
   const rest = decisions.filter((decision) => decision.migration === undefined);
   if (rest.length > 0) {
-    lines.push("", "No action needed:");
-    for (const decision of rest) {
-      lines.push(`  ${decision.title}`);
-    }
+    lines.push("", `Also landed: ${rest.map(idOf).join(", ")} — docs/decisions/index.md`);
+  } else {
+    lines.push("", "Full reasoning: docs/decisions/index.md");
   }
-  lines.push("", "Full reasoning: docs/decisions/index.md");
   return lines.join("\n");
 }

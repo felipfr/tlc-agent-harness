@@ -101,17 +101,19 @@ test("only ad-NNN files count, so an index or a note is never announced as a dec
   }
 });
 
-// invariant: needs-action comes first and carries the note. A note the operator scrolls past is a note that did not
-// arrive.
+// invariant: what needs action comes first and carries the note. A note the operator scrolls past is a note that did
+// not arrive. The heading wording changed under AD-034; the ordering invariant did not.
 test("the digest puts what needs action first, with its instruction", () => {
   const digest = formatDecisionDigest([
     { id: "AD-001", title: "AD-001 — Quiet one" },
     { id: "AD-002", title: "AD-002 — Loud one", migration: "Run the thing." },
   ]);
-  assert.match(digest, /NEEDS YOUR ACTION \(1\)/);
-  assert.ok(digest.indexOf("Loud one") < digest.indexOf("Quiet one"), "the actionable one must come first");
-  assert.match(digest, /→ Run the thing\./);
-  assert.match(digest, /No action needed/);
+  assert.match(digest, /cannot detect for you \(1\)/);
+  assert.ok(
+    digest.indexOf("Run the thing.") < digest.indexOf("AD-001"),
+    "the actionable one must come first",
+  );
+  assert.match(digest, /Also landed: AD-001/);
 });
 
 test("a digest with nothing in it is empty, so an update with no decisions prints nothing", () => {
@@ -120,8 +122,8 @@ test("a digest with nothing in it is empty, so an update with no decisions print
 
 test("a digest where nothing needs action omits the action heading entirely", () => {
   const digest = formatDecisionDigest([{ id: "AD-001", title: "AD-001 — Quiet" }]);
-  assert.doesNotMatch(digest, /NEEDS YOUR ACTION/);
-  assert.match(digest, /Decisions that landed \(1\)/);
+  assert.doesNotMatch(digest, /cannot detect/);
+  assert.match(digest, /1 decision\(s\) landed/);
 });
 
 // why: the title already carries its own id, and printing both read as a stutter in the first draft.
@@ -153,13 +155,80 @@ test("a corrupt seen marker reads as absent rather than throwing on the update p
   }
 });
 
-// invariant: the three decisions that broke something this week each say what to do about it. Shipping the mechanism
-// with none of the content would be the announcement rail all over again.
-test("the decisions that broke something carry a migration note", () => {
+// hazard: this asserted that all three breaks carried a note. Two of the three are conditions `doctor` reports on its
+// own, and a note repeating a doctor row is the alarm that cries wolf — AD-034 removed them. What survives is the one
+// change nothing can detect for the operator.
+test("the break doctor cannot detect carries a note, and the ones it can do not", () => {
   const repoRoot = join(import.meta.dirname, "..", "..", "..", "..");
-  for (const file of ["ad-025.md", "ad-027.md", "ad-029.md"]) {
-    const decision = readDecision(repoRoot, file);
-    assert.ok(decision, file);
-    assert.ok((decision?.migration ?? "").length > 40, `${file} has no usable migration note`);
+  assert.ok((readDecision(repoRoot, "ad-027.md")?.migration ?? "").length > 40);
+  for (const detectable of ["ad-025.md", "ad-029.md", "ad-032.md", "ad-033.md"]) {
+    assert.equal(readDecision(repoRoot, detectable)?.migration, undefined, detectable);
   }
+});
+
+// hazard: an escaped quote inside a frontmatter value survived the outer-quote strip and reached the operator as a
+// literal backslash in their terminal. Seen in a real update run ([/decisions/ad-034.md](/decisions/ad-034.md)).
+test("an escaped quote in a note does not reach the operator as a backslash", () => {
+  const root = tempRoot();
+  try {
+    writeDecision(root, "ad-010.md", {
+      title: "AD-010 — Quoting",
+      description: "d",
+      migration: 'It said \\"detected but not wired\\" before.',
+    });
+    const note = readDecision(root, "ad-010.md")?.migration ?? "";
+    assert.equal(note.includes("\\"), false, note);
+    assert.match(note, /"detected but not wired"/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// hazard: the digest led with each decision's title — the author's reasoning, not the operator's situation — and
+// printed a shouting heading for every note. In a real run both notes said "run doctor", which update then did three
+// lines later, and neither applied to that project. An alarm on every update is one the reader scrolls past.
+test("the note is the headline and the decision id trails it", () => {
+  const digest = formatDecisionDigest([
+    {
+      id: "AD-002",
+      title: "AD-002 — Some internal reasoning nobody asked about",
+      migration: "Do the thing.",
+    },
+  ]);
+  assert.ok(digest.indexOf("Do the thing.") < digest.indexOf("AD-002"), "the note must come first");
+  assert.equal(digest.includes("Some internal reasoning"), false, "the title is not the operator's business");
+  assert.match(digest, /\(AD-002\)/);
+});
+
+test("the heading says what a note now means, and appears only when there is one", () => {
+  const withNote = formatDecisionDigest([{ id: "AD-002", title: "AD-002 — X", migration: "Do it." }]);
+  assert.match(withNote, /doctor cannot detect for you/);
+
+  const without = formatDecisionDigest([{ id: "AD-002", title: "AD-002 — X" }]);
+  assert.doesNotMatch(without, /cannot detect/);
+  assert.doesNotMatch(without, /NEEDS YOUR ACTION/i);
+});
+
+// why: the header points at doctor rather than repeating it, because update runs doctor immediately after.
+test("the digest points at the doctor run instead of asking for it", () => {
+  const digest = formatDecisionDigest([{ id: "AD-002", title: "AD-002 — X" }]);
+  assert.match(digest, /doctor runs below/);
+});
+
+test("decisions needing nothing collapse to a line of ids, not a list of titles", () => {
+  const digest = formatDecisionDigest([
+    { id: "AD-002", title: "AD-002 — First" },
+    { id: "AD-003", title: "AD-003 — Second" },
+  ]);
+  assert.match(digest, /Also landed: AD-002, AD-003/);
+  assert.equal(digest.includes("First"), false);
+});
+
+// invariant: a note exists only where doctor cannot see the condition. Five of the first six repeated a doctor row.
+test("exactly one shipped decision carries a note, and it is the one doctor cannot see", () => {
+  const repoRoot = join(import.meta.dirname, "..", "..", "..", "..");
+  const all = readDecisions(repoRoot, allDecisionFiles(repoRoot));
+  const withNotes = needsAction(all).map((decision) => decision.id);
+  assert.deepEqual(withNotes, ["AD-027"]);
+  assert.match(needsAction(all)[0]?.migration ?? "", /blocked stop/);
 });

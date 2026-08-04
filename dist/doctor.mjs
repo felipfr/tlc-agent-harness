@@ -1082,7 +1082,10 @@ function formatCapabilityDigest(caps) {
 `).trimEnd();
 }
 function formatDoctorWarn(cap) {
-  return `WARN: ${cap.title} off — ${cap.tradeOff} — ${ENABLE_HINT}`;
+  return `${cap.title} off — ${cap.tradeOff} — ${ENABLE_HINT}`;
+}
+function formatAvailableInventory(caps) {
+  return `${caps.length} available and not enabled: ${caps.map((cap) => cap.id).join(", ")}. ${ENABLE_HINT}`;
 }
 
 // src/core/capability/capability.store.ts
@@ -4694,7 +4697,10 @@ import { join as join20 } from "node:path";
 function frontmatterField(text, field) {
   const match = new RegExp(`^${field}:\\s*"?(.+?)"?\\s*$`, "m").exec(text);
   const value = match?.[1]?.trim();
-  return value === undefined || value === "" ? undefined : value;
+  if (value === undefined || value === "") {
+    return;
+  }
+  return value.replace(/\\(["'\\])/g, "$1");
 }
 function decisionsDir(repoRoot) {
   return join20(repoRoot, "docs", "decisions");
@@ -4735,26 +4741,29 @@ function allDecisionFiles(repoRoot) {
 function needsAction(decisions) {
   return decisions.filter((decision) => decision.migration !== undefined);
 }
+function idOf(decision) {
+  return decision.id;
+}
 function formatDecisionDigest(decisions) {
   if (decisions.length === 0) {
     return "";
   }
   const action = needsAction(decisions);
-  const lines = [`Decisions that landed (${decisions.length}):`];
+  const lines = [
+    `Harness updated. ${decisions.length} decision(s) landed; doctor runs below and reports what applies here.`
+  ];
   if (action.length > 0) {
-    lines.push("", `NEEDS YOUR ACTION (${action.length}):`);
+    lines.push("", `Needs a change doctor cannot detect for you (${action.length}):`);
     for (const decision of action) {
-      lines.push(`  ${decision.title}`, `    → ${decision.migration}`);
+      lines.push(`  ${decision.migration}  (${idOf(decision)})`);
     }
   }
   const rest = decisions.filter((decision) => decision.migration === undefined);
   if (rest.length > 0) {
-    lines.push("", "No action needed:");
-    for (const decision of rest) {
-      lines.push(`  ${decision.title}`);
-    }
+    lines.push("", `Also landed: ${rest.map(idOf).join(", ")} — docs/decisions/index.md`);
+  } else {
+    lines.push("", "Full reasoning: docs/decisions/index.md");
   }
-  lines.push("", "Full reasoning: docs/decisions/index.md");
   return lines.join(`
 `);
 }
@@ -5717,7 +5726,8 @@ var coreFacade = {
     listAvailableNotEnabled,
     listNewlyAnnounceable,
     formatCapabilityDigest,
-    formatDoctorWarn
+    formatDoctorWarn,
+    formatAvailableInventory
   },
   gate: {
     writeLastGate,
@@ -6025,11 +6035,17 @@ function checkCapabilities(root, runtimeRoot) {
   if (!catalog || !policy) {
     return [];
   }
-  return coreFacade.capability.listAvailableNotEnabled(policy, catalog).map((cap) => ({
-    level: "warn",
-    name: `capability ${cap.id}`,
-    detail: coreFacade.capability.formatDoctorWarn(cap)
-  }));
+  const available = coreFacade.capability.listAvailableNotEnabled(policy, catalog);
+  if (available.length === 0) {
+    return [];
+  }
+  return [
+    {
+      level: "ok",
+      name: "capabilities",
+      detail: coreFacade.capability.formatAvailableInventory(available)
+    }
+  ];
 }
 function checkPosture(root) {
   const posture = coreFacade.policy.resolveProjectPosture(root);
@@ -6179,8 +6195,16 @@ function formatReport(checks) {
   const marks = { ok: "OK  ", warn: "WARN", fail: "FAIL" };
   const lines = checks.map((c) => `${marks[c.level]}  ${c.name} — ${c.detail}`);
   const failed = checks.filter((c) => c.level === "fail").length;
+  const warned = checks.filter((c) => c.level === "warn").length;
   lines.push("");
-  lines.push(failed === 0 ? "doctor: all checks passed" : `doctor: ${failed} issue(s)`);
+  const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+  if (failed > 0) {
+    lines.push(`doctor: ${plural(failed, "failure")}${warned > 0 ? `, ${plural(warned, "warning")}` : ""}`);
+  } else if (warned > 0) {
+    lines.push(`doctor: no failures, ${plural(warned, "warning")} to read above`);
+  } else {
+    lines.push("doctor: all checks passed");
+  }
   return lines.join(`
 `);
 }

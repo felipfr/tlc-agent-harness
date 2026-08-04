@@ -48,5 +48,6 @@ Handoff section and a link back to this index.
 | [AD-031](/decisions/ad-031.md) | The decisions are the changelog, a breaking change carries its own instruction, and looking never changes anything | active |
 | [AD-032](/decisions/ad-032.md) | A hook is healthy when it can run, not when a marker string is present | active |
 | [AD-033](/decisions/ad-033.md) | The gate says what it costs, appendFiles stops promising what it cannot deliver, and a dead capability leaves | active |
+| [AD-034](/decisions/ad-034.md) | A warning that fires on a healthy install is not a warning, and the author reads the operator's output before anyone else does | active |
 
 Related: [/architecture.md](/architecture.md), [/concepts.md](/concepts.md), [/providers/index.md](/providers/index.md).

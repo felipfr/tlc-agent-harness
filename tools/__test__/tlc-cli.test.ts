@@ -860,7 +860,7 @@ describe("version and update --check", () => {
     });
     assert.match(text, /4 commit\(s\) would be pulled/);
     assert.match(text, /Nothing has changed yet/);
-    assert.match(text, /NEEDS YOUR ACTION/);
+    assert.match(text, /cannot detect for you/);
     assert.match(text, /Do X\./);
   });
 
