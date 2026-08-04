@@ -488,10 +488,38 @@ test("an unusable body is not judged by liveness", () => {
   assert.equal(isLockOwnerGone({ provider: "a" }), false);
 });
 
+function throwing(code: string): (pid: number) => void {
+  return () => {
+    const error = new Error(code) as NodeJS.ErrnoException;
+    error.code = code;
+    throw error;
+  };
+}
+
+// hazard: the first version of this used pid 1, on the reasoning that it always exists and answers EPERM to an
+// unprivileged caller. That is Unix reasoning — Windows has no pid 1 in that sense, so CI failed there while
+// passing on linux and macos. The third machine-dependent test in one session, so the probe is injected and the
+// branch is tested rather than the operating system.
 test("a process that exists but is not ours counts as alive", () => {
-  // why: pid 1 always exists. Unprivileged, `process.kill(1, 0)` throws EPERM — the process is there and
-  // belongs to someone else, which is alive for our purposes. As root it succeeds, which is also alive, so the
-  // expected answer is the same either way and the case is portable.
-  // hazard: treating EPERM as gone would reclaim a lock held by a live process running under another user.
-  assert.equal(isLockOwnerGone(lockBody({ pid: 1 })), false);
+  // why: EPERM means the process is there and belongs to someone else. Reclaiming on it would steal a lock from
+  // a live process running under another user.
+  assert.equal(isLockOwnerGone(lockBody(), hostname(), throwing("EPERM")), false);
+});
+
+test("only ESRCH means the owner is gone", () => {
+  assert.equal(isLockOwnerGone(lockBody(), hostname(), throwing("ESRCH")), true);
+  // invariant: anything unexpected reads as alive, because the age rule is the safe fallback and reclaiming a
+  // live holder is the expensive mistake.
+  for (const code of ["EINVAL", "EACCES", "UNKNOWN", ""]) {
+    assert.equal(isLockOwnerGone(lockBody(), hostname(), throwing(code)), false, code);
+  }
+});
+
+test("a probe that returns means the owner is alive", () => {
+  assert.equal(
+    isLockOwnerGone(lockBody(), hostname(), () => {
+      /* exists */
+    }),
+    false,
+  );
 });

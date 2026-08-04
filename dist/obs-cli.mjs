@@ -1423,7 +1423,10 @@ function isLockUnreadable(path, args) {
   }
   return !isUsableLockBody(readLockBody(path));
 }
-function isLockOwnerGone(body, thisHost = hostname()) {
+var probeProcess = (pid) => {
+  process.kill(pid, 0);
+};
+function isLockOwnerGone(body, thisHost = hostname(), probe = probeProcess) {
   if (!isUsableLockBody(body)) {
     return false;
   }
@@ -1435,7 +1438,7 @@ function isLockOwnerGone(body, thisHost = hostname()) {
     return false;
   }
   try {
-    process.kill(pid, 0);
+    probe(pid);
     return false;
   } catch (error) {
     return error.code === "ESRCH";

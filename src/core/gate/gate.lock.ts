@@ -95,7 +95,18 @@ export function isLockUnreadable(path: string, args: { now: number; graceMs: num
  * exists and belongs to another user, which is alive for our purposes. Anything unexpected is treated as
  * alive, because the age rule is the safe fallback and reclaiming a live holder is the expensive mistake.
  */
-export function isLockOwnerGone(body: unknown, thisHost: string = hostname()): boolean {
+/** Asks the OS whether a pid exists. Injected so the ESRCH and EPERM branches are testable on every platform. */
+export type ProcessProbe = (pid: number) => void;
+
+const probeProcess: ProcessProbe = (pid) => {
+  process.kill(pid, 0);
+};
+
+export function isLockOwnerGone(
+  body: unknown,
+  thisHost: string = hostname(),
+  probe: ProcessProbe = probeProcess,
+): boolean {
   if (!isUsableLockBody(body)) {
     return false;
   }
@@ -107,7 +118,7 @@ export function isLockOwnerGone(body: unknown, thisHost: string = hostname()): b
     return false;
   }
   try {
-    process.kill(pid, 0);
+    probe(pid);
     return false;
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === "ESRCH";
