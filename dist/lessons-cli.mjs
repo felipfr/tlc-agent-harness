@@ -2954,14 +2954,16 @@ function readConfigPair(root) {
     fromProject: readJsonFile(projectConfigPath(root)) ?? {}
   };
 }
+function postureOf(root, pair) {
+  return resolvePosture(root, pair.fromProject.mode ?? pair.fromUser.mode);
+}
 function resolveProjectPosture(root) {
-  const { fromUser, fromProject } = readConfigPair(root);
-  return resolvePosture(root, fromProject.mode ?? fromUser.mode);
+  return postureOf(root, readConfigPair(root));
 }
 function loadPolicy(root) {
-  const { fromUser, fromProject } = readConfigPair(root);
-  const merged = deepMerge(deepMerge(DEFAULTS, fromUser), fromProject);
-  merged.mode = resolvePosture(root, fromProject.mode ?? fromUser.mode).mode;
+  const pair = readConfigPair(root);
+  const merged = deepMerge(deepMerge(DEFAULTS, pair.fromUser), pair.fromProject);
+  merged.mode = postureOf(root, pair).mode;
   if (flagExists(root, "grind-on")) {
     merged.grind.enabled = true;
   }

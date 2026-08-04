@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { flagsDir, projectConfigPath, projectStateDir } from "../../../platform/paths.ts";
 import { DEFAULTS } from "../policy.defaults.ts";
-import { isUnderCodePaths, loadPolicy } from "../policy.loader.ts";
+import { isUnderCodePaths, loadPolicy, resolveProjectPosture } from "../policy.loader.ts";
 import { forProvider } from "../policy.types.ts";
 
 function tempRoot(): string {
@@ -309,6 +309,32 @@ test("two loads with different project overrides do not leak state into each oth
   } finally {
     rmSync(rootA, { recursive: true, force: true });
     rmSync(rootB, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+// invariant: the posture the hooks obey and the posture `status` and `doctor` report are one answer. They used to
+// be two derivations of the same fact, which is the only reason they could disagree (AD-020).
+test("the policy's mode and the reported resolution never disagree, whichever config supplies it", () => {
+  const root = tempRoot();
+  const home = tempRoot();
+  try {
+    withTlcHome(home, () => {
+      mkdirSync(home, { recursive: true });
+      writeFileSync(join(home, "config.json"), JSON.stringify({ mode: "paired" }));
+      // why: the project config differing from the user config is what makes the precedence observable. With
+      // both saying the same thing, a reversed precedence would pass.
+      writeProjectConfig(root, { mode: "focus" });
+
+      assert.equal(loadPolicy(root).mode, "focus");
+      assert.deepEqual(resolveProjectPosture(root), { mode: "focus", origin: "config" });
+
+      writeProjectConfig(root, {});
+      assert.equal(loadPolicy(root).mode, "paired");
+      assert.equal(resolveProjectPosture(root).mode, "paired");
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
   }
 });

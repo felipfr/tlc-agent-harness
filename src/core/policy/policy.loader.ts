@@ -57,20 +57,26 @@ function readConfigPair(root: string): ConfigPair {
   };
 }
 
+// hazard: written twice at first — once here and once inline in `loadPolicy` — so a change to which config wins
+// moved one caller and left the other. A discrimination sensor caught it: reversing the precedence in one place
+// failed one suite and left the other fully green.
+function postureOf(root: string, pair: ConfigPair): PostureResolution {
+  return resolvePosture(root, pair.fromProject.mode ?? pair.fromUser.mode);
+}
+
 /**
  * invariant: the resolution the loader itself applies, origin included. `status` and `doctor` need the origin
  * and the rejected value, which `Policy.mode` cannot carry — reading it from here is what stops either of them
  * from recomputing a posture and reporting the opposite of what the hooks resolved (AD-020).
  */
 export function resolveProjectPosture(root: string): PostureResolution {
-  const { fromUser, fromProject } = readConfigPair(root);
-  return resolvePosture(root, fromProject.mode ?? fromUser.mode);
+  return postureOf(root, readConfigPair(root));
 }
 
 export function loadPolicy(root: string): Policy {
-  const { fromUser, fromProject } = readConfigPair(root);
-  const merged = deepMerge(deepMerge(DEFAULTS, fromUser), fromProject);
-  merged.mode = resolvePosture(root, fromProject.mode ?? fromUser.mode).mode;
+  const pair = readConfigPair(root);
+  const merged = deepMerge(deepMerge(DEFAULTS, pair.fromUser), pair.fromProject);
+  merged.mode = postureOf(root, pair).mode;
 
   // why: grind is decided by its own switch and its own flag. Posture used to force it on, which meant a
   // surfacing preference silently overrode a capability with its own documented trade-off — the AD-020 defect.
