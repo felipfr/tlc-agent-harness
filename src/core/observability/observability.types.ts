@@ -28,7 +28,10 @@ export type ObsKind =
   | "cost.turn"
   | "cost.session_alert"
   | "ship.claim"
-  | "policy.deny";
+  | "policy.deny"
+  // why: an observation is not a refusal. Sharing the kind would inflate the denial count with readings the
+  // operator never lived through, which is the opposite of what the rail exists for.
+  | "policy.observe";
 
 export type CostPool = "provider_native" | "other" | "auto" | "unknown";
 
@@ -109,6 +112,7 @@ export const SIGNAL_KINDS = new Set<ObsKind>([
   "cost.session_alert",
   "ship.claim",
   "policy.deny",
+  "policy.observe",
 ]);
 
 export const LIVE_ALLOWLIST = new Set<ObsKind>([

@@ -52,6 +52,10 @@ export const DEFAULTS: Policy = {
     command: null,
     severity: "warn",
   },
+  observe: {
+    enabled: false,
+    rails: [],
+  },
   comments: {
     enabled: false,
     onViolation: "followup",

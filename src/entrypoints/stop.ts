@@ -360,6 +360,29 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
     }
   }
 
+  // invariant: observation runs before the enforcing branch and returns nothing. It answers the question a firing
+  // rate cannot — was the rule ever needed — by running the checker while the prose is absent. A measurement that
+  // can change what it measures is not a measurement ([/decisions/ad-027.md](/decisions/ad-027.md)).
+  if (
+    codeTargets.length > 0 &&
+    coreFacade.observe.shouldObserve(policy.observe, "comments", policy.comments.enabled)
+  ) {
+    const hits = await coreFacade.commentPolicy.scanAddedComments(root, codeTargets, policy.comments.mode);
+    coreFacade.observability.recordObs(root, obsConfigFor(policy), {
+      provider,
+      kind: "policy.observe",
+      sessionKey,
+      attrs: {
+        ...coreFacade.observe.observeAttrs({
+          rail: "comments",
+          violations: hits.length,
+          proseInjected: policy.comments.enabled,
+        }),
+        rule: "comments",
+      },
+    });
+  }
+
   if (policy.comments.enabled && policy.comments.onViolation === "followup" && codeTargets.length > 0) {
     const hits = await coreFacade.commentPolicy.scanAddedComments(root, codeTargets, policy.comments.mode);
     if (hits.length > 0) {

@@ -72,6 +72,7 @@ export type Policy = {
     command: string[] | null;
     severity: "warn" | "deny";
   };
+  observe: ObserveConfig;
   comments: {
     enabled: boolean;
     onViolation: "followup" | "off";
@@ -127,4 +128,15 @@ export type PartialPolicy = Partial<Policy> & {
   intelligence?: Partial<Policy["intelligence"]> & {
     lessons?: Partial<LessonsPolicyConfig>;
   };
+};
+
+/**
+ * why: observation runs a rail's checker while the rail is not enforcing, so the harness can tell "the model
+ * already does this" from "the rule works". Opt-in and default empty: it costs a diff scan per turn and answers a
+ * question only an operator who is asking it needs answered.
+ */
+export type ObserveConfig = {
+  enabled: boolean;
+  /** Rails to observe by name. An unknown name is inert rather than an error — a rail may not exist yet. */
+  rails: string[];
 };

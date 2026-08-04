@@ -752,3 +752,81 @@ test("a passing gate records a passing outcome", async () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// why: the reading that justifies deleting a rail. With the comment gate off and observation on, a narrating
+// comment is measured without the rule being injected — which separates "the model already avoids this" from
+// "the rule works". A firing rate alone cannot make that distinction.
+test("observation records a violation while the rail is off, and the turn is untouched", async () => {
+  const root = repoWithChange();
+  try {
+    writeProjectPolicy(root, {
+      version: 1,
+      codePaths: ["src"],
+      comments: { enabled: false },
+      observe: { enabled: true, rails: ["comments"] },
+    });
+    writeFileSync(join(root, "src", "app.ts"), "// increments the counter\nexport const a = 2;\n");
+    git(root, ["add", "-A"]);
+
+    const outcome = await runHandler(stopHandler, stdinOf(claudeStop(root)));
+
+    const observed = coreFacade.observability
+      .readSignalEvents(root, "obs.jsonl", 50)
+      .filter((event) => event.kind === "policy.observe");
+    assert.equal(observed.length, 1);
+    assert.equal(observed[0]?.attrs.rail, "comments");
+    assert.equal(observed[0]?.attrs.prose_injected, false);
+    assert.equal(observed[0]?.attrs.reading, "violated-without-prose");
+
+    // invariant: a measurement that can change what it measures is not a measurement.
+    assert.notEqual(outcome.decision.kind, "continue");
+    assert.equal(coreFacade.observability.getRollup(root, "claude-sess-1")?.denials, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("observation off leaves the turn byte-identical, and records nothing", async () => {
+  const root = repoWithChange();
+  try {
+    writeProjectPolicy(root, { version: 1, codePaths: ["src"], comments: { enabled: false } });
+    writeFileSync(join(root, "src", "app.ts"), "// increments the counter\nexport const a = 2;\n");
+    git(root, ["add", "-A"]);
+
+    await runHandler(stopHandler, stdinOf(claudeStop(root)));
+    assert.equal(
+      coreFacade.observability
+        .readSignalEvents(root, "obs.jsonl", 50)
+        .filter((event) => event.kind === "policy.observe").length,
+      0,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// invariant: an enforcing rail records through its own path. Observing it as well would double every reading.
+test("an enforcing rail is not observed as well", async () => {
+  const root = repoWithChange();
+  try {
+    writeProjectPolicy(root, {
+      version: 1,
+      codePaths: ["src"],
+      comments: { enabled: true, onViolation: "followup" },
+      observe: { enabled: true, rails: ["comments"] },
+    });
+    writeFileSync(join(root, "src", "app.ts"), "// increments the counter\nexport const a = 2;\n");
+    git(root, ["add", "-A"]);
+
+    const outcome = await runHandler(stopHandler, stdinOf(claudeStop(root)));
+    assert.equal(outcome.decision.kind, "continue");
+    assert.equal(
+      coreFacade.observability
+        .readSignalEvents(root, "obs.jsonl", 50)
+        .filter((event) => event.kind === "policy.observe").length,
+      0,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

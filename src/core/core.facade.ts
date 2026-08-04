@@ -20,6 +20,7 @@ import {
   scanAddedComments,
 } from "./comment-policy/comment-policy.service.ts";
 import { evaluateFloor } from "./floor/floor.service.ts";
+import { observeAttrs, shouldObserve } from "./observe/observe.service.ts";
 import { computeGateFingerprint, readLastGate, writeLastGate } from "./gate/gate.artifact.ts";
 import { isCommandResolutionFailure, isRecipeRunner, shouldAppendFiles } from "./gate/gate.command.ts";
 import { filesFromOutput } from "./gate/gate.findings.ts";
@@ -241,6 +242,10 @@ export const coreFacade = {
   },
   floor: {
     evaluateFloor,
+  },
+  observe: {
+    shouldObserve,
+    observeAttrs,
   },
   turn: {
     readTurnActivity,
