@@ -140,6 +140,40 @@ function checkPosture(root: string): Check {
   };
 }
 
+/**
+ * hazard: `observe.rails` accepted any string, and a name with no checker behind it did nothing and reported
+ * nothing. An operator who asked for an observation and got silence would read the silence as "the property always
+ * holds" — the worst possible misreading of a measurement rail
+ * ([/decisions/ad-029.md](/decisions/ad-029.md)).
+ */
+function checkObservedRails(root: string): Check[] {
+  const policy = coreFacade.policy.loadPolicy(root);
+  if (!policy.observe.enabled) {
+    return [];
+  }
+  const unusable = coreFacade.observe.unobservableRails(policy.observe.rails);
+  const observable = coreFacade.observe.OBSERVABLE_RAILS.join(" | ");
+  if (policy.observe.rails.length === 0) {
+    return [
+      {
+        level: "warn",
+        name: "observed rails",
+        detail: `observation is on with no rails listed, so nothing is measured. Set \`observe.rails\` to one or more of: ${observable}`,
+      },
+    ];
+  }
+  if (unusable.length === 0) {
+    return [{ level: "ok", name: "observed rails", detail: policy.observe.rails.join(", ") }];
+  }
+  return [
+    {
+      level: "warn",
+      name: "observed rails",
+      detail: `no checker exists for ${unusable.map((rail) => `\`${rail}\``).join(", ")}, so nothing is recorded for them. Observable today: ${observable}`,
+    },
+  ];
+}
+
 export function checkProjectPolicy(root: string): Check[] {
   const configPath = projectConfigPath(root);
   const stateDir = projectStateDir(root);
@@ -155,6 +189,7 @@ export function checkProjectPolicy(root: string): Check[] {
       detail: existsSync(stateDir) ? stateDir : `${stateDir} (created on first session)`,
     },
     checkPosture(root),
+    ...checkObservedRails(root),
   ];
 }
 

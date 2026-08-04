@@ -333,6 +333,10 @@ measurement. An enforcing rail is not observed, because it already records throu
 twice would double the readings. Records land under their own obs kind rather than sharing the refusal kind, so
 the denial counters stay honest ([/decisions/ad-027.md](/decisions/ad-027.md)).
 
+Only `comments` is observable today. A name with no checker records nothing, and `doctor` says so by name rather
+than leaving you to read the silence as "the property always holds" — which is the worst available misreading of a
+measurement rail ([/decisions/ad-029.md](/decisions/ad-029.md)).
+
 This is possible because the checker and the instruction are separate things here. In a system where the rule *is*
 the mechanism there is nothing to hold apart, and the only alternative — running the same task repeatedly with and
 without the rule — needs task repetition that real work does not offer.

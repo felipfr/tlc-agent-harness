@@ -345,3 +345,55 @@ describe("runChecks", () => {
     assert.equal(text.includes(".cursor/harness"), false);
   });
 });
+
+describe("checkObservedRails", () => {
+  function writeConfig(root: string, patch: Record<string, unknown>): void {
+    const path = projectConfigPath(root);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(patch), "utf8");
+  }
+
+  test("observation off adds no row at all", () => {
+    const root = newRoot();
+    writeConfig(root, { version: 1 });
+    assert.equal(
+      checkProjectPolicy(root).some((c) => c.name === "observed rails"),
+      false,
+    );
+  });
+
+  test("a rail with a checker is an ok row naming it", () => {
+    const root = newRoot();
+    writeConfig(root, { version: 1, observe: { enabled: true, rails: ["comments"] } });
+    const row = checkProjectPolicy(root).find((c) => c.name === "observed rails");
+    assert.equal(row?.level, "ok");
+    assert.match(row?.detail ?? "", /comments/);
+  });
+
+  // hazard: a name with no checker used to do nothing and report nothing. An operator reading that silence would
+  // conclude the property always holds, which is the worst possible misreading of a measurement rail.
+  test("a rail with no checker warns, quoting it and naming what is observable", () => {
+    const root = newRoot();
+    writeConfig(root, { version: 1, observe: { enabled: true, rails: ["plan-gate"] } });
+    const row = checkProjectPolicy(root).find((c) => c.name === "observed rails");
+    assert.equal(row?.level, "warn");
+    assert.match(row?.detail ?? "", /plan-gate/);
+    assert.match(row?.detail ?? "", /Observable today: comments/);
+  });
+
+  // why: observation on with an empty list is the shape `tlc harness init` produces if the operator says yes and
+  // names nothing. Silence there is the same misreading.
+  test("observation on with no rails listed warns that nothing is measured", () => {
+    const root = newRoot();
+    writeConfig(root, { version: 1, observe: { enabled: true, rails: [] } });
+    const row = checkProjectPolicy(root).find((c) => c.name === "observed rails");
+    assert.equal(row?.level, "warn");
+    assert.match(row?.detail ?? "", /nothing is measured/);
+  });
+
+  test("neither warn fails the doctor run", () => {
+    const root = newRoot();
+    writeConfig(root, { version: 1, observe: { enabled: true, rails: ["nope"] } });
+    assert.equal(exitCodeFor(checkProjectPolicy(root)), 0);
+  });
+});

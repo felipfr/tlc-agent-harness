@@ -55,7 +55,13 @@ import {
   recordObs,
 } from "./observability/observability.service.ts";
 import { getRollup, pruneObs, pruneSpool, readSignalEvents } from "./observability/observability.store.ts";
-import { observeAttrs, shouldObserve } from "./observe/observe.service.ts";
+import {
+  isObservableRail,
+  OBSERVABLE_RAILS,
+  observeAttrs,
+  shouldObserve,
+  unobservableRails,
+} from "./observe/observe.service.ts";
 import { detectDeviations, detectPlan } from "./plan/plan.detect.ts";
 import { evaluatePlanGate, planVerdict } from "./plan/plan.service.ts";
 import { guardPolicySurface } from "./policy/policy.guard.ts";
@@ -260,6 +266,9 @@ export const coreFacade = {
   observe: {
     shouldObserve,
     observeAttrs,
+    OBSERVABLE_RAILS,
+    isObservableRail,
+    unobservableRails,
   },
   attest: {
     appendAttestation,

@@ -15,6 +15,26 @@ import type { ObserveConfig } from "../policy/policy.types.ts";
  * invariant: observation never returns a Decision and never reaches the turn. A measurement that can change what
  * it measures is not a measurement.
  */
+/**
+ * hazard: `observe.rails` accepted any string, and a name with no checker behind it did nothing and said nothing —
+ * the exact defect this project keeps removing, a config value nothing reads. Forward-compatible inertness is fine;
+ * silent inertness is not. This list is the one source of what can actually be observed, read by the classifier,
+ * by `doctor`, and by the capability catalog's own prompt ([/decisions/ad-029.md](/decisions/ad-029.md)).
+ *
+ * invariant: a name enters this list in the same change that adds its `shouldObserve` call site. A name here with
+ * no call site would advertise an observation that never happens, which is the same lie pointed the other way.
+ */
+export const OBSERVABLE_RAILS: readonly string[] = ["comments"];
+
+export function isObservableRail(rail: string): boolean {
+  return OBSERVABLE_RAILS.includes(rail);
+}
+
+/** why: names the rails that were asked for and cannot be delivered, so a surface can report them by name. */
+export function unobservableRails(rails: readonly string[]): string[] {
+  return rails.filter((rail) => !isObservableRail(rail));
+}
+
 export type ObserveVerdict = {
   rail: string;
   /** How many times the checker found the property violated. Zero is the interesting case. */
@@ -31,7 +51,10 @@ export type ObserveVerdict = {
  * it as well would double-count — the operator would read twice the interruptions they lived through.
  */
 export function shouldObserve(config: ObserveConfig, rail: string, enforcing: boolean): boolean {
-  return config.enabled && !enforcing && config.rails.includes(rail);
+  // hazard: this answered yes for a rail with no checker behind it. Nothing called it for such a rail, so nothing
+  // broke — but the function's contract said "observe this" about something unobservable, which is exactly the gap
+  // a future call site would fall into.
+  return config.enabled && !enforcing && isObservableRail(rail) && config.rails.includes(rail);
 }
 
 export function observeAttrs(verdict: ObserveVerdict): Record<string, unknown> {

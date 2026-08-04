@@ -2881,8 +2881,15 @@ function recordFromEvent(root, config, event, extra = {}) {
 }
 
 // src/core/observe/observe.service.ts
+var OBSERVABLE_RAILS = ["comments"];
+function isObservableRail(rail) {
+  return OBSERVABLE_RAILS.includes(rail);
+}
+function unobservableRails(rails) {
+  return rails.filter((rail) => !isObservableRail(rail));
+}
 function shouldObserve(config, rail, enforcing) {
-  return config.enabled && !enforcing && config.rails.includes(rail);
+  return config.enabled && !enforcing && isObservableRail(rail) && config.rails.includes(rail);
 }
 function observeAttrs(verdict) {
   return {
@@ -4731,7 +4738,10 @@ var coreFacade = {
   },
   observe: {
     shouldObserve,
-    observeAttrs
+    observeAttrs,
+    OBSERVABLE_RAILS,
+    isObservableRail,
+    unobservableRails
   },
   attest: {
     appendAttestation,

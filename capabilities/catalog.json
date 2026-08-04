@@ -257,7 +257,7 @@
       "defaultOn": false,
       "sinceCatalogVersion": 9,
       "asks": [
-        "rails (rail names to observe)"
+        "rails \u2014 the rails to observe, chosen from the observable set (today: comments). A name with no checker records nothing and doctor reports it"
       ]
     }
   ]

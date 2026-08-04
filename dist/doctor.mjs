@@ -3720,8 +3720,15 @@ function recordFromEvent(root, config, event, extra = {}) {
 }
 
 // src/core/observe/observe.service.ts
+var OBSERVABLE_RAILS = ["comments"];
+function isObservableRail(rail) {
+  return OBSERVABLE_RAILS.includes(rail);
+}
+function unobservableRails(rails) {
+  return rails.filter((rail) => !isObservableRail(rail));
+}
 function shouldObserve(config, rail, enforcing) {
-  return config.enabled && !enforcing && config.rails.includes(rail);
+  return config.enabled && !enforcing && isObservableRail(rail) && config.rails.includes(rail);
 }
 function observeAttrs(verdict) {
   return {
@@ -5558,7 +5565,10 @@ var coreFacade = {
   },
   observe: {
     shouldObserve,
-    observeAttrs
+    observeAttrs,
+    OBSERVABLE_RAILS,
+    isObservableRail,
+    unobservableRails
   },
   attest: {
     appendAttestation,
@@ -5708,6 +5718,33 @@ function checkPosture(root) {
     detail: `\`${posture.invalid}\` is not a posture — running as ${posture.mode}. Accepted: ${coreFacade.policy.OPERATOR_MODES.join(" | ")}. Fix \`mode\` in ${projectConfigPath(root)}, or run: tlc harness mode <${coreFacade.policy.OPERATOR_MODES.join("|")}>`
   };
 }
+function checkObservedRails(root) {
+  const policy = coreFacade.policy.loadPolicy(root);
+  if (!policy.observe.enabled) {
+    return [];
+  }
+  const unusable = coreFacade.observe.unobservableRails(policy.observe.rails);
+  const observable = coreFacade.observe.OBSERVABLE_RAILS.join(" | ");
+  if (policy.observe.rails.length === 0) {
+    return [
+      {
+        level: "warn",
+        name: "observed rails",
+        detail: `observation is on with no rails listed, so nothing is measured. Set \`observe.rails\` to one or more of: ${observable}`
+      }
+    ];
+  }
+  if (unusable.length === 0) {
+    return [{ level: "ok", name: "observed rails", detail: policy.observe.rails.join(", ") }];
+  }
+  return [
+    {
+      level: "warn",
+      name: "observed rails",
+      detail: `no checker exists for ${unusable.map((rail) => `\`${rail}\``).join(", ")}, so nothing is recorded for them. Observable today: ${observable}`
+    }
+  ];
+}
 function checkProjectPolicy(root) {
   const configPath = projectConfigPath(root);
   const stateDir = projectStateDir(root);
@@ -5722,7 +5759,8 @@ function checkProjectPolicy(root) {
       name: "state dir",
       detail: existsSync24(stateDir) ? stateDir : `${stateDir} (created on first session)`
     },
-    checkPosture(root)
+    checkPosture(root),
+    ...checkObservedRails(root)
   ];
 }
 function checkGlobalCommands(home) {

@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { observeAttrs, shouldObserve } from "../observe.service.ts";
+import {
+  isObservableRail,
+  OBSERVABLE_RAILS,
+  observeAttrs,
+  shouldObserve,
+  unobservableRails,
+} from "../observe.service.ts";
 
 const ON = { enabled: true, rails: ["comments"] };
 
@@ -46,4 +52,23 @@ test("the record carries the count and the rail, not only the reading", () => {
   assert.equal(attrs.rail, "comments");
   assert.equal(attrs.violations, 2);
   assert.equal(attrs.prose_injected, false);
+});
+
+// hazard: `observe.rails` accepted any string, and a name with no checker did nothing and said nothing. An operator
+// who asked for an observation and got silence would read the silence as "the property always holds", which is the
+// worst possible misreading of a measurement rail.
+test("an unobservable rail name is reported, not silently accepted", () => {
+  assert.deepEqual(unobservableRails(["comments"]), []);
+  assert.deepEqual(unobservableRails(["plan-gate", "comments", "made-up"]), ["plan-gate", "made-up"]);
+});
+
+// invariant: a name enters the list in the same change that adds its call site. A name here with no checker would
+// advertise an observation that never happens — the same lie, pointed the other way.
+test("every observable rail is one the stop path actually observes", () => {
+  assert.deepEqual([...OBSERVABLE_RAILS], ["comments"]);
+  assert.ok(OBSERVABLE_RAILS.every((rail) => isObservableRail(rail)));
+});
+
+test("observation is refused for a rail that has no checker, even when it is listed", () => {
+  assert.equal(shouldObserve({ enabled: true, rails: ["made-up"] }, "made-up", false), false);
 });
