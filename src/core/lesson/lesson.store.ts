@@ -29,6 +29,7 @@ function coreLesson(input: CoreLessonInput): HarnessLesson {
     status: "active",
     confidence: 1,
     hitCount: 1,
+    pinned: false,
     refs: [],
     sessionKeys: [],
     injectedCount: 0,
@@ -137,6 +138,7 @@ function normalizeLesson(raw: HarnessLesson, tier: LessonTier): HarnessLesson {
   return {
     ...raw,
     tier,
+    pinned: raw.pinned === true,
     refs: Array.isArray(raw.refs) ? raw.refs : [],
     sessionKeys: Array.isArray(raw.sessionKeys) ? raw.sessionKeys : [],
     injectedCount: Number.isFinite(raw.injectedCount) ? raw.injectedCount : 0,

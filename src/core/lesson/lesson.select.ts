@@ -146,9 +146,9 @@ export async function selectLessons(args: {
   gate?: string;
   text?: string;
   now?: Date;
-}): Promise<{ lessons: HarnessLesson[]; usedIds: string[] }> {
+}): Promise<{ lessons: HarnessLesson[]; usedIds: string[]; omitted: number }> {
   if (!args.config.enabled) {
-    return { lessons: [], usedIds: [] };
+    return { lessons: [], usedIds: [], omitted: 0 };
   }
 
   const maxCount = args.mode === "session" ? args.config.maxInjectSession : args.config.maxInjectRetry;
@@ -174,9 +174,17 @@ export async function selectLessons(args: {
     }))
     .sort((a, b) => b.score - a.score || b.lesson.priority - a.lesson.priority);
 
+  // invariant: pinned first, in the operator's own order, before anything scored. Everything else about a pinned
+  // lesson still applies — staleness, validity, mode and the char budget all bind
+  // ([/decisions/ad-043.md](/decisions/ad-043.md)).
+  const ordered = [
+    ...ranked.filter((row) => row.lesson.pinned),
+    ...ranked.filter((row) => !row.lesson.pinned),
+  ];
+
   const picked: HarnessLesson[] = [];
   let chars = 0;
-  for (const row of ranked) {
+  for (const row of ordered) {
     if (picked.length >= maxCount) {
       break;
     }
@@ -194,5 +202,8 @@ export async function selectLessons(args: {
 
   const usedIds = picked.filter((l) => l.source !== "core").map((l) => l.id);
   await touchAccessed(args.projectDir, usedIds, now);
-  return { lessons: picked, usedIds: picked.map((l) => l.id) };
+  // hazard: `maxInjectSession` defaults to 5 and `maxCharsSession` to 900, which fits about two rendered blocks —
+  // so the count promises five and delivers two, silently. Whoever reads the injected block has to be able to tell
+  // that eligible lessons were dropped ([/decisions/ad-043.md](/decisions/ad-043.md)).
+  return { lessons: picked, usedIds: picked.map((l) => l.id), omitted: ordered.length - picked.length };
 }

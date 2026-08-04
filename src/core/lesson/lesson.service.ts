@@ -94,6 +94,7 @@ export async function recordLessonFromFailure(args: {
     confidence: 0.55,
     hitCount: 1,
     priority: 70,
+    pinned: false,
     refs: [],
     sessionKeys: withSessionKey([], args.sessionKey),
     injectedCount: 0,

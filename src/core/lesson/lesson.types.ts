@@ -43,6 +43,15 @@ export type HarnessLesson = {
   confidence: number;
   hitCount: number;
   priority: number;
+  /**
+   * A standing rule the operator does not want ranked. Pinned lessons are placed before every scored lesson,
+   * still subject to staleness, validity and the char budget.
+   *
+   * why: ranking is built for lessons the harness inferred from failures. An instruction the operator wrote
+   * deliberately competes with those on confidence and priority and loses to a shipped seed, so it is written,
+   * stored, correct, and never delivered ([/decisions/ad-043.md](/decisions/ad-043.md)).
+   */
+  pinned: boolean;
   /** What makes this lesson true. Empty means it is about conduct and cannot go stale. */
   refs: LessonLink[];
   staleReason?: LessonLinkStatus;

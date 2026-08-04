@@ -1869,7 +1869,8 @@ function buildAuthoredLesson(input) {
     status: "active",
     confidence: 0.8,
     hitCount: 1,
-    priority: 0.8,
+    priority: 80,
+    pinned: input.pinned === true,
     refs: input.refs ?? [],
     ...input.validTo ? { validTo: input.validTo } : {},
     sessionKeys: [],
@@ -2043,6 +2044,7 @@ function coreLesson(input) {
     status: "active",
     confidence: 1,
     hitCount: 1,
+    pinned: false,
     refs: [],
     sessionKeys: [],
     injectedCount: 0,
@@ -2135,6 +2137,7 @@ function normalizeLesson(raw, tier) {
   return {
     ...raw,
     tier,
+    pinned: raw.pinned === true,
     refs: Array.isArray(raw.refs) ? raw.refs : [],
     sessionKeys: Array.isArray(raw.sessionKeys) ? raw.sessionKeys : [],
     injectedCount: Number.isFinite(raw.injectedCount) ? raw.injectedCount : 0,
@@ -2370,7 +2373,7 @@ function rankLessonsForSync(lessons) {
 }
 async function selectLessons(args) {
   if (!args.config.enabled) {
-    return { lessons: [], usedIds: [] };
+    return { lessons: [], usedIds: [], omitted: 0 };
   }
   const maxCount = args.mode === "session" ? args.config.maxInjectSession : args.config.maxInjectRetry;
   const maxChars = args.mode === "session" ? args.config.maxCharsSession : args.config.maxCharsRetry;
@@ -2385,9 +2388,13 @@ async function selectLessons(args) {
       now
     })
   })).sort((a, b) => b.score - a.score || b.lesson.priority - a.lesson.priority);
+  const ordered = [
+    ...ranked.filter((row) => row.lesson.pinned),
+    ...ranked.filter((row) => !row.lesson.pinned)
+  ];
   const picked = [];
   let chars = 0;
-  for (const row of ranked) {
+  for (const row of ordered) {
     if (picked.length >= maxCount) {
       break;
     }
@@ -2404,7 +2411,7 @@ async function selectLessons(args) {
   }
   const usedIds = picked.filter((l) => l.source !== "core").map((l) => l.id);
   await touchAccessed(args.projectDir, usedIds, now);
-  return { lessons: picked, usedIds: picked.map((l) => l.id) };
+  return { lessons: picked, usedIds: picked.map((l) => l.id), omitted: ordered.length - picked.length };
 }
 
 // src/core/lesson/lesson.garden.ts
@@ -2611,6 +2618,7 @@ async function recordLessonFromFailure(args) {
     confidence: 0.55,
     hitCount: 1,
     priority: 70,
+    pinned: false,
     refs: [],
     sessionKeys: withSessionKey([], args.sessionKey),
     injectedCount: 0,
@@ -6167,11 +6175,16 @@ function effectiveBlockedPatterns(configured, provider) {
 function renderLessonLine(lesson) {
   return coreFacade.lesson.renderLessonBlock(lesson);
 }
-function formatLessonsBlock(lessons, title) {
+function formatLessonsBlock(lessons, title, omitted = 0) {
   if (lessons.length === 0) {
     return "";
   }
-  return [title, ...lessons.map(renderLessonLine)].join(`
+  const lines = [title, ...lessons.map(renderLessonLine)];
+  if (omitted > 0) {
+    const noun = omitted === 1 ? "lesson" : "lessons";
+    lines.push(`  (${omitted} more eligible ${noun} omitted under the char budget — raise maxCharsSession to see them)`);
+  }
+  return lines.join(`
 `);
 }
 
@@ -6400,8 +6413,8 @@ async function failGate(args) {
     mode: "retry",
     gate: args.gate,
     text: hits >= 2 ? `stagnation ${args.artifact.outputTail}` : args.artifact.outputTail
-  }) : { lessons: [], usedIds: [] };
-  const lessonsBlock = formatLessonsBlock(selected.lessons, "Lessons for this gate (ranked — apply before inventing a new plan):");
+  }) : { lessons: [], usedIds: [], omitted: 0 };
+  const lessonsBlock = formatLessonsBlock(selected.lessons, "Lessons for this gate (ranked — apply before inventing a new plan):", selected.omitted);
   if (selected.usedIds.length > 0) {
     await coreFacade.handoff.patchHandoff(args.root, args.provider, {
       slice: {

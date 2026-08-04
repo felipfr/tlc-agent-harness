@@ -105,9 +105,23 @@ export function renderLessonLine(lesson: HarnessLesson): string {
   return coreFacade.lesson.renderLessonBlock(lesson);
 }
 
-export function formatLessonsBlock(lessons: HarnessLesson[], title: string): string {
+/**
+ * why: `omitted` is rendered because the char budget silently cuts below `maxInjectSession` — the count promises
+ * five and a 900-char budget fits about two. A reader who cannot tell that eligible lessons were dropped has no
+ * way to know the budget is the binding constraint ([/decisions/ad-043.md](/decisions/ad-043.md)).
+ *
+ * invariant: silent when nothing was dropped. A note on every healthy turn is one more line to skim past.
+ */
+export function formatLessonsBlock(lessons: HarnessLesson[], title: string, omitted = 0): string {
   if (lessons.length === 0) {
     return "";
   }
-  return [title, ...lessons.map(renderLessonLine)].join("\n");
+  const lines = [title, ...lessons.map(renderLessonLine)];
+  if (omitted > 0) {
+    const noun = omitted === 1 ? "lesson" : "lessons";
+    lines.push(
+      `  (${omitted} more eligible ${noun} omitted under the char budget — raise maxCharsSession to see them)`,
+    );
+  }
+  return lines.join("\n");
 }

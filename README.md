@@ -240,7 +240,7 @@ See `tlc harness help architecture` or [`docs/architecture.md`](docs/architectur
 | `tlc harness obs live` / `obs report` | Signal / session rollup |
 | `tlc harness prices refresh` / `lookup` | Cost catalogs |
 | `tlc harness lessons list` | Lessons across the three tiers, with staleness and effectiveness |
-| `tlc harness lessons add "…" [--ref path:symbol] [--global]` | Write a lesson; `--ref` retires it when that stops resolving |
+| `tlc harness lessons add "…" [--ref path:symbol] [--global] [--pin]` | Write a lesson; `--ref` retires it when that stops resolving, `--pin` puts it ahead of ranking |
 | `tlc harness init --minimal` | Project stub |
 
 ## Connect a project

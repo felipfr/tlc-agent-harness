@@ -35,6 +35,7 @@ function lesson(partial: Partial<HarnessLesson> & Pick<HarnessLesson, "id" | "in
     hitCount: 2,
     priority: 50,
     tier: "project",
+    pinned: false,
     refs: [],
     sessionKeys: [],
     injectedCount: 0,
@@ -99,10 +100,106 @@ test("selectLessons returns nothing when lessons are disabled", async () => {
       config: { ...DEFAULT_LESSONS_POLICY, enabled: false },
       mode: "session",
     });
-    assert.deepEqual(result, { lessons: [], usedIds: [] });
+    assert.deepEqual(result, { lessons: [], usedIds: [], omitted: 0 });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+/**
+ * hazard: `maxInjectSession` defaults to 5 and `maxCharsSession` to 900, which fits about two rendered blocks. The
+ * count promised five and the budget delivered two, with nothing anywhere saying so — the operator's own rule was
+ * written, ranked, and never reached a turn ([/decisions/ad-043.md](/decisions/ad-043.md)).
+ */
+test("selectLessons reports how many eligible lessons the char budget dropped", async () => {
+  const root = tempRoot();
+  try {
+    const result = await selectLessons({
+      projectDir: root,
+      config: { ...DEFAULT_LESSONS_POLICY, enabled: true, maxInjectSession: 5, maxCharsSession: 400 },
+      mode: "session",
+    });
+    assert.ok(result.lessons.length < 5, "the budget must bind for this case to mean anything");
+    assert.ok(result.omitted > 0, "eligible lessons were dropped and must be counted");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a budget that fits everything reports nothing omitted", async () => {
+  const root = tempRoot();
+  try {
+    const result = await selectLessons({
+      projectDir: root,
+      config: {
+        ...DEFAULT_LESSONS_POLICY,
+        enabled: true,
+        maxInjectSession: 50,
+        maxCharsSession: 100_000,
+      },
+      mode: "session",
+    });
+    assert.equal(result.omitted, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * hazard: a rule the operator wrote deliberately competed on score with six shipped seeds and lost — priority 80
+ * and confidence 0.8 against priority 100 and confidence 1 — so under a 900-char budget it was written, stored,
+ * correct and never delivered ([/decisions/ad-043.md](/decisions/ad-043.md)).
+ */
+test("a pinned lesson is injected ahead of every scored lesson", async () => {
+  const root = tempRoot();
+  try {
+    await writeProjectLessons(root, [
+      lesson({ id: "manual:standing", instruction: "the standing rule", pinned: true, priority: 1 }),
+    ]);
+    const result = await selectLessons({
+      projectDir: root,
+      config: { ...DEFAULT_LESSONS_POLICY, enabled: true, maxInjectSession: 1, maxCharsSession: 100_000 },
+      mode: "session",
+    });
+    assert.deepEqual(
+      result.lessons.map((l) => l.id),
+      ["manual:standing"],
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// invariant: pinning changes order, not eligibility. A pinned lesson that is stale still must not reach the turn.
+test("a pinned lesson that is stale is still withheld", async () => {
+  const root = tempRoot();
+  try {
+    await writeProjectLessons(root, [
+      lesson({
+        id: "manual:standing",
+        instruction: "the standing rule",
+        pinned: true,
+        staleReason: "path-missing",
+      }),
+    ]);
+    const result = await selectLessons({
+      projectDir: root,
+      config: { ...DEFAULT_LESSONS_POLICY, enabled: true, maxInjectSession: 50, maxCharsSession: 100_000 },
+      mode: "session",
+    });
+    assert.equal(
+      result.lessons.some((l) => l.id === "manual:standing"),
+      false,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an authored lesson carries a priority on the same scale as every other producer", async () => {
+  const { buildAuthoredLesson } = await import("../lesson.authored.ts");
+  const authored = buildAuthoredLesson({ instruction: "x" });
+  assert.ok(authored.priority >= 70, `authored priority ${authored.priority} is off the 70..100 scale`);
 });
 
 test("selectLessons ranks a project lesson matching the gate above the built-in seed lessons", async () => {

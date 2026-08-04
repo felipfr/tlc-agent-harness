@@ -88,9 +88,11 @@ not graded by `test`.
 |---------|---------|
 | `helped n/m` | present when that gate recovered, at least once |
 | `neutral 0/m` | present at m failures and no recoveries |
-| `unproven` | injected and never graded — **no evidence**, not "fine" |
+| `unproven` | **injected** and never graded — no evidence, not "fine" |
+| `not-injected` | never shown yet, so there has been nothing to measure |
 
-`unproven` is its own state and `doctor` reports it as a warning. The rate is `null` over zero graded
+`unproven` is its own state and `doctor` reports it as a warning; `not-injected` is kept apart from it so a
+store of brand-new lessons does not read as a store of unjustified ones. The rate is `null` over zero graded
 injections, never `0` — zero would read as "measured and it never helped", which is a claim the harness has not
 earned.
 
@@ -157,6 +159,28 @@ full, omit lower-ranked lessons entirely and append `_(N more active lessons omi
 Session inject stops at the first lesson that does not fit (no filler with lower-ranked leftovers).
 Quarantine never injects. Stale and out-of-window lessons are excluded **before** ranking, not scored low.
 
+**The budget usually binds, and says so.** `maxCharsSession` defaults to 900 and a rendered block is four lines,
+so about two fit while `maxInjectSession` says five. The injected block names what it dropped:
+
+```text
+  (3 more eligible lessons omitted under the char budget — raise maxCharsSession to see them)
+```
+
+## Pinning a standing rule
+
+Ranking weighs recurrence, decay and gate match — all estimates about a lesson the harness *inferred*. An
+instruction the operator wrote deliberately has no recurrence to accumulate, so making it compete on score is a
+category error: it loses to a shipped seed and never arrives.
+
+```bash
+tlc harness lessons add "Never declare done without an end-to-end run pasted into the reply." --global --pin
+```
+
+A pinned lesson is placed **before every scored lesson**, in store order. Everything else still binds — staleness,
+the validity window, mode filtering and the char budget — so pinning changes order, not eligibility, and a pinned
+rule naming a renamed file is withheld like any other. Nothing caps how many can be pinned; the budget bounds
+delivery and `lessons list` marks each one `PINNED` ([/decisions/ad-043.md](/decisions/ad-043.md)).
+
 ## Provider views
 
 `.tlc/harness/lessons.md` is the source of truth. When `syncRulesFile` is on, each provider renders its own
@@ -187,7 +211,7 @@ The synced file carries only what would actually be injected, so a withheld less
 
 ```bash
 tlc harness lessons add "<instruction>" [--gate <name>] [--avoid "..."] [--prefer "..."] \
-                        [--tokens a,b] [--ref path[:symbol]] [--until <iso>] [--global]
+                        [--tokens a,b] [--ref path[:symbol]] [--until <iso>] [--global] [--pin]
 tlc harness lessons promote <id>          # copy a project lesson into the global tier
 tlc harness lessons list [--all] [--json]
 tlc harness lessons show <id>
@@ -197,10 +221,32 @@ tlc harness lessons path
 ```
 
 `--ref` may repeat. `list` marks a withheld lesson `WITHHELD` and reports `effect=`, `validity=`, `stale=` and
-`refs=` per lesson, with tier totals and both store paths at the end.
+`refs=` per lesson.
+
+**Two different counts at the end, on purpose.** The tier line counts what would be *injected*, after the nearer
+tier wins a duplicate id. The store lines count what is *on disk*. A promoted lesson lives in both stores and
+resolves to the project copy, so without the second pair an operator reads `core=6 project=5` and concludes
+`promote` did nothing:
+
+```text
+11 lessons — core=6 project=5
+stale=0 out-of-window=0 unproven=0 not-injected=11
+project store: <repo>/.tlc/harness/state/lessons.json  (5 lessons)
+global store:  ~/.tlc/harness/state/lessons.json  (5 lessons, 5 also in this project)
+```
 
 `doctor` reports stale, out-of-window and unproven lessons as separate warnings, and stays silent when the
-capability is off or the writable tiers are empty.
+capability is off or the writable tiers are empty. When everything is healthy it prints one row:
+
+```text
+OK    lesson health — 10 lessons across the writable tiers, none stale, none out of window
+```
+
+## Reading the store from a test
+
+The suite runs with `TLC_HOME` pointed at an empty temporary directory, so no test can read the lessons an
+operator happened to promote on that machine. A test that needs the real runtime home sets it explicitly
+([/decisions/ad-042.md](/decisions/ad-042.md)).
 
 ## Trade-offs
 

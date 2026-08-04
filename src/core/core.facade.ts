@@ -153,7 +153,7 @@ import { clearFramingMarker } from "./untrusted/untrusted.store.ts";
 
 async function selectLessons(
   args: Parameters<typeof selectLessonsInner>[0],
-): Promise<{ lessons: HarnessLesson[]; usedIds: string[] }> {
+): Promise<{ lessons: HarnessLesson[]; usedIds: string[]; omitted: number }> {
   return await selectLessonsInner(args);
 }
 

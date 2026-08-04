@@ -44,6 +44,7 @@ function lesson(overrides: Partial<HarnessLesson> = {}): HarnessLesson {
     hitCount: 2,
     priority: 1,
     tier: "project",
+    pinned: false,
     refs: [],
     sessionKeys: [],
     injectedCount: 0,

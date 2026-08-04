@@ -6,8 +6,8 @@ import { main } from "./run.ts";
 import {
   currentGitBranch,
   currentGitSha,
+  formatLessonsBlock,
   obsConfigFor,
-  renderLessonLine,
   sessionIdFromKey,
 } from "./support.ts";
 
@@ -92,11 +92,13 @@ export const sessionStartHandler: Handler = async (
       mode: "session",
       text: [handoff.blockers, handoff.next_action].filter(Boolean).join(" "),
     });
-    if (selected.lessons.length > 0) {
-      lines.push("", "Lessons (ranked; follow these — do not repeat known failures):");
-      for (const lesson of selected.lessons) {
-        lines.push(renderLessonLine(lesson));
-      }
+    const block = formatLessonsBlock(
+      selected.lessons,
+      "Lessons (ranked; follow these — do not repeat known failures):",
+      selected.omitted,
+    );
+    if (block) {
+      lines.push("", block);
     }
   }
 

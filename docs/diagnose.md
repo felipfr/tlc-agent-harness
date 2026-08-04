@@ -68,6 +68,31 @@ Re-run the platform installer, or ensure the CLI shim is on PATH:
 3. Confirm `.tlc/harness/state/` is writable in the project.
 4. `tlc harness obs live` after a prompt submit / stop / denial.
 
+## A lesson is not reaching the turn
+
+`tlc harness lessons list` answers it directly — a lesson that is being withheld is marked `WITHHELD` and the
+notes on its line say why.
+
+| Note | Meaning | What to do |
+| --- | --- | --- |
+| `stale=path-missing` / `symbol-missing` | a `--ref` no longer resolves | restore or rename the ref, then `tlc harness lessons garden` |
+| `validity=expired` | past its `--until` | the next garden prunes it; write a new one |
+| `validity=pending` | its window has not opened | wait, or rewrite without `--from` |
+| `validity=invalid` | an unparseable bound, so it fails closed | rewrite with an ISO date |
+| `WITHHELD` with no note | a **global** lesson whose refs do not resolve in this repository | expected — it applies where it came from |
+
+Nothing withheld and still absent? Then it lost on rank or budget, not on health:
+
+1. `enabled=true` on the last line of `lessons list`.
+2. `status` must be `active` for session injection; a `candidate` only shows on a matching retry.
+3. **The budget usually binds.** `maxCharsSession` defaults to 900 and fits about two blocks while
+   `maxInjectSession` says five. The injected block names what it dropped; raising `maxCharsSession` is the fix.
+4. **A rule you consider non-negotiable should be pinned, not ranked** — `lessons add … --pin` puts it ahead of
+   every scored lesson ([/decisions/ad-043.md](/decisions/ad-043.md)).
+
+`tlc harness doctor` carries the same facts as one row (`lesson health`), and warns separately about stale,
+out-of-window and unproven lessons. See [/lessons.md](/lessons.md).
+
 ## Grind blocked by a lock nobody holds
 
 `BLOCKED: the grind lock is held by …` when no session is running means the holder died without releasing

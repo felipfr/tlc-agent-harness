@@ -16,6 +16,8 @@ export type LessonRow = {
   hits: number;
   source: string;
   tier: string;
+  /** A standing rule, placed before every scored lesson rather than competing with them. */
+  pinned: boolean;
   /** How many distinct sessions produced it — what promotion actually counts. */
   sessions: number;
   effectiveness: string;
@@ -66,6 +68,7 @@ export function lessonRows(
     hits: lesson.hitCount,
     source: lesson.source,
     tier: lesson.tier,
+    pinned: lesson.pinned,
     // why: the raw count, not `promotionCount`. That helper falls back to `hitCount` for a record written before
     // session keys existed, which made an authored lesson that never had a session report `sessions=1`.
     sessions: lesson.sessionKeys.length,
@@ -122,8 +125,9 @@ export function listText(report: LessonsListReport): string {
   const lines: string[] = [];
   for (const row of report.lessons) {
     const withheld = row.injected ? "" : "  WITHHELD";
+    const pin = row.pinned ? "  PINNED" : "";
     lines.push(
-      `${row.status.padEnd(10)} ${row.score.toFixed(3).padStart(7)}  ${row.id}  gate=${row.gate} tier=${row.tier} hits=${row.hits} sessions=${row.sessions} src=${row.source}${withheld}`,
+      `${row.status.padEnd(10)} ${row.score.toFixed(3).padStart(7)}  ${row.id}  gate=${row.gate} tier=${row.tier} hits=${row.hits} sessions=${row.sessions} src=${row.source}${pin}${withheld}`,
     );
     lines.push(`           ${row.instruction.slice(0, 120)}`);
     const notes = [`effect=${row.effectiveness}`, `validity=${row.validity}`];
@@ -187,7 +191,7 @@ function usage(): never {
   Three tiers: core (shipped), global (this machine, every product), project (this repo).
 
   tlc harness lessons add "<instruction>" [--gate <name>] [--avoid "..."] [--prefer "..."]
-                          [--tokens a,b] [--ref path[:symbol]] [--until <iso>] [--global]
+                          [--tokens a,b] [--ref path[:symbol]] [--until <iso>] [--global] [--pin]
   tlc harness lessons promote <id>          copy a project lesson into the global tier
   tlc harness lessons list [--all] [--json]
   tlc harness lessons show <id> [--json]
@@ -196,6 +200,7 @@ function usage(): never {
   tlc harness lessons path [--json]
 
   --ref names what makes the lesson true. When it stops resolving, the lesson stops being injected.
+  --pin puts a standing rule ahead of every scored lesson instead of making it compete for rank.
 `);
   process.exit(1);
 }
@@ -317,6 +322,7 @@ async function main(argv: string[]): Promise<void> {
       refs,
       validTo: until,
       tier,
+      pinned: rest.includes("--pin"),
       // why: recorded, not refused. An agent that cannot write down what it learned writes nothing down, which is
       // the state this replaces — marking it is what keeps it auditable
       // ([/decisions/ad-035.md](/decisions/ad-035.md)).
@@ -336,6 +342,9 @@ async function main(argv: string[]): Promise<void> {
       }
       if (saved.validTo) {
         console.log(`  valid until: ${saved.validTo}`);
+      }
+      if (saved.pinned) {
+        console.log(`  pinned — injected before every scored lesson, still under the char budget`);
       }
       if (tier === "global") {
         console.log(`  written to the global tier — every product on this machine will read it`);

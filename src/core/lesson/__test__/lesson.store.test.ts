@@ -34,6 +34,7 @@ function lesson(id: string): HarnessLesson {
     hitCount: 1,
     priority: 50,
     tier: "project",
+    pinned: false,
     refs: [],
     sessionKeys: [],
     injectedCount: 0,

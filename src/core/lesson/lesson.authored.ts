@@ -33,6 +33,8 @@ export type AuthoredLessonInput = {
   /** ISO bound after which this lesson stops being injected. */
   validTo?: string;
   tier?: Exclude<LessonTier, "core">;
+  /** A standing rule: injected before every scored lesson rather than competing with them. */
+  pinned?: boolean;
   /**
    * True when the command ran inside an agent session. Recorded rather than refused: an agent that cannot write down
    * what it learned writes nothing down, which is the state this replaces. Marking it is what keeps it auditable.
@@ -72,7 +74,11 @@ export function buildAuthoredLesson(input: AuthoredLessonInput): HarnessLesson {
     status: "active",
     confidence: 0.8,
     hitCount: 1,
-    priority: 0.8,
+    // hazard: this was `0.8`, written as if priority were the 0..1 scale `confidence` uses. Every other producer
+    // is 70..100 and `relevanceScore` divides by 200, so an authored lesson contributed 0.004 where a core lesson
+    // contributes 0.45 — ranked below everything, always, and never injected under a real char budget.
+    priority: 80,
+    pinned: input.pinned === true,
     refs: input.refs ?? [],
     ...(input.validTo ? { validTo: input.validTo } : {}),
     // why: an authored lesson has no failing session behind it, so it carries none. Promotion reads distinct

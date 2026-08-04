@@ -28,6 +28,7 @@ function lesson(overrides: Partial<HarnessLesson> = {}): HarnessLesson {
     confidence: 0.8,
     hitCount: 2,
     priority: 50,
+    pinned: false,
     refs: [],
     sessionKeys: [],
     injectedCount: 0,

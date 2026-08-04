@@ -188,10 +188,11 @@ async function failGate(args: {
         gate: args.gate,
         text: hits >= 2 ? `stagnation ${args.artifact.outputTail}` : args.artifact.outputTail,
       })
-    : { lessons: [], usedIds: [] };
+    : { lessons: [], usedIds: [], omitted: 0 };
   const lessonsBlock = formatLessonsBlock(
     selected.lessons,
     "Lessons for this gate (ranked — apply before inventing a new plan):",
+    selected.omitted,
   );
 
   // why: written after the lessons are chosen and before the turn resumes, so the next run of this same gate is

@@ -1799,7 +1799,8 @@ function buildAuthoredLesson(input) {
     status: "active",
     confidence: 0.8,
     hitCount: 1,
-    priority: 0.8,
+    priority: 80,
+    pinned: input.pinned === true,
     refs: input.refs ?? [],
     ...input.validTo ? { validTo: input.validTo } : {},
     sessionKeys: [],
@@ -1973,6 +1974,7 @@ function coreLesson(input) {
     status: "active",
     confidence: 1,
     hitCount: 1,
+    pinned: false,
     refs: [],
     sessionKeys: [],
     injectedCount: 0,
@@ -2065,6 +2067,7 @@ function normalizeLesson(raw, tier) {
   return {
     ...raw,
     tier,
+    pinned: raw.pinned === true,
     refs: Array.isArray(raw.refs) ? raw.refs : [],
     sessionKeys: Array.isArray(raw.sessionKeys) ? raw.sessionKeys : [],
     injectedCount: Number.isFinite(raw.injectedCount) ? raw.injectedCount : 0,
@@ -2300,7 +2303,7 @@ function rankLessonsForSync(lessons) {
 }
 async function selectLessons(args) {
   if (!args.config.enabled) {
-    return { lessons: [], usedIds: [] };
+    return { lessons: [], usedIds: [], omitted: 0 };
   }
   const maxCount = args.mode === "session" ? args.config.maxInjectSession : args.config.maxInjectRetry;
   const maxChars = args.mode === "session" ? args.config.maxCharsSession : args.config.maxCharsRetry;
@@ -2315,9 +2318,13 @@ async function selectLessons(args) {
       now
     })
   })).sort((a, b) => b.score - a.score || b.lesson.priority - a.lesson.priority);
+  const ordered = [
+    ...ranked.filter((row) => row.lesson.pinned),
+    ...ranked.filter((row) => !row.lesson.pinned)
+  ];
   const picked = [];
   let chars = 0;
-  for (const row of ranked) {
+  for (const row of ordered) {
     if (picked.length >= maxCount) {
       break;
     }
@@ -2334,7 +2341,7 @@ async function selectLessons(args) {
   }
   const usedIds = picked.filter((l) => l.source !== "core").map((l) => l.id);
   await touchAccessed(args.projectDir, usedIds, now);
-  return { lessons: picked, usedIds: picked.map((l) => l.id) };
+  return { lessons: picked, usedIds: picked.map((l) => l.id), omitted: ordered.length - picked.length };
 }
 
 // src/core/lesson/lesson.garden.ts
@@ -2541,6 +2548,7 @@ async function recordLessonFromFailure(args) {
     confidence: 0.55,
     hitCount: 1,
     priority: 70,
+    pinned: false,
     refs: [],
     sessionKeys: withSessionKey([], args.sessionKey),
     injectedCount: 0,
@@ -5334,6 +5342,7 @@ function lessonRows(root, lessons, config, now) {
     hits: lesson.hitCount,
     source: lesson.source,
     tier: lesson.tier,
+    pinned: lesson.pinned,
     sessions: lesson.sessionKeys.length,
     effectiveness: coreFacade.lesson.effectivenessLine(lesson),
     validity: coreFacade.lesson.validityReason(lesson, now),
@@ -5379,7 +5388,8 @@ function listText(report) {
   const lines = [];
   for (const row of report.lessons) {
     const withheld = row.injected ? "" : "  WITHHELD";
-    lines.push(`${row.status.padEnd(10)} ${row.score.toFixed(3).padStart(7)}  ${row.id}  gate=${row.gate} tier=${row.tier} hits=${row.hits} sessions=${row.sessions} src=${row.source}${withheld}`);
+    const pin = row.pinned ? "  PINNED" : "";
+    lines.push(`${row.status.padEnd(10)} ${row.score.toFixed(3).padStart(7)}  ${row.id}  gate=${row.gate} tier=${row.tier} hits=${row.hits} sessions=${row.sessions} src=${row.source}${pin}${withheld}`);
     lines.push(`           ${row.instruction.slice(0, 120)}`);
     const notes = [`effect=${row.effectiveness}`, `validity=${row.validity}`];
     if (row.stale) {
@@ -5428,7 +5438,7 @@ function usage() {
   Three tiers: core (shipped), global (this machine, every product), project (this repo).
 
   tlc harness lessons add "<instruction>" [--gate <name>] [--avoid "..."] [--prefer "..."]
-                          [--tokens a,b] [--ref path[:symbol]] [--until <iso>] [--global]
+                          [--tokens a,b] [--ref path[:symbol]] [--until <iso>] [--global] [--pin]
   tlc harness lessons promote <id>          copy a project lesson into the global tier
   tlc harness lessons list [--all] [--json]
   tlc harness lessons show <id> [--json]
@@ -5437,6 +5447,7 @@ function usage() {
   tlc harness lessons path [--json]
 
   --ref names what makes the lesson true. When it stops resolving, the lesson stops being injected.
+  --pin puts a standing rule ahead of every scored lesson instead of making it compete for rank.
 `);
   process.exit(1);
 }
@@ -5538,6 +5549,7 @@ async function main(argv) {
       refs,
       validTo: until,
       tier,
+      pinned: rest.includes("--pin"),
       inAgentSession: process.env.TLC_ACTIVE === "1"
     });
     const saved = await coreFacade.lesson.upsertLesson(root, lesson, tier);
@@ -5552,6 +5564,9 @@ async function main(argv) {
       }
       if (saved.validTo) {
         console.log(`  valid until: ${saved.validTo}`);
+      }
+      if (saved.pinned) {
+        console.log(`  pinned — injected before every scored lesson, still under the char budget`);
       }
       if (tier === "global") {
         console.log(`  written to the global tier — every product on this machine will read it`);
