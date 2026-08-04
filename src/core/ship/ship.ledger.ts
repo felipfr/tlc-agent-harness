@@ -30,11 +30,7 @@ export function readShipLedger(root: string): ShipLedgerRow[] {
  * already has. When it is absent the age window decides alone, which is the pre-existing behaviour: a missing
  * input must not fail closed on a gate that blocks a stop.
  */
-export function hasRecentEvidence(
-  evidenceDir: string,
-  maxAgeHours: number,
-  notBeforeMs?: number,
-): boolean {
+export function hasRecentEvidence(evidenceDir: string, maxAgeHours: number, notBeforeMs?: number): boolean {
   if (!existsSync(evidenceDir)) {
     return false;
   }

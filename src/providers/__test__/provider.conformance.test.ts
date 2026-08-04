@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { HARNESS_EVENT_KINDS, type Decision, type HarnessEvent } from "../../contracts/index.ts";
+import { type Decision, HARNESS_EVENT_KINDS, type HarnessEvent } from "../../contracts/index.ts";
 import { providers } from "../index.ts";
 
 /**

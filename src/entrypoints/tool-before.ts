@@ -43,11 +43,7 @@ function recordShellDecision(event: HarnessEvent, ctx: HandlerContext, decision:
   });
 }
 
-function recordShellDecisionIfShell(
-  event: HarnessEvent,
-  ctx: HandlerContext,
-  decision: Decision,
-): void {
+function recordShellDecisionIfShell(event: HarnessEvent, ctx: HandlerContext, decision: Decision): void {
   if (event.event === "shell.before") {
     recordShellDecision(event, ctx, decision);
   }

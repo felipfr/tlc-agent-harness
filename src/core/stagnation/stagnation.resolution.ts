@@ -59,11 +59,7 @@ function prune(store: ResolutionStore): ResolutionStore {
   return Object.fromEntries(kept);
 }
 
-export function recordResolution(
-  root: string,
-  fingerprint: string,
-  resolution: Resolution,
-): ResolutionStore {
+export function recordResolution(root: string, fingerprint: string, resolution: Resolution): ResolutionStore {
   const store = readResolutions(root);
   store[fingerprint] = {
     ...resolution,

@@ -55,23 +55,18 @@ async function runLockedGate(args: {
   sessionKey: string;
   policy: Policy;
 }): Promise<LastGateArtifact> {
-  const artifact = await coreFacade.gate.withGateLock(
-    args.root,
-    args.provider,
-    args.session,
-    async () => {
-      const result = await runCommand(args.root, args.command, args.argvFiles);
-      return coreFacade.gate.writeLastGate({
-        root: args.root,
-        gate: args.gate,
-        exitCode: result.exitCode,
-        command: [...args.command, ...args.argvFiles],
-        files: args.recordFiles,
-        durationMs: result.durationMs,
-        output: result.output,
-      });
-    },
-  );
+  const artifact = await coreFacade.gate.withGateLock(args.root, args.provider, args.session, async () => {
+    const result = await runCommand(args.root, args.command, args.argvFiles);
+    return coreFacade.gate.writeLastGate({
+      root: args.root,
+      gate: args.gate,
+      exitCode: result.exitCode,
+      command: [...args.command, ...args.argvFiles],
+      files: args.recordFiles,
+      durationMs: result.durationMs,
+      output: result.output,
+    });
+  });
   // invariant: recorded outside the lock. A measurement must not widen the window in which one gate blocks another.
   recordGateOutcome({ ...args, artifact });
   return artifact;

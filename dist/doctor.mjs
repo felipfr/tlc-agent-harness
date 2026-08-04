@@ -934,6 +934,62 @@ function isCursorWired(targetPath) {
 }
 if (false) {}
 
+// src/core/attest/attest.service.ts
+import { createHash } from "node:crypto";
+import { join as join5 } from "node:path";
+var CHAIN_ROOT = "genesis";
+function attestationPath(root) {
+  return join5(projectStateDir(root), "attestation.jsonl");
+}
+function contentHash(record) {
+  const ordered = [
+    record.schema,
+    record.ts,
+    record.provider,
+    record.session,
+    record.policyFingerprint,
+    String(record.policyDiverged),
+    record.railsActive.join(","),
+    Object.entries(record.decisionsByRule).sort((a, b) => a[0].localeCompare(b[0])).map(([rule, count]) => `${rule}=${count}`).join(","),
+    `${record.gates.pass}/${record.gates.fail}`,
+    record.prev
+  ].join("\x00");
+  return createHash("sha256").update(ordered).digest("hex");
+}
+function readAttestations(root) {
+  return readTail(attestationPath(root), Number.MAX_SAFE_INTEGER);
+}
+function appendAttestation(root, body) {
+  const existing = readAttestations(root);
+  const prev = existing.at(-1)?.self ?? CHAIN_ROOT;
+  const withoutSelf = {
+    schema: "harness.attestation.v1",
+    ...body,
+    prev
+  };
+  const record = { ...withoutSelf, self: contentHash(withoutSelf) };
+  appendRecord(attestationPath(root), record);
+  return record;
+}
+function verifyChain(records) {
+  let expectedPrev = CHAIN_ROOT;
+  for (const [index, record] of records.entries()) {
+    if (record.prev !== expectedPrev) {
+      return { ok: false, brokenAt: index, reason: "previous-hash-mismatch" };
+    }
+    const { self, ...rest } = record;
+    if (contentHash(rest) !== self) {
+      return { ok: false, brokenAt: index, reason: "content-hash-mismatch" };
+    }
+    expectedPrev = self;
+  }
+  return { ok: true, length: records.length };
+}
+function fingerprintOf(sources) {
+  const ordered = [...sources].sort((a, b) => a.path.localeCompare(b.path)).map((source) => `${source.path}:${source.hash}`).join("|");
+  return createHash("sha256").update(ordered).digest("hex").slice(0, 32);
+}
+
 // src/core/capability/capability.types.ts
 var ENABLE_HINT = 'Enable: ask the agent "setup harness" (harness-init skill) or edit .tlc/harness/config.json';
 
@@ -976,7 +1032,7 @@ function formatDoctorWarn(cap) {
 
 // src/core/capability/capability.store.ts
 import { existsSync as existsSync6, readFileSync as readFileSync6 } from "node:fs";
-import { join as join5 } from "node:path";
+import { join as join6 } from "node:path";
 
 // src/platform/fs-atomic.ts
 import { randomBytes } from "node:crypto";
@@ -1123,7 +1179,7 @@ function readJson2(path) {
   }
 }
 function catalogPath(home = runtimeHome()) {
-  return join5(home, "capabilities", "catalog.json");
+  return join6(home, "capabilities", "catalog.json");
 }
 function loadCatalog(home = runtimeHome()) {
   const raw = readJson2(catalogPath(home));
@@ -1136,7 +1192,7 @@ function readProjectPolicyRaw(projectDir) {
   return readJson2(projectConfigPath(projectDir));
 }
 function runtimeSeenPath(projectDir) {
-  return join5(projectStateDir(projectDir), "runtime-seen.json");
+  return join6(projectStateDir(projectDir), "runtime-seen.json");
 }
 function readRuntimeSeen(projectDir) {
   const raw = readJson2(runtimeSeenPath(projectDir));
@@ -1154,11 +1210,11 @@ async function writeRuntimeSeen(projectDir, catalogVersion) {
 
 // src/core/comment-policy/comment-policy.service.ts
 import { readFileSync as readFileSync8 } from "node:fs";
-import { join as join7 } from "node:path";
+import { join as join8 } from "node:path";
 
 // src/platform/git.ts
 import { existsSync as existsSync7, readFileSync as readFileSync7 } from "node:fs";
-import { join as join6 } from "node:path";
+import { join as join7 } from "node:path";
 
 // src/platform/process.ts
 import { spawn } from "node:child_process";
@@ -1219,7 +1275,7 @@ async function gitLines(projectDir, args) {
 `).map((line) => line.trim()).filter(Boolean);
 }
 async function listAddedLines(projectDir, relativePaths) {
-  if (!existsSync7(join6(projectDir, ".git")) || relativePaths.length === 0) {
+  if (!existsSync7(join7(projectDir, ".git")) || relativePaths.length === 0) {
     return [];
   }
   const tracked = new Set(await gitLines(projectDir, ["ls-files", "--", ...relativePaths]));
@@ -1228,7 +1284,7 @@ async function listAddedLines(projectDir, relativePaths) {
     if (!tracked.has(file)) {
       let raw = "";
       try {
-        raw = readFileSync7(join6(projectDir, file), "utf8");
+        raw = readFileSync7(join7(projectDir, file), "utf8");
       } catch {
         continue;
       }
@@ -1418,7 +1474,7 @@ function diskLineReader(projectDir) {
     let lines = cache.get(file);
     if (lines === undefined) {
       try {
-        lines = readFileSync8(join7(projectDir, file), "utf8").split(`
+        lines = readFileSync8(join8(projectDir, file), "utf8").split(`
 `);
       } catch {
         lines = [];
@@ -1451,62 +1507,6 @@ function commentViolationMessage(hits, mode = "declared") {
     ...hits.slice(0, 20).map((h) => `${h.file}:${h.line}  ${h.text}`)
   ].join(`
 `);
-}
-
-// src/core/attest/attest.service.ts
-import { createHash } from "node:crypto";
-import { join as join8 } from "node:path";
-var CHAIN_ROOT = "genesis";
-function attestationPath(root) {
-  return join8(projectStateDir(root), "attestation.jsonl");
-}
-function contentHash(record) {
-  const ordered = [
-    record.schema,
-    record.ts,
-    record.provider,
-    record.session,
-    record.policyFingerprint,
-    String(record.policyDiverged),
-    record.railsActive.join(","),
-    Object.entries(record.decisionsByRule).sort((a, b) => a[0].localeCompare(b[0])).map(([rule, count]) => `${rule}=${count}`).join(","),
-    `${record.gates.pass}/${record.gates.fail}`,
-    record.prev
-  ].join("\x00");
-  return createHash("sha256").update(ordered).digest("hex");
-}
-function readAttestations(root) {
-  return readTail(attestationPath(root), Number.MAX_SAFE_INTEGER);
-}
-function appendAttestation(root, body) {
-  const existing = readAttestations(root);
-  const prev = existing.at(-1)?.self ?? CHAIN_ROOT;
-  const withoutSelf = {
-    schema: "harness.attestation.v1",
-    ...body,
-    prev
-  };
-  const record = { ...withoutSelf, self: contentHash(withoutSelf) };
-  appendRecord(attestationPath(root), record);
-  return record;
-}
-function verifyChain(records) {
-  let expectedPrev = CHAIN_ROOT;
-  for (const [index, record] of records.entries()) {
-    if (record.prev !== expectedPrev) {
-      return { ok: false, brokenAt: index, reason: "previous-hash-mismatch" };
-    }
-    const { self, ...rest } = record;
-    if (contentHash(rest) !== self) {
-      return { ok: false, brokenAt: index, reason: "content-hash-mismatch" };
-    }
-    expectedPrev = self;
-  }
-  return { ok: true, length: records.length };
-}
-function fingerprintOf(sources) {
-  const ordered = [...sources].sort((a, b) => a.path.localeCompare(b.path)).map((source) => `${source.path}:${source.hash}`).join("|");
-  return createHash("sha256").update(ordered).digest("hex").slice(0, 32);
 }
 
 // src/core/floor/floor.paths.ts
@@ -2017,19 +2017,6 @@ function evaluateFloor(input) {
     return file;
   }
   return checkShell(input);
-}
-
-// src/core/observe/observe.service.ts
-function shouldObserve(config, rail, enforcing) {
-  return config.enabled && !enforcing && config.rails.includes(rail);
-}
-function observeAttrs(verdict) {
-  return {
-    rail: verdict.rail,
-    violations: verdict.violations,
-    prose_injected: verdict.proseInjected,
-    reading: verdict.violations === 0 ? verdict.proseInjected ? "held-with-prose" : "held-without-prose" : verdict.proseInjected ? "violated-with-prose" : "violated-without-prose"
-  };
 }
 
 // src/core/gate/gate.artifact.ts
@@ -3732,6 +3719,19 @@ function recordFromEvent(root, config, event, extra = {}) {
   });
 }
 
+// src/core/observe/observe.service.ts
+function shouldObserve(config, rail, enforcing) {
+  return config.enabled && !enforcing && config.rails.includes(rail);
+}
+function observeAttrs(verdict) {
+  return {
+    rail: verdict.rail,
+    violations: verdict.violations,
+    prose_injected: verdict.proseInjected,
+    reading: verdict.violations === 0 ? verdict.proseInjected ? "held-with-prose" : "held-without-prose" : verdict.proseInjected ? "violated-with-prose" : "violated-without-prose"
+  };
+}
+
 // src/core/plan/plan.detect.ts
 var PLAN_LINE = /(?:^|\n)\s*HARNESS_PLAN:\s*(.+?)\s*(?=\n|$)/;
 var DEVIATION_LINE = /(?:^|\n)\s*HARNESS_PLAN_DEVIATION:\s*(.+?)\s*(?=\n|$)/g;
@@ -4303,6 +4303,39 @@ function refreshPolicyBaselines(root) {
   }
 }
 
+// src/core/policy/policy.operator.ts
+var BASE = [
+  "Harness: drive tasks to verified completion without babysitting the owner.",
+  "Evidence or stop: no invented numbers, versions, or PASS claims. Cite paths, command output, or evidence files.",
+  "Otherwise assume the sensible default, proceed, and state the assumption in one line.",
+  "Verification does not change with posture: the same evidence bar, the same gates, the same done-criteria at every level. What changes is how much you surface and what earns an interruption.",
+  "Before calling done: build, tests and lint must pass; no deleted tests; diff size matches the ask; the result matches the full request.",
+  "If blocked, use exactly: BLOCKED / TRIED / NEED — one tight block, no preamble."
+];
+var BY_POSTURE = {
+  paired: "Posture paired: show your reasoning as you go, and check in before any sizable non-destructive move. Surface an irreversible action, a real dead-end after exhausting sources, and ambiguity that changes the outcome. Raise an unclear goal in your first actions, before you have built anything on your reading of it.",
+  solo: "Posture solo: work on your own. Surface exactly three things — an irreversible or destructive action, a real dead-end after exhausting sources, and ambiguity that changes the outcome. An unclear goal belongs in your first actions; once the work is under way, asking costs more than deciding, so take the most reasonable reading and state the assumption in one line instead.",
+  focus: "Posture focus: deepest autonomy, fewest interruptions. Only an irreversible or destructive action and a real dead-end reach the operator. The one exception is a goal you cannot read before you start — ask that once, up front, because it is cheaper than everything you would build on a misreading. After that, ambiguity is yours to settle by taking the most reasonable reading and stating the assumption in one line."
+};
+function operatorBootstrapLines(policy, stateDir) {
+  const lines = [...BASE, `Hold state on disk at ${stateDir}/handoff.json between turns and sessions.`];
+  lines.push(BY_POSTURE[policy.mode]);
+  if (policy.shipGate.enabled) {
+    lines.push("Ship protocol: the ship gate reacts only to an explicit line `HARNESS_SHIP_CLAIM: <summary>` — free-English done or shipped is ignored. After that claim, cite recent PASS evidence under the configured evidenceDir before stopping.");
+  }
+  if (policy.comments.enabled) {
+    lines.push(policy.comments.mode === "strict" ? "Comments: do not add any. If one is warranted, say so in your reply and let the owner write it." : "Comments: an added comment must declare why:, hazard: or invariant:. Narrating what the code does is blocked.");
+  }
+  if (policy.mcpPrime.length > 0) {
+    lines.push("", "MCP prime (before host grep or glob across the workspace):");
+    for (const [index, step] of policy.mcpPrime.entries()) {
+      lines.push(`${index + 1}. ${step}`);
+    }
+  }
+  lines.push(...policy.bootstrapExtra);
+  return lines;
+}
+
 // src/core/policy/policy.rails.ts
 function activeRails(policy) {
   const rails = [];
@@ -4337,39 +4370,6 @@ function activeRails(policy) {
     rails.push("subagent-allowlist");
   }
   return rails;
-}
-
-// src/core/policy/policy.operator.ts
-var BASE = [
-  "Harness: drive tasks to verified completion without babysitting the owner.",
-  "Evidence or stop: no invented numbers, versions, or PASS claims. Cite paths, command output, or evidence files.",
-  "Otherwise assume the sensible default, proceed, and state the assumption in one line.",
-  "Verification does not change with posture: the same evidence bar, the same gates, the same done-criteria at every level. What changes is how much you surface and what earns an interruption.",
-  "Before calling done: build, tests and lint must pass; no deleted tests; diff size matches the ask; the result matches the full request.",
-  "If blocked, use exactly: BLOCKED / TRIED / NEED — one tight block, no preamble."
-];
-var BY_POSTURE = {
-  paired: "Posture paired: show your reasoning as you go, and check in before any sizable non-destructive move. Surface an irreversible action, a real dead-end after exhausting sources, and ambiguity that changes the outcome. Raise an unclear goal in your first actions, before you have built anything on your reading of it.",
-  solo: "Posture solo: work on your own. Surface exactly three things — an irreversible or destructive action, a real dead-end after exhausting sources, and ambiguity that changes the outcome. An unclear goal belongs in your first actions; once the work is under way, asking costs more than deciding, so take the most reasonable reading and state the assumption in one line instead.",
-  focus: "Posture focus: deepest autonomy, fewest interruptions. Only an irreversible or destructive action and a real dead-end reach the operator. The one exception is a goal you cannot read before you start — ask that once, up front, because it is cheaper than everything you would build on a misreading. After that, ambiguity is yours to settle by taking the most reasonable reading and stating the assumption in one line."
-};
-function operatorBootstrapLines(policy, stateDir) {
-  const lines = [...BASE, `Hold state on disk at ${stateDir}/handoff.json between turns and sessions.`];
-  lines.push(BY_POSTURE[policy.mode]);
-  if (policy.shipGate.enabled) {
-    lines.push("Ship protocol: the ship gate reacts only to an explicit line `HARNESS_SHIP_CLAIM: <summary>` — free-English done or shipped is ignored. After that claim, cite recent PASS evidence under the configured evidenceDir before stopping.");
-  }
-  if (policy.comments.enabled) {
-    lines.push(policy.comments.mode === "strict" ? "Comments: do not add any. If one is warranted, say so in your reply and let the owner write it." : "Comments: an added comment must declare why:, hazard: or invariant:. Narrating what the code does is blocked.");
-  }
-  if (policy.mcpPrime.length > 0) {
-    lines.push("", "MCP prime (before host grep or glob across the workspace):");
-    for (const [index, step] of policy.mcpPrime.entries()) {
-      lines.push(`${index + 1}. ${step}`);
-    }
-  }
-  lines.push(...policy.bootstrapExtra);
-  return lines;
 }
 
 // src/core/policy/policy.types.ts
@@ -4695,19 +4695,6 @@ function evaluateShellCommand(args) {
   return { kind: "allow" };
 }
 
-// src/core/stagnation/stagnation.service.ts
-import { createHash as createHash6 } from "node:crypto";
-function computeFingerprint(parts) {
-  const normalizedOutput = parts.output.replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/g, "<ts>").replace(/\b\d{5,}\b/g, "<n>").slice(0, 1500);
-  const raw = JSON.stringify({
-    files: [...parts.files].sort(),
-    gate: parts.gate,
-    exitCode: parts.exitCode,
-    output: normalizedOutput
-  });
-  return createHash6("sha256").update(raw).digest("hex").slice(0, 16);
-}
-
 // src/core/stagnation/stagnation.resolution.ts
 import { existsSync as existsSync19, mkdirSync as mkdirSync13, readFileSync as readFileSync20, writeFileSync as writeFileSync12 } from "node:fs";
 import { join as join21 } from "node:path";
@@ -4755,6 +4742,19 @@ function resolutionFor(root, fingerprint) {
 }
 function resolutionHistoryLine(resolution) {
   return `History: this same ${resolution.gate} failure was resolved once before, after changes to ${resolution.files.join(", ")}. That is a record of what happened, not a list to edit — confirm it against this failure before acting on it.`;
+}
+
+// src/core/stagnation/stagnation.service.ts
+import { createHash as createHash6 } from "node:crypto";
+function computeFingerprint(parts) {
+  const normalizedOutput = parts.output.replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/g, "<ts>").replace(/\b\d{5,}\b/g, "<n>").slice(0, 1500);
+  const raw = JSON.stringify({
+    files: [...parts.files].sort(),
+    gate: parts.gate,
+    exitCode: parts.exitCode,
+    output: normalizedOutput
+  });
+  return createHash6("sha256").update(raw).digest("hex").slice(0, 16);
 }
 
 // src/core/stagnation/stagnation.store.ts

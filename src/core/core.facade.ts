@@ -1,4 +1,11 @@
 import {
+  appendAttestation,
+  attestationPath,
+  fingerprintOf,
+  readAttestations,
+  verifyChain,
+} from "./attest/attest.service.ts";
+import {
   formatCapabilityDigest,
   formatDoctorWarn,
   isAvailableNotEnabled,
@@ -19,15 +26,7 @@ import {
   isCommentLine,
   scanAddedComments,
 } from "./comment-policy/comment-policy.service.ts";
-import {
-  appendAttestation,
-  attestationPath,
-  fingerprintOf,
-  readAttestations,
-  verifyChain,
-} from "./attest/attest.service.ts";
 import { evaluateFloor } from "./floor/floor.service.ts";
-import { observeAttrs, shouldObserve } from "./observe/observe.service.ts";
 import { computeGateFingerprint, readLastGate, writeLastGate } from "./gate/gate.artifact.ts";
 import { isCommandResolutionFailure, isRecipeRunner, shouldAppendFiles } from "./gate/gate.command.ts";
 import { filesFromOutput } from "./gate/gate.findings.ts";
@@ -56,6 +55,7 @@ import {
   recordObs,
 } from "./observability/observability.service.ts";
 import { getRollup, pruneObs, pruneSpool, readSignalEvents } from "./observability/observability.store.ts";
+import { observeAttrs, shouldObserve } from "./observe/observe.service.ts";
 import { detectDeviations, detectPlan } from "./plan/plan.detect.ts";
 import { evaluatePlanGate, planVerdict } from "./plan/plan.service.ts";
 import { guardPolicySurface } from "./policy/policy.guard.ts";
@@ -66,19 +66,14 @@ import {
   refreshPolicyBaselines,
 } from "./policy/policy.integrity.ts";
 import { isUnderCodePaths, loadPolicy, resolveProjectPosture } from "./policy/policy.loader.ts";
-import { activeRails } from "./policy/policy.rails.ts";
 import { operatorBootstrapLines } from "./policy/policy.operator.ts";
 import { isOperatorMode, OPERATOR_MODES } from "./policy/policy.posture.ts";
+import { activeRails } from "./policy/policy.rails.ts";
 import { forProvider } from "./policy/policy.types.ts";
 import { checkCollision, heartbeat, register, release, sweepStale } from "./presence/presence.service.ts";
 import { evaluateShellCommand } from "./shell-policy/shell-policy.service.ts";
 import { clearShellStall } from "./shell-policy/shell-policy.stall.ts";
-import {
-  appendShipLedger,
-  hasRecentEvidence,
-  newestChangeMs,
-  readShipLedger,
-} from "./ship/ship.ledger.ts";
+import { appendShipLedger, hasRecentEvidence, newestChangeMs, readShipLedger } from "./ship/ship.ledger.ts";
 import {
   detectShipClaim,
   evaluateEmptyDiffAntiShip,
@@ -86,12 +81,12 @@ import {
   recentShipClaimActive,
   touchesRuntime,
 } from "./ship/ship.service.ts";
-import { computeFingerprint } from "./stagnation/stagnation.service.ts";
 import {
   recordResolution,
   resolutionFor,
   resolutionHistoryLine,
 } from "./stagnation/stagnation.resolution.ts";
+import { computeFingerprint } from "./stagnation/stagnation.service.ts";
 import { clearFingerprint, fingerprintHits, trackFingerprint } from "./stagnation/stagnation.store.ts";
 import {
   readParentModelState,
