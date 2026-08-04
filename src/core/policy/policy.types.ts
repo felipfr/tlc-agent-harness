@@ -3,7 +3,9 @@ export type CommentMode = "declared" | "strict";
 import type { EffortLevel } from "../../contracts/effort.ts";
 import type { AppendFilesMode } from "../gate/gate.types.ts";
 
-export type OperatorMode = "paired" | "solo" | "heads-down";
+// invariant: one word per posture. A second spelling for any of them is what let `"mode": "focus"` reach
+// the loader unvalidated, match no branch, and silently produce a policy with no posture line.
+export type OperatorMode = "paired" | "solo" | "focus";
 
 export type ProviderScoped<T> = T[] | Record<string, T[]>;
 
