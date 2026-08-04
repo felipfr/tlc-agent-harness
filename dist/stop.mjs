@@ -1263,6 +1263,26 @@ function findingsFromLines(lines, exitCode, max) {
   const omitted = unique.length - kept.length;
   return [...kept, { summary: `…and ${omitted} more failures in the gate output` }];
 }
+var SOURCE_EXT = "ts|tsx|mts|cts|js|jsx|mjs|cjs|py|go|rb|rs|java|kt|swift|php|sh|sql";
+var PATH_IN_OUTPUT = new RegExp(`(?:file://)?((?:[A-Za-z]:)?[\\w./~@+-]*[\\w-]\\.(?:${SOURCE_EXT}))(?=[:)\\s,'"\`]|$)`, "g");
+function filesFromOutput(outputTail, projectDir) {
+  const seen = new Set;
+  const files = [];
+  const prefix = `${projectDir.replace(/\/+$/, "")}/`;
+  for (const match of outputTail.matchAll(PATH_IN_OUTPUT)) {
+    const raw = match[1];
+    if (!raw) {
+      continue;
+    }
+    const path = raw.startsWith(prefix) ? raw.slice(prefix.length) : raw;
+    if (seen.has(path)) {
+      continue;
+    }
+    seen.add(path);
+    files.push(path);
+  }
+  return files;
+}
 
 // src/core/gate/gate.types.ts
 var GATE_SCHEMA = "harness.gate.v1";
@@ -1413,6 +1433,7 @@ import {
   unlinkSync as unlinkSync2,
   writeFileSync as writeFileSync3
 } from "node:fs";
+import { hostname } from "node:os";
 import { dirname as dirname3, join as join6 } from "node:path";
 var GATE_LOCK_WAIT_MS = 120000;
 var GATE_LOCK_STALE_MS = 30 * 60 * 1000;
@@ -1468,8 +1489,26 @@ function isLockUnreadable(path, args) {
   }
   return !isUsableLockBody(readLockBody(path));
 }
+function isLockOwnerGone(body, thisHost = hostname()) {
+  if (!isUsableLockBody(body)) {
+    return false;
+  }
+  const { host, pid } = body;
+  if (typeof host !== "string" || host !== thisHost) {
+    return false;
+  }
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (error) {
+    return error.code === "ESRCH";
+  }
+}
 function isLockReclaimable(path, args) {
-  return isLockStale(path, { now: args.now, staleMs: args.staleMs }) || isLockUnreadable(path, { now: args.now, graceMs: args.graceMs });
+  return isLockStale(path, { now: args.now, staleMs: args.staleMs }) || isLockUnreadable(path, { now: args.now, graceMs: args.graceMs }) || isLockOwnerGone(readLockBody(path));
 }
 function describeHolder(root, options = {}) {
   const path = gateLockPath(root);
@@ -1480,6 +1519,9 @@ function describeHolder(root, options = {}) {
   }
   const body = readLockBody(path);
   if (!isUsableLockBody(body)) {
+    return null;
+  }
+  if (isLockOwnerGone(body)) {
     return null;
   }
   return `${body.provider} session ${body.session} (pid ${body.pid})`;
@@ -1533,7 +1575,13 @@ async function withGateLock(root, provider, session, fn, options = {}) {
   let attempt = 0;
   while (true) {
     const now = nowFn();
-    const body = { provider, session, pid, acquired_at: new Date(now).toISOString() };
+    const body = {
+      provider,
+      session,
+      pid,
+      acquired_at: new Date(now).toISOString(),
+      host: hostname()
+    };
     if (tryAcquire(path, body)) {
       return runUnderLock(path, pid, fn);
     }
@@ -3998,8 +4046,17 @@ function formatProgressiveContext(args) {
 }
 
 // src/core/turn/turn.autopilot.ts
+function fileLine(failing, changed) {
+  if (failing && failing.length > 0) {
+    return `Failing files (named by the gate output): ${failing.slice(0, 8).join(", ")}.`;
+  }
+  if (changed && changed.length > 0) {
+    return `Files the gate ran (from the diff, not necessarily the cause): ${changed.slice(0, 8).join(", ")}.`;
+  }
+  return null;
+}
 function resolveAutopilot(args) {
-  const filesHint = args.files && args.files.length > 0 ? `Focus files: ${args.files.slice(0, 8).join(", ")}.` : null;
+  const filesHint = fileLine(args.failingFiles, args.changedFiles);
   const base = suggestionFor(args.category, args.gate);
   switch (args.category) {
     case "verification":
@@ -4291,7 +4348,8 @@ var coreFacade = {
     describeHolder,
     shouldAppendFiles,
     isRecipeRunner,
-    isCommandResolutionFailure
+    isCommandResolutionFailure,
+    filesFromOutput
   },
   stagnation: {
     computeFingerprint,
@@ -5358,7 +5416,8 @@ async function failGate(args) {
     mode: policy.mode,
     loopCount: args.loopCount,
     maxLoops: args.maxLoops,
-    files: args.artifact.files
+    failingFiles: coreFacade.gate.filesFromOutput(args.artifact.outputTail, args.root),
+    changedFiles: args.artifact.files
   }) : null;
   await coreFacade.handoff.patchHandoff(args.root, args.provider, {
     slice: {

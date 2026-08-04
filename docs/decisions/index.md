@@ -1,7 +1,7 @@
 ---
 type: Aggregate
 title: "Decisions index"
-description: "Index of every architectural decision (AD-001…AD-023) made while building the multi-provider harness."
+description: "Index of every architectural decision (AD-001…AD-024) made while building the multi-provider harness."
 tags: [decisions, index]
 timestamp: "2026-07-29"
 ---
@@ -38,5 +38,6 @@ Handoff section and a link back to this index.
 | [AD-021](/decisions/ad-021.md) | A gate command that never resolved is a config fault, and a recipe runner does not receive file arguments | active |
 | [AD-022](/decisions/ad-022.md) | The policy surface is a floor rule, detection sits behind interception, and the operator/agent line is structural | active |
 | [AD-023](/decisions/ad-023.md) | One finding per failure, and lesson relevance is recurrence rather than exposure | active |
+| [AD-024](/decisions/ad-024.md) | The gate tells the truth about its own environment, its own lock, and the cause of a failure | active |
 
 Related: [/architecture.md](/architecture.md), [/concepts.md](/concepts.md), [/providers/index.md](/providers/index.md).
