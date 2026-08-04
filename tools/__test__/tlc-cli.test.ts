@@ -6,10 +6,10 @@ import { afterEach, describe, test } from "node:test";
 import {
   buildTestSteps,
   ensureFlagsDir,
+  focusFlagPath,
   gatesPaused,
   grindFlagPath,
   grindOn,
-  headsDownFlagPath,
   helpText,
   modeFilePath,
   pairedFlagPath,
@@ -86,9 +86,11 @@ describe("flag file paths", () => {
     assert.equal(skipFlagPath(root), join(flagsDir(root), "skip-verify"));
   });
 
-  test("headsDownFlagPath and pairedFlagPath land under state/flags", () => {
+  // invariant: a posture flag file is named after its posture, with no second spelling anywhere in the chain
+  // from the typed word to the file on disk.
+  test("the posture flag files are named after their postures", () => {
     const root = newRoot();
-    assert.equal(headsDownFlagPath(root), join(flagsDir(root), "heads-down"));
+    assert.equal(focusFlagPath(root), join(flagsDir(root), "focus"));
     assert.equal(pairedFlagPath(root), join(flagsDir(root), "paired"));
   });
 
@@ -148,22 +150,35 @@ describe("setMode", () => {
     assert.equal(readFileSync(modeFilePath(root), "utf8").trim(), "paired");
   });
 
-  test("focus alias maps to 'heads-down' in the mode file", () => {
+  test("focus writes 'focus' to the mode file", () => {
     const root = newRoot();
     setMode(root, "focus");
-    assert.equal(readFileSync(modeFilePath(root), "utf8").trim(), "heads-down");
+    assert.equal(readFileSync(modeFilePath(root), "utf8").trim(), "focus");
   });
 
-  test("heads alias maps to 'heads-down' in the mode file", () => {
+  // hazard: `focus` used to be mapped onto a second spelling on the way to disk, and two more aliases pointed at
+  // the same place. Every alias is a word the operator can type that the config field cannot hold, which is the
+  // measured bug: the documented word matched no branch and produced a policy with no posture at all.
+  test("a word that is not one of the three postures throws and writes nothing", () => {
     const root = newRoot();
-    setMode(root, "heads");
-    assert.equal(readFileSync(modeFilePath(root), "utf8").trim(), "heads-down");
+    for (const rejected of ["heads-down", "heads", "bogus", "", "sol"]) {
+      assert.throws(() => setMode(root, rejected), UsageError, rejected);
+      assert.equal(existsSync(modeFilePath(root)), false, rejected);
+    }
   });
 
-  test("an invalid mode throws UsageError and writes nothing", () => {
+  test("the refusal names the three accepted words, so the fix is readable from the error", () => {
     const root = newRoot();
-    assert.throws(() => setMode(root, "bogus"), UsageError);
-    assert.equal(existsSync(modeFilePath(root)), false);
+    assert.throws(() => setMode(root, "heads-down"), /paired \| solo \| focus/);
+  });
+
+  // why: the confirmation used to announce grind, which posture no longer touches. A line that claims a
+  // capability the command did not set is the AD-020 defect in the operator's own output.
+  test("no posture confirmation claims grind", () => {
+    const root = newRoot();
+    for (const mode of ["paired", "solo", "focus"]) {
+      assert.doesNotMatch(setMode(root, mode), /grind/i, mode);
+    }
   });
 });
 
@@ -179,17 +194,21 @@ describe("readMode", () => {
     assert.equal(readMode(root), "paired");
   });
 
-  test("maps a 'heads-down' mode file to 'focus'", () => {
+  // invariant: what the operator types is what the loader reads back. This round-trip is the whole point of
+  // having one word per posture — it is the assertion an alias layer would pass while the config field did not.
+  test("each of the three postures round-trips through the mode file", () => {
     const root = newRoot();
-    setMode(root, "focus");
-    assert.equal(readMode(root), "focus");
+    for (const mode of ["paired", "solo", "focus"]) {
+      setMode(root, mode);
+      assert.equal(readMode(root), mode);
+    }
   });
 
-  test("falls back to the heads-down flag file when no mode file exists", () => {
+  test("falls back to the focus flag file when no mode file exists", () => {
     const root = newRoot();
     setGrind(root, false);
     mkdirSync(flagsDir(root), { recursive: true });
-    writeFileSync(headsDownFlagPath(root), "");
+    writeFileSync(focusFlagPath(root), "");
     assert.equal(readMode(root), "focus");
   });
 
@@ -209,10 +228,15 @@ describe("grindOn / gatesPaused", () => {
     assert.equal(grindOn(root), true);
   });
 
-  test("grindOn is true when mode is focus even without the grind flag", () => {
+  // invariant: verification does not move when posture moves. The deepest posture used to force grind on, so a
+  // surfacing preference silently switched on a capability with its own flag and its own documented trade-off.
+  // This asserts the inverse of what the old test asserted, because the contract changed by decision.
+  test("no posture switches grind on by itself", () => {
     const root = newRoot();
-    setMode(root, "focus");
-    assert.equal(grindOn(root), true);
+    for (const mode of ["paired", "solo", "focus"]) {
+      setMode(root, mode);
+      assert.equal(grindOn(root), false, mode);
+    }
   });
 
   test("gatesPaused reflects the skip-verify flag", () => {
@@ -255,12 +279,13 @@ describe("statusText / help text", () => {
     });
   });
 
-  test("statusJson reports focus mode, which forces grind on without a flag file", () => {
+  test("statusJson reports the posture the mode file holds, and reports grind separately", () => {
     const root = newRoot();
     setMode(root, "focus");
     const report = statusJson(root);
     assert.equal(report.mode, "focus");
-    assert.equal(report.grind, true);
+    assert.equal(report.modeOrigin, "file");
+    assert.equal(report.grind, false);
   });
 
   test("helpText names 'tlc harness', never bare 'harness'", () => {
@@ -419,15 +444,23 @@ describe("status agrees with the policy the hooks resolve", () => {
     writeFileSync(path, JSON.stringify(patch), "utf8");
   }
 
-  // hazard: status used to read flag files only and default to "solo", so a project whose policy set
-  // heads-down reported solo with grind off while every hook resolved the opposite.
-  test("policy mode heads-down reports focus, with config as the origin", () => {
+  // hazard: status used to read flag files only and default to "solo", so a project whose policy set the
+  // deepest posture reported solo with grind off while every hook resolved the opposite.
+  test("a configured posture is reported, with config as the origin", () => {
     const root = newRoot();
-    writePolicy(root, { version: 1, mode: "heads-down" });
+    writePolicy(root, { version: 1, mode: "focus" });
     const report = statusJson(root);
     assert.equal(report.mode, "focus");
     assert.equal(report.modeOrigin, "config");
-    assert.equal(report.grind, true, "heads-down forces grind on, exactly as the loader does");
+    assert.equal(report.modeInvalid, undefined);
+  });
+
+  // why: the two are independent now. A posture that reported grind on would be claiming a capability the
+  // config left off — the same class of lie, pointed the other way.
+  test("no posture reports grind on by itself", () => {
+    const root = newRoot();
+    writePolicy(root, { version: 1, mode: "focus" });
+    assert.equal(statusJson(root).grind, false);
   });
 
   test("policy grind.enabled is reported without any flag file", () => {
@@ -440,7 +473,7 @@ describe("status agrees with the policy the hooks resolve", () => {
 
   test("a mode file keeps precedence over the policy, and says so", () => {
     const root = newRoot();
-    writePolicy(root, { version: 1, mode: "heads-down" });
+    writePolicy(root, { version: 1, mode: "focus" });
     setMode(root, "paired");
     const report = statusJson(root);
     assert.equal(report.mode, "paired");
@@ -451,7 +484,7 @@ describe("status agrees with the policy the hooks resolve", () => {
     const root = newRoot();
     writePolicy(root, { version: 1, mode: "solo" });
     ensureFlagsDir(root);
-    writeFileSync(headsDownFlagPath(root), "");
+    writeFileSync(focusFlagPath(root), "");
     const report = statusJson(root);
     assert.equal(report.mode, "focus");
     assert.equal(report.modeOrigin, "flag");
@@ -467,9 +500,28 @@ describe("status agrees with the policy the hooks resolve", () => {
     assert.equal(report.modeOrigin, "config");
   });
 
-  test("the text form renders the same three values as the json form", () => {
+  // why: a configured value that cannot be honoured is the case the operator most needs named. Reporting the
+  // replacement posture with `config` as its origin would say the operator asked for what they did not ask for.
+  test("a configured value that is not a posture reports fallback and names it", () => {
     const root = newRoot();
     writePolicy(root, { version: 1, mode: "heads-down" });
+    const report = statusJson(root);
+    assert.equal(report.mode, "solo");
+    assert.equal(report.modeOrigin, "fallback");
+    assert.equal(report.modeInvalid, "heads-down");
+  });
+
+  test("the text form carries the rejected value and the accepted words", () => {
+    const root = newRoot();
+    writePolicy(root, { version: 1, mode: "heads-down" });
+    const text = statusText(root);
+    assert.match(text, /heads-down/);
+    assert.match(text, /paired \| solo \| focus/);
+  });
+
+  test("the text form renders the same values as the json form", () => {
+    const root = newRoot();
+    writePolicy(root, { version: 1, mode: "focus", grind: { enabled: true } });
     const report = statusJson(root);
     const text = statusText(root);
     assert.ok(text.includes(report.mode));

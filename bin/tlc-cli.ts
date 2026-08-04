@@ -2,20 +2,15 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { coreFacade } from "../src/core/index.ts";
 import { emitJson, JSON_FLAG, takeJsonFlag, unknownFlags } from "../src/platform/cli-output.ts";
 import { flagsDir, projectConfigPath, projectStateDir, runtimeHome } from "../src/platform/paths.ts";
 
 export class UsageError extends Error {}
 
-const MODE_ALIASES: Record<string, string> = {
-  solo: "solo",
-  paired: "paired",
-  focus: "heads-down",
-  "heads-down": "heads-down",
-  heads: "heads-down",
-};
+// why: derived from the facade rather than imported from inside the policy aggregate, so the CLI keeps its
+// single door into core and the two cannot drift apart.
+type Posture = ReturnType<typeof coreFacade.policy.resolveProjectPosture>;
 
 export function resolveProjectRoot(): string {
   return process.env.TLC_PROJECT_DIR ?? process.cwd();
@@ -33,8 +28,10 @@ export function skipFlagPath(root: string): string {
   return join(flagsDir(root), "skip-verify");
 }
 
-export function headsDownFlagPath(root: string): string {
-  return join(flagsDir(root), "heads-down");
+// why: the posture flag files carry the posture names, so there is one spelling per posture across the config
+// field, the state file, the flag file and this command.
+export function focusFlagPath(root: string): string {
+  return join(flagsDir(root), "focus");
 }
 
 export function pairedFlagPath(root: string): string {
@@ -45,31 +42,8 @@ export function ensureFlagsDir(root: string): void {
   mkdirSync(flagsDir(root), { recursive: true });
 }
 
-export type ModeOrigin = "file" | "flag" | "config";
-
-// hazard: this used to derive posture from flag files alone and default to "solo", so a project whose policy
-// set heads-down was reported as solo with grind off while every hook resolved the opposite. The loader is
-// the only thing that decides posture; status reads its answer instead of recomputing one.
-export function modeOrigin(root: string): ModeOrigin {
-  const modeFile = modeFilePath(root);
-  if (existsSync(modeFile)) {
-    const raw = readFileSync(modeFile, "utf8").trim().toLowerCase();
-    if (raw === "solo" || raw === "paired" || raw === "heads-down") {
-      return "file";
-    }
-  }
-  if (existsSync(headsDownFlagPath(root)) || existsSync(pairedFlagPath(root))) {
-    return "flag";
-  }
-  return "config";
-}
-
-export function operatorLabel(mode: string): string {
-  return mode === "heads-down" ? "focus" : mode;
-}
-
 export function readMode(root: string): string {
-  return operatorLabel(coreFacade.policy.loadPolicy(root).mode);
+  return coreFacade.policy.loadPolicy(root).mode;
 }
 
 export function grindOn(root: string): boolean {
@@ -80,38 +54,53 @@ export function gatesPaused(root: string): boolean {
   return existsSync(skipFlagPath(root));
 }
 
+export function acceptedModes(): string {
+  return coreFacade.policy.OPERATOR_MODES.join(" | ");
+}
+
 export function statusText(root: string): string {
   const report = statusJson(root);
-  const mode = report.mode;
+  // why: a rejected value is reported next to the posture that replaced it. Printing only `fallback` would
+  // leave the operator with a posture they did not set and no way to see which word was refused.
+  const origin =
+    report.modeInvalid === undefined
+      ? `from ${report.modeOrigin}`
+      : `${report.modeOrigin} — \`${report.modeInvalid}\` is not a posture; accepted: ${acceptedModes()}`;
   return [
     `harness @ ${root}`,
-    `  mode:   ${mode}${mode === "focus" ? " (max autonomy + grind)" : ""} [from ${report.modeOrigin}]`,
+    `  mode:   ${report.mode} [${origin}]`,
     `  grind:  ${report.grind ? "ON  — stop hook re-runs lint/tests and auto-retries on fail" : "OFF — no auto fix loops"}`,
     `  gates:  ${report.gatesPaused ? "PAUSED — stop checks disabled" : "active"}`,
     "",
     "Quick help:",
     "  grind ON  = after each agent turn, lint/test changed files; if fail → agent must fix",
     "  pause     = temporarily disable those stop checks",
-    "  focus     = solo on steroids: fewer questions + grind ON",
-    "  solo      = normal daily mode (grind not forced)",
-    "  paired    = explain more; check in before big moves",
+    "  posture   = how much the agent surfaces. Verification is identical at all three.",
+    "  paired    = explains as it goes, and asks before any sizable move",
+    "  solo      = works on its own; a destructive action, a dead-end or real ambiguity reaches you",
+    "  focus     = only a destructive action or a dead-end reaches you; it settles ambiguity itself",
   ].join("\n");
 }
 
 export type StatusReport = {
   root: string;
   mode: string;
-  modeOrigin: ModeOrigin;
+  modeOrigin: Posture["origin"];
+  modeInvalid?: string;
   grind: boolean;
   gatesPaused: boolean;
 };
 
 export function statusJson(root: string): StatusReport {
   const policy = coreFacade.policy.loadPolicy(root);
+  // invariant: posture and its origin come from the resolver the loader itself uses. Status recomputing either
+  // one is what made it report the opposite of every hook (AD-020).
+  const posture = coreFacade.policy.resolveProjectPosture(root);
   return {
     root,
-    mode: operatorLabel(policy.mode),
-    modeOrigin: modeOrigin(root),
+    mode: posture.mode,
+    modeOrigin: posture.origin,
+    ...(posture.invalid === undefined ? {} : { modeInvalid: posture.invalid }),
     grind: policy.grind.enabled,
     gatesPaused: gatesPaused(root),
   };
@@ -149,21 +138,26 @@ export function setPaused(root: string, on: boolean): string {
   return "gates ACTIVE again";
 }
 
+// hazard: this used to map `focus` onto a second spelling before writing, so the word the operator typed and the
+// word the config field stored were different — and a config written from the documented word then matched no
+// branch at all. One word per posture, and nothing translates.
+const MODE_CONFIRMATION: Record<Posture["mode"], string> = {
+  paired: "mode paired — explains as it goes, and asks before any sizable move",
+  solo: "mode solo — a destructive action, a dead-end or real ambiguity reaches you",
+  focus: "mode focus — only a destructive action or a dead-end reaches you; ambiguity is settled for you",
+};
+
 export function setMode(root: string, raw: string): string {
-  const mapped = MODE_ALIASES[raw.toLowerCase()];
-  if (!mapped) {
-    throw new UsageError("mode must be: solo | paired | focus");
+  const mode = raw.toLowerCase();
+  if (!coreFacade.policy.isOperatorMode(mode)) {
+    throw new UsageError(`mode must be: ${acceptedModes()}`);
   }
   ensureFlagsDir(root);
-  writeFileSync(modeFilePath(root), `${mapped}\n`);
+  writeFileSync(modeFilePath(root), `${mode}\n`);
   coreFacade.policy.refreshPolicyBaselines(root);
-  if (mapped === "heads-down") {
-    return "mode focus — max autonomy + grind ON";
-  }
-  if (mapped === "paired") {
-    return "mode paired — explain more; check in before big moves";
-  }
-  return "mode solo — normal day-to-day (grind not forced by mode)";
+  // why: posture governs surfacing only. Announcing grind here would claim a capability this command does not
+  // touch — it has its own switch, its own flag and its own trade-off.
+  return MODE_CONFIRMATION[mode];
 }
 
 export type GateField = "test" | "lint";

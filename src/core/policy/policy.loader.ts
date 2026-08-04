@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { flagsDir, projectConfigPath, projectStateDir, runtimeHome } from "../../platform/paths.ts";
+import { flagsDir, projectConfigPath, runtimeHome } from "../../platform/paths.ts";
 import { DEFAULTS } from "./policy.defaults.ts";
-import { resolvePosture } from "./policy.posture.ts";
+import { type PostureResolution, resolvePosture } from "./policy.posture.ts";
 import type { PartialPolicy, Policy } from "./policy.types.ts";
 
 function readJsonFile<T>(path: string): T | null {
@@ -48,13 +48,28 @@ function flagExists(root: string, flagName: string): boolean {
   return existsSync(join(flagsDir(root), flagName));
 }
 
+type ConfigPair = { fromUser: PartialPolicy; fromProject: PartialPolicy };
+
+function readConfigPair(root: string): ConfigPair {
+  return {
+    fromUser: readJsonFile<PartialPolicy>(join(runtimeHome(), "config.json")) ?? {},
+    fromProject: readJsonFile<PartialPolicy>(projectConfigPath(root)) ?? {},
+  };
+}
+
+/**
+ * invariant: the resolution the loader itself applies, origin included. `status` and `doctor` need the origin
+ * and the rejected value, which `Policy.mode` cannot carry — reading it from here is what stops either of them
+ * from recomputing a posture and reporting the opposite of what the hooks resolved (AD-020).
+ */
+export function resolveProjectPosture(root: string): PostureResolution {
+  const { fromUser, fromProject } = readConfigPair(root);
+  return resolvePosture(root, fromProject.mode ?? fromUser.mode);
+}
+
 export function loadPolicy(root: string): Policy {
-  const userFile = join(runtimeHome(), "config.json");
-  const projectFile = projectConfigPath(root);
-  const fromUser = readJsonFile<PartialPolicy>(userFile) ?? {};
-  const fromProject = readJsonFile<PartialPolicy>(projectFile) ?? {};
+  const { fromUser, fromProject } = readConfigPair(root);
   const merged = deepMerge(deepMerge(DEFAULTS, fromUser), fromProject);
-  // invariant: one resolver decides posture, so status and doctor cannot disagree with the hooks.
   merged.mode = resolvePosture(root, fromProject.mode ?? fromUser.mode).mode;
 
   // why: grind is decided by its own switch and its own flag. Posture used to force it on, which meant a

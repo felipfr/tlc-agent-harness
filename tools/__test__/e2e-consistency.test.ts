@@ -129,10 +129,10 @@ describe("E2E — CG-01: a generated shim names the install path", () => {
 });
 
 describe("E2E — CG-02: status equals what the stop resolves", () => {
-  test("policy heads-down reports focus with grind on, and the stop agrees by gating", () => {
+  test("a configured posture reports itself, and the stop agrees by gating", () => {
     const root = newRepo("tlc-e2e-status-");
     writePolicy(root, {
-      mode: "heads-down",
+      mode: "focus",
       codePaths: ["src"],
       grind: { enabled: true, lintCommand: ["node", "-e", "process.exit(1)"] },
     });
@@ -145,15 +145,32 @@ describe("E2E — CG-02: status equals what the stop resolves", () => {
     };
     assert.equal(status.mode, "focus");
     assert.equal(status.modeOrigin, "config");
+    // why: grind is on here because the config says so, not because the posture is deep. Status reporting a
+    // capability the posture never touched is the AD-020 defect.
     assert.equal(status.grind, true);
 
     const stop = hook("stop", cursorStop(root), root);
     assert.match(stop.stdout, /lint failed/, "the stop ran the gate status said was on");
   });
 
+  // why: end to end, because the fallback crosses the loader, the CLI and the config file. A value refused in a
+  // unit test but absorbed by the real binary would still leave the operator running a posture they did not set.
+  test("a configured value that is not a posture reports fallback all the way through the binary", () => {
+    const root = newRepo("tlc-e2e-fallback-");
+    writePolicy(root, { mode: "heads-down" });
+    const status = JSON.parse(cli(["status", "--json"], root).stdout) as {
+      mode: string;
+      modeOrigin: string;
+      modeInvalid?: string;
+    };
+    assert.equal(status.mode, "solo");
+    assert.equal(status.modeOrigin, "fallback");
+    assert.equal(status.modeInvalid, "heads-down");
+  });
+
   test("a mode flag overrides the policy and status says the origin is the flag", () => {
     const root = newRepo("tlc-e2e-origin-");
-    writePolicy(root, { mode: "heads-down" });
+    writePolicy(root, { mode: "focus" });
     assert.equal(cli(["mode", "paired"], root).status, 0);
     const status = JSON.parse(cli(["status", "--json"], root).stdout) as {
       mode: string;

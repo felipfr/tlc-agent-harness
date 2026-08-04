@@ -52,8 +52,9 @@ import {
   recordPolicyBaseline,
   refreshPolicyBaselines,
 } from "./policy/policy.integrity.ts";
-import { isUnderCodePaths, loadPolicy } from "./policy/policy.loader.ts";
+import { isUnderCodePaths, loadPolicy, resolveProjectPosture } from "./policy/policy.loader.ts";
 import { operatorBootstrapLines } from "./policy/policy.operator.ts";
+import { isOperatorMode, OPERATOR_MODES } from "./policy/policy.posture.ts";
 import { forProvider } from "./policy/policy.types.ts";
 import { checkCollision, heartbeat, register, release, sweepStale } from "./presence/presence.service.ts";
 import { evaluateShellCommand } from "./shell-policy/shell-policy.service.ts";
@@ -187,6 +188,9 @@ export const coreFacade = {
     refreshPolicyBaselines,
     operatorBootstrapLines,
     loadPolicy,
+    resolveProjectPosture,
+    OPERATOR_MODES,
+    isOperatorMode,
     isUnderCodePaths,
     forProvider,
   },

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, test } from "node:test";
 import type { ProviderWiring } from "../../src/contracts/index.ts";
+import { projectConfigPath } from "../../src/platform/paths.ts";
 import { mergeClaudeSettings } from "../../src/providers/claude/claude.wiring.ts";
 import type { ProviderPort } from "../../src/providers/provider.port.ts";
 import {
@@ -193,11 +194,46 @@ describe("checkProviders", () => {
 });
 
 describe("checkProjectPolicy", () => {
+  function writeConfig(root: string, patch: Record<string, unknown>): void {
+    const path = projectConfigPath(root);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(patch), "utf8");
+  }
+
   test("reports the project config path whether or not it exists", () => {
     const root = newRoot();
     const checks = checkProjectPolicy(root);
-    assert.equal(checks.length, 2);
+    assert.equal(checks.length, 3);
     assert.ok(checks.every((c) => c.level === "ok"));
+  });
+
+  test("a valid posture is an ok row naming the posture and where it came from", () => {
+    const root = newRoot();
+    writeConfig(root, { version: 1, mode: "focus" });
+    const row = checkProjectPolicy(root).find((c) => c.name === "operator posture");
+    assert.equal(row?.level, "ok");
+    assert.match(row?.detail ?? "", /focus/);
+    assert.match(row?.detail ?? "", /from config/);
+  });
+
+  // hazard: a `mode` the loader cannot honour is replaced by the default with no message anywhere. The warn has
+  // to quote the refused word — "invalid posture" alone leaves the operator hunting for which word it was.
+  test("a value that is not a posture warns, quoting it and the accepted words", () => {
+    const root = newRoot();
+    writeConfig(root, { version: 1, mode: "heads-down" });
+    const row = checkProjectPolicy(root).find((c) => c.name === "operator posture");
+    assert.equal(row?.level, "warn");
+    assert.match(row?.detail ?? "", /heads-down/);
+    assert.match(row?.detail ?? "", /paired \| solo \| focus/);
+    assert.match(row?.detail ?? "", /solo/);
+  });
+
+  // why: warn keeps doctor's exit code at 0. A bad posture is a config fault to fix, not a broken install, and
+  // failing here would block the very command an operator runs to find out what is wrong.
+  test("the posture warn does not fail the doctor run", () => {
+    const root = newRoot();
+    writeConfig(root, { version: 1, mode: "heads-down" });
+    assert.equal(exitCodeFor(checkProjectPolicy(root)), 0);
   });
 });
 

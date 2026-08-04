@@ -123,6 +123,21 @@ export function checkCapabilities(root: string, runtimeRoot: string): Check[] {
   }));
 }
 
+// why: a posture that could not be honoured is silently replaced by the default everywhere else — the loader
+// applies it, the hooks obey it, and nothing in a running session says the operator's word was refused. This is
+// the surface that names it, which is what makes the one-word fix findable.
+function checkPosture(root: string): Check {
+  const posture = coreFacade.policy.resolveProjectPosture(root);
+  if (posture.origin !== "fallback") {
+    return { level: "ok", name: "operator posture", detail: `${posture.mode} (from ${posture.origin})` };
+  }
+  return {
+    level: "warn",
+    name: "operator posture",
+    detail: `\`${posture.invalid}\` is not a posture — running as ${posture.mode}. Accepted: ${coreFacade.policy.OPERATOR_MODES.join(" | ")}. Fix \`mode\` in ${projectConfigPath(root)}, or run: tlc harness mode ${posture.mode}`,
+  };
+}
+
 export function checkProjectPolicy(root: string): Check[] {
   const configPath = projectConfigPath(root);
   const stateDir = projectStateDir(root);
@@ -137,6 +152,7 @@ export function checkProjectPolicy(root: string): Check[] {
       name: "state dir",
       detail: existsSync(stateDir) ? stateDir : `${stateDir} (created on first session)`,
     },
+    checkPosture(root),
   ];
 }
 
