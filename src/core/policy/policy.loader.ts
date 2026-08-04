@@ -2,7 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { flagsDir, projectConfigPath, projectStateDir, runtimeHome } from "../../platform/paths.ts";
 import { DEFAULTS } from "./policy.defaults.ts";
-import type { OperatorMode, PartialPolicy, Policy } from "./policy.types.ts";
+import { resolvePosture } from "./policy.posture.ts";
+import type { PartialPolicy, Policy } from "./policy.types.ts";
 
 function readJsonFile<T>(path: string): T | null {
   if (!existsSync(path)) {
@@ -47,35 +48,19 @@ function flagExists(root: string, flagName: string): boolean {
   return existsSync(join(flagsDir(root), flagName));
 }
 
-function resolveMode(root: string, configured: OperatorMode): OperatorMode {
-  const modeFile = join(projectStateDir(root), "harness-mode");
-  if (existsSync(modeFile)) {
-    const raw = readFileSync(modeFile, "utf8").trim().toLowerCase();
-    if (raw === "paired" || raw === "solo" || raw === "heads-down") {
-      return raw;
-    }
-  }
-  if (flagExists(root, "heads-down")) {
-    return "heads-down";
-  }
-  if (flagExists(root, "paired")) {
-    return "paired";
-  }
-  return configured;
-}
-
 export function loadPolicy(root: string): Policy {
   const userFile = join(runtimeHome(), "config.json");
   const projectFile = projectConfigPath(root);
   const fromUser = readJsonFile<PartialPolicy>(userFile) ?? {};
   const fromProject = readJsonFile<PartialPolicy>(projectFile) ?? {};
   const merged = deepMerge(deepMerge(DEFAULTS, fromUser), fromProject);
-  merged.mode = resolveMode(root, merged.mode);
+  // invariant: one resolver decides posture, so status and doctor cannot disagree with the hooks.
+  merged.mode = resolvePosture(root, fromProject.mode ?? fromUser.mode).mode;
 
+  // why: grind is decided by its own switch and its own flag. Posture used to force it on, which meant a
+  // surfacing preference silently overrode a capability with its own documented trade-off — the AD-020 defect.
+  // Verification does not move when posture moves.
   if (flagExists(root, "grind-on")) {
-    merged.grind.enabled = true;
-  }
-  if (merged.mode === "heads-down") {
     merged.grind.enabled = true;
   }
 

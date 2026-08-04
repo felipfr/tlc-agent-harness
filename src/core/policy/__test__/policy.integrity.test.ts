@@ -135,7 +135,7 @@ test("the fingerprint covers every source the loader reads", () => {
   const paths = policySourceFingerprint(root).map((source) => source.path);
   assert.ok(paths.includes(projectConfigPath(root)));
   assert.ok(paths.includes(join(projectStateDir(root), "harness-mode")));
-  for (const flag of ["grind-on", "skip-verify", "heads-down", "paired"]) {
+  for (const flag of ["grind-on", "skip-verify", "focus", "paired"]) {
     assert.ok(paths.includes(join(flagsDir(root), flag)), flag);
   }
 });

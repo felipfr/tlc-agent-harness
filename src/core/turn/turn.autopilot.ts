@@ -21,6 +21,14 @@ function fileLine(failing: string[] | undefined, changed: string[] | undefined):
   return null;
 }
 
+const POSTURE_STEP: Record<OperatorMode, string> = {
+  paired:
+    "Fix the reported issue with tool-backed evidence, showing your reasoning, and check in before any sizable non-destructive move.",
+  solo: "Fix the reported issue with tool-backed evidence; do not invent success. Surface only an irreversible action, a real dead-end, or ambiguity that changes the outcome.",
+  focus:
+    "Keep going until the gates pass. Settle ambiguity yourself and state the assumption; escalate only for an irreversible action or a real dead-end, with BLOCKED / TRIED / NEED.",
+};
+
 export function resolveAutopilot(args: {
   category: FailureCategory;
   gate: string;
@@ -98,9 +106,9 @@ export function resolveAutopilot(args: {
       return {
         next_action: base,
         steps: [
-          args.mode === "heads-down"
-            ? "Focus mode: keep going until gates pass or you must escalate with BLOCKED/TRIED/NEED."
-            : "Fix the reported issue with tool-backed evidence; do not invent success.",
+          // why: the step states the active posture's interruption threshold, which is what posture governs.
+          // It says nothing about gates — those do not vary by posture.
+          POSTURE_STEP[args.mode],
           filesHint,
         ].filter(Boolean) as string[],
       };

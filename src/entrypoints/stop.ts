@@ -293,7 +293,10 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
   }
 
   if (policy.grind.enabled && policy.grind.testCommand) {
-    const shouldRunTests = testTargets.length > 0 || (policy.mode === "heads-down" && codeTargets.length > 0);
+    // why: changed code is enough, at every posture. The narrow form ran the suite only when a test file changed,
+    // which skips exactly the change that most needs testing — and it made verification depend on a surfacing
+    // preference. Still gated by grind.enabled.
+    const shouldRunTests = testTargets.length > 0 || codeTargets.length > 0;
     if (shouldRunTests) {
       const recordFiles = testTargets.length > 0 ? testTargets : codeTargets;
       const artifact = await runLockedGate({

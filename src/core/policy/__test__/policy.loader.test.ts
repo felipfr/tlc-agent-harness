@@ -198,13 +198,13 @@ test("an invalid harness-mode state file is ignored", () => {
   }
 });
 
-test("the heads-down flag sets mode to heads-down", () => {
+test("the focus flag sets mode to focus", () => {
   const root = tempRoot();
   const home = tempRoot();
   try {
     withTlcHome(home, () => {
-      writeFlag(root, "heads-down");
-      assert.equal(loadPolicy(root).mode, "heads-down");
+      writeFlag(root, "focus");
+      assert.equal(loadPolicy(root).mode, "focus");
     });
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -212,7 +212,7 @@ test("the heads-down flag sets mode to heads-down", () => {
   }
 });
 
-test("the paired flag sets mode to paired when heads-down is absent", () => {
+test("the paired flag sets mode to paired when focus is absent", () => {
   const root = tempRoot();
   const home = tempRoot();
   try {
@@ -226,14 +226,14 @@ test("the paired flag sets mode to paired when heads-down is absent", () => {
   }
 });
 
-test("the heads-down flag takes priority over the paired flag", () => {
+test("the focus flag takes priority over the paired flag", () => {
   const root = tempRoot();
   const home = tempRoot();
   try {
     withTlcHome(home, () => {
-      writeFlag(root, "heads-down");
+      writeFlag(root, "focus");
       writeFlag(root, "paired");
-      assert.equal(loadPolicy(root).mode, "heads-down");
+      assert.equal(loadPolicy(root).mode, "focus");
     });
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -255,12 +255,35 @@ test("the grind-on flag forces grind.enabled", () => {
   }
 });
 
-test("heads-down mode forces grind.enabled even without the grind-on flag", () => {
+// invariant: verification does not move when posture moves. The deepest posture used to force grind on, so a
+// surfacing preference silently overrode a capability that has its own switch and its own documented trade-off.
+// This asserts the inverse of what the old test asserted, because the contract changed by decision.
+test("no posture raises grind.enabled on its own", () => {
   const root = tempRoot();
   const home = tempRoot();
   try {
     withTlcHome(home, () => {
-      writeFlag(root, "heads-down");
+      for (const posture of ["focus", "paired"] as const) {
+        writeFlag(root, posture);
+        const policy = loadPolicy(root);
+        assert.equal(policy.mode, posture);
+        assert.equal(policy.grind.enabled, false, `${posture} raised grind on its own`);
+        rmSync(join(flagsDir(root), posture));
+      }
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("the grind-on flag is what raises grind, at every posture", () => {
+  const root = tempRoot();
+  const home = tempRoot();
+  try {
+    withTlcHome(home, () => {
+      writeFlag(root, "focus");
+      writeFlag(root, "grind-on");
       assert.equal(loadPolicy(root).grind.enabled, true);
     });
   } finally {

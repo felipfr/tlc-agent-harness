@@ -3,22 +3,29 @@ import type { OperatorMode, Policy } from "./policy.types.ts";
 const BASE = [
   "Harness: drive tasks to verified completion without babysitting the owner.",
   "Evidence or stop: no invented numbers, versions, or PASS claims. Cite paths, command output, or evidence files.",
-  "Ask the owner only for: irreversible or destructive actions, a real dead-end after searching, or costly ambiguity you cannot resolve.",
   "Otherwise assume the sensible default, proceed, and state the assumption in one line.",
+  "Verification does not change with posture: the same evidence bar, the same gates, the same done-criteria at every level. What changes is how much you surface and what earns an interruption.",
   "Before calling done: build, tests and lint must pass; no deleted tests; diff size matches the ask; the result matches the full request.",
   "If blocked, use exactly: BLOCKED / TRIED / NEED — one tight block, no preamble.",
 ];
 
-const BY_MODE: Record<OperatorMode, string> = {
-  paired: "Mode paired: explain reasoning more; check in before sizable non-destructive moves.",
-  "heads-down":
-    "Mode focus: maximum autonomy — do not ask for confirmation on reversible work. Grind gates run on stop instead, so verify yourself rather than asking; ship claims need evidence when configured.",
-  solo: "Mode solo: work autonomously; premature ship claims are challenged when the ship gate is enabled.",
+// hazard: the interruption threshold used to live in BASE — as solo's, asserted for all three — and each
+// posture line then contradicted it. `paired` promised a pre-check while BASE said to ask for three things
+// only; the deepest posture said not to ask about reversible work while BASE still demanded escalating
+// ambiguity. A varying rule cannot sit in the invariant block, so it moved here and is stated once.
+// invariant: no posture line names a gate, a capability or a config field. The old solo line named the ship
+// gate and the old deepest line named grind — both machinery, and machinery is what must not vary by posture.
+const BY_POSTURE: Record<OperatorMode, string> = {
+  paired:
+    "Posture paired: show your reasoning as you go, and check in before any sizable non-destructive move. Surface an irreversible action, a real dead-end after exhausting sources, and ambiguity that changes the outcome.",
+  solo: "Posture solo: work on your own. Surface exactly three things — an irreversible or destructive action, a real dead-end after exhausting sources, and ambiguity that changes the outcome.",
+  focus:
+    "Posture focus: deepest autonomy, fewest interruptions. Only an irreversible or destructive action and a real dead-end reach the operator; ambiguity is yours to settle by taking the most reasonable reading and stating the assumption in one line.",
 };
 
 export function operatorBootstrapLines(policy: Policy, stateDir: string): string[] {
   const lines = [...BASE, `Hold state on disk at ${stateDir}/handoff.json between turns and sessions.`];
-  lines.push(BY_MODE[policy.mode]);
+  lines.push(BY_POSTURE[policy.mode]);
 
   if (policy.shipGate.enabled) {
     lines.push(
