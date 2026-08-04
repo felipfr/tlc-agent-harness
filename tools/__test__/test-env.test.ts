@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -36,10 +38,48 @@ test("both suites are launched through the setup module", () => {
   }
 });
 
-// invariant: TLC_HOME names which runtime, not which project. CI sets it deliberately and the suite exercises
-// it, so cleaning it would hide a different class of bug than the one this module exists for.
-test("TLC_HOME is not cleaned", () => {
-  assert.ok(!PROJECT_SCOPED_ENV.includes("TLC_HOME"));
+/**
+ * invariant: `TLC_HOME` is redirected, not deleted. Deleting it would send every test at the developer's real
+ * `~/.tlc/harness`, which is the opposite of hermetic; an empty temp directory is a runtime home that exists and
+ * contains nothing.
+ *
+ * hazard: this variable was deliberately left alone, on the reasoning that it names which runtime and that CI sets
+ * it on purpose. That held only while nothing machine-wide lived under it. The global lesson tier does, so a test
+ * calling `allLessons` without pinning the home read whichever lessons the developer had promoted — green on a
+ * fresh machine, green in CI, red on mine the moment I promoted five ([/decisions/ad-042.md](/decisions/ad-042.md)).
+ */
+test("TLC_HOME is redirected to an empty directory rather than deleted", () => {
+  assert.ok(
+    !PROJECT_SCOPED_ENV.includes("TLC_HOME"),
+    "it is redirected, so it must not be in the delete list",
+  );
+  const home = process.env.TLC_HOME;
+  assert.ok(home, "the suite must run with a runtime home");
+  assert.notEqual(home, join(homedir(), ".tlc", "harness"), "the suite must not read the real runtime home");
+  assert.equal(existsSync(join(home, "state", "lessons.json")), false, "the runtime home must start empty");
+});
+
+// hazard: the assertion above reads ambient state, so it would pass even if the module were inert while running
+// from a shell that happened to have no TLC_HOME. This spawns a child that *does* have one and asks whether the
+// module moved it — the same discipline the delete-loop probe below follows.
+test("the setup module redirects a TLC_HOME that is already set", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--import",
+      "./tools/test-env.mjs",
+      "--input-type=module",
+      "--eval",
+      'if (process.env.TLC_HOME === "/leaked-runtime") { process.exit(9); }',
+    ],
+    {
+      cwd: join(dirname(fileURLToPath(import.meta.url)), "..", ".."),
+      env: { ...process.env, TLC_HOME: "/leaked-runtime" } as NodeJS.ProcessEnv,
+      encoding: "utf8",
+    },
+  );
+
+  assert.equal(result.status, 0, `TLC_HOME survived the setup module: ${result.stderr}`);
 });
 
 // hazard: the assertion above only fires when the variable is actually set, so from a clean shell it passes

@@ -95,14 +95,14 @@ export function readModelFromToolInput(toolInput: Record<string, unknown> | unde
   return typeof model === "string" ? model : "";
 }
 
-// why: core/lesson/lesson.select.ts's formatLessonsSection/renderLessonBlock aren't re-exported by core.facade — presentation-only, so it is reproduced here rather than reaching into core internals.
+/**
+ * hazard: this used to be a copy of the core renderer, on the reasoning that presentation is not core's business.
+ * The copy is what the model actually receives, so the tier added to the core block rendered in `lessons list` and
+ * in nothing an agent ever saw. Two renderers for one string is the same defect as a consumer without a producer,
+ * pointed sideways ([/decisions/ad-040.md](/decisions/ad-040.md)).
+ */
 export function renderLessonLine(lesson: HarnessLesson): string {
-  return [
-    `- [${lesson.failedGate}/${lesson.status}] ${lesson.instruction}`,
-    `  avoid: ${lesson.avoid}`,
-    `  prefer: ${lesson.prefer}`,
-    `  before retrying: ${lesson.preRetryCheck}`,
-  ].join("\n");
+  return coreFacade.lesson.renderLessonBlock(lesson);
 }
 
 export function formatLessonsBlock(lessons: HarnessLesson[], title: string): string {

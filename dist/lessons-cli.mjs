@@ -5151,6 +5151,7 @@ var coreFacade = {
     creditLessons: creditLessons2,
     gardenAndPersistLessons,
     renderLessonsMarkdown,
+    renderLessonBlock,
     promotionCount,
     isInjectable,
     appliesHere,
@@ -5306,6 +5307,19 @@ function writeStdout(text) {
   process.stdout.write(text);
 }
 
+// bin/tlc-exec.mjs
+if (false) {}
+// src/providers/provider.degrade.ts
+var NO_HUMAN_MODES = new Set(["bypassPermissions", "dontAsk"]);
+// bin/write-user-hooks.mjs
+if (false) {}
+
+// tools/doctor.ts
+function plural(count, word) {
+  return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
+if (false) {}
+
 // tools/lessons-cli.ts
 function lessonRows(root, lessons, config, now) {
   return lessons.map((lesson) => ({
@@ -5335,6 +5349,8 @@ function listReport(root, lessons, config, now) {
   for (const row of rows) {
     byTier[row.tier] = (byTier[row.tier] ?? 0) + 1;
   }
+  const projectIds = new Set(coreFacade.lesson.readProjectLessons(root).map((lesson) => lesson.id));
+  const globalIds = coreFacade.lesson.readGlobalLessons().map((lesson) => lesson.id);
   return {
     count: lessons.length,
     storePath: lessonsStorePath(root),
@@ -5350,6 +5366,11 @@ function listReport(root, lessons, config, now) {
       outOfWindow: rows.filter((row) => row.validity !== "active").length,
       unproven: rows.filter((row) => row.effectiveness.startsWith("unproven")).length,
       notInjected: rows.filter((row) => row.effectiveness === "not-injected").length
+    },
+    stores: {
+      project: projectIds.size,
+      global: globalIds.length,
+      shared: globalIds.filter((id) => projectIds.has(id)).length
     },
     lessons: rows
   };
@@ -5374,8 +5395,9 @@ function listText(report) {
   lines.push(`
 ${report.count} ${noun} — ${tiers || "none"}`);
   lines.push(`stale=${report.totals.stale} out-of-window=${report.totals.outOfWindow} unproven=${report.totals.unproven} not-injected=${report.totals.notInjected}`);
-  lines.push(`project store: ${report.storePath}`);
-  lines.push(`global store:  ${report.globalStorePath}`);
+  const shared = report.stores.shared > 0 ? `, ${report.stores.shared} also in this project` : "";
+  lines.push(`project store: ${report.storePath}  (${plural(report.stores.project, "lesson")})`);
+  lines.push(`global store:  ${report.globalStorePath}  (${plural(report.stores.global, "lesson")}${shared})`);
   lines.push(`enabled=${report.config.enabled} promoteHitCount=${report.config.promoteHitCount} syncRulesFile=${report.config.syncRulesFile}`);
   return lines.join(`
 `);

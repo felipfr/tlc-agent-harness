@@ -46,19 +46,29 @@ function writePolicy(root: string, policy: Record<string, unknown>): void {
   writeFileSync(path, JSON.stringify({ version: 1, ...policy }), "utf8");
 }
 
+/**
+ * invariant: these cases drive the real launcher and the real CLI, so they need a runtime home that actually
+ * contains one — the repository itself.
+ *
+ * why: stated rather than inherited. The hermetic setup now points `TLC_HOME` at an empty temp directory so a test
+ * that forgets cannot read the developer's machine, which means a test that genuinely needs the real runtime has to
+ * say so ([/decisions/ad-042.md](/decisions/ad-042.md)).
+ */
+const REAL_RUNTIME = { TLC_HOME: repoRoot };
+
 /** Drives a hook exactly as a provider does: JSON on stdin, through the real launcher. */
 function hook(handler: string, payload: unknown, root: string, env: Record<string, string> = {}) {
   return spawnSync(process.execPath, [join(repoRoot, "bin", "tlc-exec.mjs"), handler], {
     input: JSON.stringify(payload),
     encoding: "utf8",
-    env: { ...process.env, TLC_PROJECT_DIR: root, ...env },
+    env: { ...process.env, ...REAL_RUNTIME, TLC_PROJECT_DIR: root, ...env },
   });
 }
 
 function cli(args: string[], root: string, env: Record<string, string> = {}) {
   return spawnSync(process.execPath, [join(repoRoot, "bin", "tlc-cli.ts"), "harness", ...args], {
     encoding: "utf8",
-    env: { ...process.env, TLC_PROJECT_DIR: root, ...env },
+    env: { ...process.env, ...REAL_RUNTIME, TLC_PROJECT_DIR: root, ...env },
   });
 }
 

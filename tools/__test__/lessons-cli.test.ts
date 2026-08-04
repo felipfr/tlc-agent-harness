@@ -128,6 +128,21 @@ describe("listText", () => {
     assert.match(text, /unproven=1/);
   });
 
+  /**
+   * hazard: `byTier` reports the resolved set, so a promoted lesson — present in both stores — counts as `project`
+   * and the global tier reads as empty. An operator seeing `core=6 project=5` concludes `promote` did nothing.
+   */
+  test("the store counts make a promoted lesson visible even though the tier count hides it", () => {
+    const report = listReport(newRoot(), [lesson()], CONFIG, NOW);
+    assert.equal(typeof report.stores.project, "number");
+    assert.equal(typeof report.stores.global, "number");
+    assert.equal(typeof report.stores.shared, "number");
+    const text = listText(report);
+    assert.match(text, /project store: .*\(0 lessons\)/);
+    assert.match(text, /global store: .*\(0 lessons\)/);
+    assert.doesNotMatch(text, /also in this project/, "the shared note is silent when nothing is shared");
+  });
+
   test("the totals name each tier and both store paths", () => {
     const report = listReport(newRoot(), [lesson()], CONFIG, NOW);
     const text = listText(report);

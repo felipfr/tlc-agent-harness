@@ -5166,6 +5166,7 @@ var coreFacade = {
     creditLessons: creditLessons2,
     gardenAndPersistLessons,
     renderLessonsMarkdown,
+    renderLessonBlock,
     promotionCount,
     isInjectable,
     appliesHere,

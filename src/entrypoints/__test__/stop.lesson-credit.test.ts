@@ -8,6 +8,7 @@ import { coreFacade } from "../../core/index.ts";
 import { projectConfigPath } from "../../platform/paths.ts";
 import { runHandler } from "../run.ts";
 import { stopHandler } from "../stop.ts";
+import { renderLessonLine } from "../support.ts";
 
 /**
  * The one thing unit tests cannot show: that the credit is actually wired into the stop path. `creditLessons` and
@@ -94,6 +95,31 @@ async function seedInjectableLesson(root: string): Promise<string> {
   const saved = await coreFacade.lesson.upsertProjectLesson(root, lesson);
   return saved.id;
 }
+
+/**
+ * hazard: `support.ts` carried a copy of the core renderer, so the tier added to the core block appeared in
+ * `lessons list` and in nothing the model ever saw. Asserting the rendered core block is not enough — this
+ * asserts the text the hook returns ([/decisions/ad-040.md](/decisions/ad-040.md)).
+ */
+test("the tier reaches the text the model receives, not only the CLI", async () => {
+  process.env.TLC_HOME = newDir("tlc-credit-home-");
+  const root = repoWithChange();
+  writePolicy(root, FAIL);
+  await seedInjectableLesson(root);
+
+  const outcome = await runHandler(stopHandler, stopEvent(root));
+  const text = outcome.decision.kind === "continue" ? outcome.decision.text : "";
+
+  assert.match(text, /\[lint\/active\/project\]/);
+  assert.match(text, /\[lint\/active\/core\]/);
+});
+
+// invariant: one renderer. Two derivations of the same string is how the tier went missing from half of them.
+test("the hook and the core render a lesson identically", () => {
+  const lesson = coreFacade.lesson.buildAuthoredLesson({ instruction: "Read it.", gate: "lint" });
+  assert.equal(renderLessonLine(lesson), coreFacade.lesson.renderLessonBlock(lesson));
+  assert.match(renderLessonLine(lesson), /\/project\]/);
+});
 
 test("a failing gate records which lessons it injected, for that gate", async () => {
   process.env.TLC_HOME = newDir("tlc-credit-home-");

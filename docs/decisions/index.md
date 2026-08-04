@@ -56,5 +56,6 @@ Handoff section and a link back to this index.
 | [AD-039](/decisions/ad-039.md) | A lesson is graded by the gate it was injected for, and unproven is not a passing reading | active |
 | [AD-040](/decisions/ad-040.md) | Three lesson tiers, and nothing crosses between products by itself | active |
 | [AD-041](/decisions/ad-041.md) | A member something reads and nothing writes fails the gate | active |
+| [AD-042](/decisions/ad-042.md) | The suite gets an empty runtime home, and one renderer renders a lesson | active |
 
 Related: [/architecture.md](/architecture.md), [/concepts.md](/concepts.md), [/providers/index.md](/providers/index.md).

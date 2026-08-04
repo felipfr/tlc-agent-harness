@@ -5152,6 +5152,7 @@ var coreFacade = {
     creditLessons: creditLessons2,
     gardenAndPersistLessons,
     renderLessonsMarkdown,
+    renderLessonBlock,
     promotionCount,
     isInjectable,
     appliesHere,
@@ -5346,13 +5347,7 @@ function readModelFromToolInput(toolInput) {
   return typeof model === "string" ? model : "";
 }
 function renderLessonLine(lesson) {
-  return [
-    `- [${lesson.failedGate}/${lesson.status}] ${lesson.instruction}`,
-    `  avoid: ${lesson.avoid}`,
-    `  prefer: ${lesson.prefer}`,
-    `  before retrying: ${lesson.preRetryCheck}`
-  ].join(`
-`);
+  return coreFacade.lesson.renderLessonBlock(lesson);
 }
 function formatLessonsBlock(lessons, title) {
   if (lessons.length === 0) {

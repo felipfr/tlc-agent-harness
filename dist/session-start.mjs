@@ -5166,6 +5166,7 @@ var coreFacade = {
     creditLessons: creditLessons2,
     gardenAndPersistLessons,
     renderLessonsMarkdown,
+    renderLessonBlock,
     promotionCount,
     isInjectable,
     appliesHere,
@@ -6133,13 +6134,7 @@ function effectiveBlockedPatterns(configured, provider) {
   return [...fromConfig, ...provider.policyDefaults().blockedPatterns];
 }
 function renderLessonLine(lesson) {
-  return [
-    `- [${lesson.failedGate}/${lesson.status}] ${lesson.instruction}`,
-    `  avoid: ${lesson.avoid}`,
-    `  prefer: ${lesson.prefer}`,
-    `  before retrying: ${lesson.preRetryCheck}`
-  ].join(`
-`);
+  return coreFacade.lesson.renderLessonBlock(lesson);
 }
 
 // src/entrypoints/run.ts

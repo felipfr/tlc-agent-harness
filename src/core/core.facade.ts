@@ -44,7 +44,12 @@ import type { LessonVerdict } from "./lesson/lesson.credit.ts";
 import { effectivenessLine, helpRate, lessonEffectiveness } from "./lesson/lesson.credit.ts";
 import { gardenAndPersistLessons, promotionCount, renderLessonsMarkdown } from "./lesson/lesson.garden.ts";
 import { formatLessonLink, isStaleLesson, lessonLinkVerdict, parseLessonLink } from "./lesson/lesson.link.ts";
-import { appliesHere, isInjectable, selectLessons as selectLessonsInner } from "./lesson/lesson.select.ts";
+import {
+  appliesHere,
+  isInjectable,
+  renderLessonBlock,
+  selectLessons as selectLessonsInner,
+} from "./lesson/lesson.select.ts";
 import { recordLessonFromFailure } from "./lesson/lesson.service.ts";
 import {
   creditLessons as creditLessonsInner,
@@ -238,6 +243,10 @@ export const coreFacade = {
     creditLessons,
     gardenAndPersistLessons,
     renderLessonsMarkdown,
+    // why: one renderer. `src/entrypoints/support.ts` carried a copy because this was not exposed, so the tier
+    // added to the core block never reached the text the model actually receives
+    // ([/decisions/ad-040.md](/decisions/ad-040.md)).
+    renderLessonBlock,
     promotionCount,
     isInjectable,
     appliesHere,

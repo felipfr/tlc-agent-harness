@@ -6,6 +6,7 @@ import type { HarnessLesson, LessonLink } from "../src/core/lesson/lesson.types.
 import { loadPolicy } from "../src/core/policy/policy.loader.ts";
 import type { LessonsPolicyConfig } from "../src/core/policy/policy.types.ts";
 import { emitJson, takeJsonFlag } from "../src/platform/cli-output.ts";
+import { plural } from "./doctor.ts";
 
 export type LessonRow = {
   id: string;
@@ -38,6 +39,12 @@ export type LessonsListReport = {
     unproven: number;
     notInjected: number;
   };
+  /**
+   * What is on disk, which is not what `byTier` reports. A promoted lesson exists in both stores and resolves to
+   * the project copy, so `byTier` shows it as `project` and the global tier reads as empty — from which an operator
+   * concludes that `promote` did nothing ([/decisions/ad-042.md](/decisions/ad-042.md)).
+   */
+  stores: { project: number; global: number; shared: number };
   lessons: LessonRow[];
 };
 
@@ -82,6 +89,8 @@ export function listReport(
   for (const row of rows) {
     byTier[row.tier] = (byTier[row.tier] ?? 0) + 1;
   }
+  const projectIds = new Set(coreFacade.lesson.readProjectLessons(root).map((lesson) => lesson.id));
+  const globalIds = coreFacade.lesson.readGlobalLessons().map((lesson) => lesson.id);
   return {
     count: lessons.length,
     storePath: lessonsStorePath(root),
@@ -99,6 +108,11 @@ export function listReport(
       // lesson as unproven, which is a number nobody can act on.
       unproven: rows.filter((row) => row.effectiveness.startsWith("unproven")).length,
       notInjected: rows.filter((row) => row.effectiveness === "not-injected").length,
+    },
+    stores: {
+      project: projectIds.size,
+      global: globalIds.length,
+      shared: globalIds.filter((id) => projectIds.has(id)).length,
     },
     lessons: rows,
   };
@@ -129,8 +143,13 @@ export function listText(report: LessonsListReport): string {
   lines.push(
     `stale=${report.totals.stale} out-of-window=${report.totals.outOfWindow} unproven=${report.totals.unproven} not-injected=${report.totals.notInjected}`,
   );
-  lines.push(`project store: ${report.storePath}`);
-  lines.push(`global store:  ${report.globalStorePath}`);
+  // why: the counts above are what would be injected, after the nearer tier wins a duplicate id. These are what is
+  // on disk, so `promote` is visible instead of looking like it did nothing.
+  const shared = report.stores.shared > 0 ? `, ${report.stores.shared} also in this project` : "";
+  lines.push(`project store: ${report.storePath}  (${plural(report.stores.project, "lesson")})`);
+  lines.push(
+    `global store:  ${report.globalStorePath}  (${plural(report.stores.global, "lesson")}${shared})`,
+  );
   lines.push(
     `enabled=${report.config.enabled} promoteHitCount=${report.config.promoteHitCount} syncRulesFile=${report.config.syncRulesFile}`,
   );
