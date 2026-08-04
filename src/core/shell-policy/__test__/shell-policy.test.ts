@@ -44,8 +44,51 @@ test("classifyShell marks network commands as network", () => {
   assert.equal(classifyShell("git push origin main"), "network");
 });
 
+// invariant: `write` means the command can remove or overwrite a path that already exists. `cp` and `mv` are in
+// because the destination may exist and the harness cannot know whether it does.
+test("classifyShell marks a command that can lose existing content as write", () => {
+  for (const command of [
+    "cp a b",
+    "mv a b",
+    "rm f",
+    "rmdir d",
+    "tee f",
+    "tee -a f",
+    "truncate -s 0 f",
+    "sed -i s/a/b/ f",
+    "echo x > f",
+  ]) {
+    assert.equal(classifyShell(command), "write", command);
+  }
+});
+
+// why: metadata and appends change a path without losing a byte of it. Asking about these is what turns an
+// approval into a keystroke, and a habituated reviewer is how the consequential one gets waved through.
+test("classifyShell marks metadata changes and appends as write-preserving", () => {
+  for (const command of ["chmod +x script.sh", "chmod 755 x", "chown user f", "echo x >> f"]) {
+    assert.equal(classifyShell(command), "write-preserving", command);
+  }
+});
+
+// hazard: `>` and `>>` used to collapse into one branch, so an append was indistinguishable from an overwrite —
+// which is precisely the line the new class draws.
+test("an overwrite redirect and an append redirect are not the same class", () => {
+  assert.notEqual(classifyShell("echo x > f"), classifyShell("echo x >> f"));
+});
+
+test("write-preserving ranks between read and write, so a mixed command resolves upward", () => {
+  assert.equal(classifyShell("chmod +x f && rm g"), "write");
+  assert.equal(classifyShell("ls && chmod +x f"), "write-preserving");
+});
+
+test("classifyShell leaves a command that creates without overwriting as read", () => {
+  for (const command of ["mkdir -p build", "touch f", "ln -s a b"]) {
+    assert.equal(classifyShell(command), "read", command);
+  }
+});
+
 test("classifyShell marks mutating commands as write", () => {
-  assert.equal(classifyShell("chmod +x script.sh"), "write");
+  assert.equal(classifyShell("rm -f script.sh"), "write");
 });
 
 test("classifyShell marks everything else as read", () => {
@@ -178,10 +221,14 @@ const MATRIX = [
   { command: "curl https://example.com", effect: "network" },
   { command: "cp a b", effect: "write" },
   { command: "rm -rf node_modules", effect: "write" },
-  { command: "chmod 755 x", effect: "write" },
+  { command: "echo x > f", effect: "write" },
 ] as const;
 
-test("paired asks before a shell move that changes something", () => {
+// why: the routine ones. Each changes a path and none can lose a byte of it, so each is a prompt the operator
+// would learn to clear without reading — and that habit is what a hidden consequential action rides in on.
+const NOT_WORTH_ASKING = ["chmod 755 x", "chown user f", "echo x >> f", "mkdir -p build", "cat package.json"];
+
+test("paired asks before a shell move that can lose something", () => {
   for (const { command } of MATRIX) {
     const decision = evaluateShellCommand(baseArgs({ command, mode: "paired" }));
     assert.equal(decision.kind, "ask", command);
@@ -193,9 +240,23 @@ test("paired asks before a shell move that changes something", () => {
   }
 });
 
+// invariant: the reason names what is at stake, because a prompt that does not is one the operator cannot weigh.
+test("the ask says what is at stake, and the two tiers say different things", () => {
+  const network = evaluateShellCommand(baseArgs({ command: "git push origin main", mode: "paired" }));
+  const write = evaluateShellCommand(baseArgs({ command: "rm -rf node_modules", mode: "paired" }));
+  assert.match(network.kind === "ask" ? network.reason : "", /leaves this machine/);
+  assert.match(write.kind === "ask" ? write.reason : "", /overwrite or remove/);
+});
+
+test("paired leaves the routine commands alone", () => {
+  for (const command of NOT_WORTH_ASKING) {
+    assert.equal(evaluateShellCommand(baseArgs({ command, mode: "paired" })).kind, "allow", command);
+  }
+});
+
 test("solo and focus do not ask on account of posture", () => {
   for (const mode of ["solo", "focus"] as const) {
-    for (const { command } of MATRIX) {
+    for (const { command } of [...MATRIX, ...NOT_WORTH_ASKING.map((command) => ({ command }))]) {
       assert.equal(evaluateShellCommand(baseArgs({ command, mode })).kind, "allow", `${mode}: ${command}`);
     }
   }
