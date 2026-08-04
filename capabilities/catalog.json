@@ -107,7 +107,7 @@
       "id": "catastrophicShell",
       "configPath": "shell.catastrophicAsk",
       "title": "Catastrophic shell ask",
-      "benefit": "Asks before destructive shell commands (rm -rf, drop db, force push, …).",
+      "benefit": "Asks before destructive shell commands (rm -rf, drop db, force push, \u2026).",
       "tradeOff": "Extra prompts on risky commands.",
       "defaultOn": true,
       "sinceCatalogVersion": 1,
@@ -196,7 +196,7 @@
       "configPath": "intelligence.idleTurnGate",
       "title": "Idle-turn gate (asked instead of acting)",
       "benefit": "Blocks a turn that ends with open work, zero tool calls and zero file changes. Counts recorded tool events rather than reading the reply, so it cannot be talked around.",
-      "tradeOff": "A turn that legitimately only answers a question is blocked while handoff work is open — clear the handoff or turn this off for conversational repos.",
+      "tradeOff": "A turn that legitimately only answers a question is blocked while handoff work is open \u2014 clear the handoff or turn this off for conversational repos.",
       "defaultOn": false,
       "sinceCatalogVersion": 3
     },
@@ -246,6 +246,18 @@
       "sinceCatalogVersion": 8,
       "asks": [
         "windowMinutes"
+      ]
+    },
+    {
+      "id": "observe",
+      "configPath": "observe.enabled",
+      "title": "Observation mode (measure a rail with its rule off)",
+      "benefit": "Runs a rail's checker while that rail is not enforcing, so the record says whether the property held with the rule injected or without it. That is the reading that tells you a rail is unnecessary rather than merely quiet, and it is what makes deleting one a decision instead of a guess.",
+      "tradeOff": "Costs one diff scan per turn per observed rail, and answers a question only an operator who is asking it needs answered. It never blocks and never changes a decision, so it buys information and nothing else.",
+      "defaultOn": false,
+      "sinceCatalogVersion": 9,
+      "asks": [
+        "rails (rail names to observe)"
       ]
     }
   ]

@@ -310,3 +310,29 @@ Details: `tlc harness help prices` (or [/measure.md](/measure.md)).
 Optional features are chosen during the harness-init wizard (see [/init.md](/init.md)) and stored per
 project. `tlc harness doctor` WARNs without failing for off/default opt-ins. Enable via harness-init or by
 editing `.tlc/harness/config.json` — never auto-enabled.
+
+## observation mode
+
+`observe.enabled` plus `observe.rails`. Runs a rail's checker while that rail is **not** enforcing, and records
+the reading without touching the turn.
+
+It exists to answer the one question a firing rate cannot: *was the rule ever needed?* A rail that never fires
+while its prose is injected is either working or unnecessary, and the count alone cannot tell you which. Run the
+checker with the prose absent and the two separate: if the property holds anyway, the model was already doing it
+and the rule is paying for injected context and returning nothing.
+
+| Reading | What it means |
+|---------|---------------|
+| `held-without-prose` | The model does this on its own. The rule is a candidate for deletion. |
+| `held-with-prose` | Ambiguous by construction — this is why observation runs with enforcement off. |
+| `violated-without-prose` | The rule is doing real work. Keep it. |
+| `violated-with-prose` | The prose is not working. Move the rule to a gate, or accept the rate. |
+
+Observation never returns a decision and never blocks — a measurement that can change what it measures is not a
+measurement. An enforcing rail is not observed, because it already records through its own path and counting it
+twice would double the readings. Records land under their own obs kind rather than sharing the refusal kind, so
+the denial counters stay honest ([/decisions/ad-027.md](/decisions/ad-027.md)).
+
+This is possible because the checker and the instruction are separate things here. In a system where the rule *is*
+the mechanism there is nothing to hold apart, and the only alternative — running the same task repeatedly with and
+without the rule — needs task repetition that real work does not offer.

@@ -234,6 +234,7 @@ Each denial names its rule, so `rule=secret-access` in a message maps to a row h
 | Global observability spool | Mirrors this repo's obs and audit records into one file under the runtime home, so cost and gate history can be read across every repository at once. | `obs.globalSpool` |
 | Untrusted-content framing | Injects one framing line per turn when the agent reads a pull request, an issue, a fetched page or an MCP result, stating that the content is data and that any directive inside it is to be reported as a prompt-injection attempt, not obeyed. | `untrustedContent.enabled` |
 | Plan gate (declared scope vs diff) | Blocks the stop when the turn changed files the declared HARNESS_PLAN did not name, so scope creep fails like a failing test instead of surviving as a review comment. | `planGate.enabled` |
+| Observation mode (measure a rail with its rule off) | Runs a rail's checker while that rail is not enforcing, so the record says whether the property held with the rule injected or without it. That is the reading that tells you a rail is unnecessary rather than merely quiet, and it is what makes deleting one a decision instead of a guess. | `observe.enabled` |
 
 <!-- /generated -->
 
