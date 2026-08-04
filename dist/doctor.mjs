@@ -4027,8 +4027,8 @@ function guardPolicySurface(args) {
     kind: "deny",
     reason: [
       "Harness policy and state are not agent-writable — a gate an agent can switch off is not a gate.",
-      "Change policy through the CLI instead: tlc harness grind | pause | resume | mode | init, or tlc harness gate test-command | gate lint-command.",
-      "If a gate is wrong, say so and let the operator decide; do not edit around it."
+      "The harness CLI does not help you here either: the same floor rule refuses the mutating subcommands from inside a session.",
+      "Tell the operator which value you would change and why, and let them run it from their own terminal."
     ].join(" "),
     userNote: `Blocked an agent write to ${args.filePath}.`
   };
@@ -5399,7 +5399,7 @@ function checkPosture(root) {
   return {
     level: "warn",
     name: "operator posture",
-    detail: `\`${posture.invalid}\` is not a posture — running as ${posture.mode}. Accepted: ${coreFacade.policy.OPERATOR_MODES.join(" | ")}. Fix \`mode\` in ${projectConfigPath(root)}, or run: tlc harness mode ${posture.mode}`
+    detail: `\`${posture.invalid}\` is not a posture — running as ${posture.mode}. Accepted: ${coreFacade.policy.OPERATOR_MODES.join(" | ")}. Fix \`mode\` in ${projectConfigPath(root)}, or run: tlc harness mode <${coreFacade.policy.OPERATOR_MODES.join("|")}>`
   };
 }
 function checkProjectPolicy(root) {

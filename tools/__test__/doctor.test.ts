@@ -228,6 +228,16 @@ describe("checkProjectPolicy", () => {
     assert.match(row?.detail ?? "", /solo/);
   });
 
+  // hazard: the remediation used to end `tlc harness mode solo` — the posture the fallback landed on, which is
+  // the one value the operator demonstrably did not ask for. Read as advice it makes the substitution permanent.
+  test("the remediation offers the choice instead of suggesting the fallback", () => {
+    const root = newRoot();
+    writeConfig(root, { version: 1, mode: "heads-down" });
+    const detail = checkProjectPolicy(root).find((c) => c.name === "operator posture")?.detail ?? "";
+    assert.match(detail, /tlc harness mode <paired\|solo\|focus>/);
+    assert.doesNotMatch(detail, /tlc harness mode solo\b/);
+  });
+
   // why: warn keeps doctor's exit code at 0. A bad posture is a config fault to fix, not a broken install, and
   // failing here would block the very command an operator runs to find out what is wrong.
   test("the posture warn does not fail the doctor run", () => {

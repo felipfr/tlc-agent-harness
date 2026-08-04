@@ -29,8 +29,25 @@ test("a write to the policy file is denied for every write tool", () => {
     assert.equal(decision.kind, "deny", toolName);
     if (decision.kind === "deny") {
       assert.match(decision.reason, /not agent-writable/);
-      assert.match(decision.reason, /tlc harness/);
+      assert.match(decision.reason, /tell the operator/i);
     }
+  }
+});
+
+// hazard: the refusal used to answer "change policy through the CLI instead", naming the subcommands the floor
+// refuses from inside a session. Measured while dogfooding: the agent read it as a route, ran `tlc harness mode`,
+// and was denied by the floor — a suggestion that costs a turn and leaves the reader no wiser.
+test("the refusal does not offer the agent a route the floor also refuses", () => {
+  const decision = guardPolicySurface({
+    projectDir: ROOT,
+    toolName: "Edit",
+    filePath: join(ROOT, ".tlc/harness/config.json"),
+  });
+  assert.equal(decision.kind, "deny");
+  if (decision.kind === "deny") {
+    assert.doesNotMatch(decision.reason, /through the CLI instead/);
+    // why: it may still name the CLI — it has to say why that door is closed too — but not as this reader's move.
+    assert.match(decision.reason, /refuses the mutating subcommands from inside a session/);
   }
 });
 

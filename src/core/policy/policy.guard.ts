@@ -16,12 +16,15 @@ export function guardPolicySurface(args: {
   if (!isPolicySurface(args.projectDir, args.filePath)) {
     return { kind: "allow" };
   }
+  // hazard: this used to answer "change policy through the CLI instead", naming the very subcommands the floor
+  // refuses from inside a session. Measured: the agent read it as a route, ran `tlc harness mode`, and was denied
+  // again — a suggestion that costs a turn and teaches nothing. The CLI is the operator's route, not the reader's.
   return {
     kind: "deny",
     reason: [
       "Harness policy and state are not agent-writable — a gate an agent can switch off is not a gate.",
-      "Change policy through the CLI instead: tlc harness grind | pause | resume | mode | init, or tlc harness gate test-command | gate lint-command.",
-      "If a gate is wrong, say so and let the operator decide; do not edit around it.",
+      "The harness CLI does not help you here either: the same floor rule refuses the mutating subcommands from inside a session.",
+      "Tell the operator which value you would change and why, and let them run it from their own terminal.",
     ].join(" "),
     userNote: `Blocked an agent write to ${args.filePath}.`,
   };

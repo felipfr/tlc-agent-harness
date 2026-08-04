@@ -133,7 +133,10 @@ function checkPosture(root: string): Check {
   return {
     level: "warn",
     name: "operator posture",
-    detail: `\`${posture.invalid}\` is not a posture — running as ${posture.mode}. Accepted: ${coreFacade.policy.OPERATOR_MODES.join(" | ")}. Fix \`mode\` in ${projectConfigPath(root)}, or run: tlc harness mode ${posture.mode}`,
+    // hazard: the remediation used to end `tlc harness mode ${posture.mode}` — the posture the fallback landed
+    // on, which is the one value the operator demonstrably did not ask for. Suggesting it invites them to make
+    // the substitution permanent. The command names the choice instead of guessing it.
+    detail: `\`${posture.invalid}\` is not a posture — running as ${posture.mode}. Accepted: ${coreFacade.policy.OPERATOR_MODES.join(" | ")}. Fix \`mode\` in ${projectConfigPath(root)}, or run: tlc harness mode <${coreFacade.policy.OPERATOR_MODES.join("|")}>`,
   };
 }
 
