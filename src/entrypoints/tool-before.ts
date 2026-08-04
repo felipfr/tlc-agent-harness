@@ -6,14 +6,46 @@ import {
   effectiveAllowedModels,
   effectiveBlockedPatterns,
   effectiveMinEffort,
+  obsConfigFor,
   readModelFromToolInput,
 } from "./support.ts";
 
 const READONLY_BLOCKED_TOOLS = new Set(["Write", "Delete", "Shell"]);
 
+/**
+ * hazard: `attrs.permission` was read in two places and written in none. `observability.service.ts` increments
+ * `shell.ask`/`shell.deny` from it, `observability.types.ts` grades an event `signal` when it is not `allow`, and
+ * the session report prints `Shell allow/ask/deny` — so both counters were structurally zero and the report
+ * printed a truthful-looking `0` for every ask that ever happened. Obs was emitted only on `*.after` events,
+ * which means the moment a decision is made was the one moment never recorded.
+ *
+ * why: the base config leaves `debugEnabled` false, and an `allow` grades as debug. So an allow is computed and
+ * dropped — costing nothing in the common path — while asks and denials reach disk. `shell.allow` keeps coming
+ * from `shell.end`, so nothing is double-counted.
+ *
+ * invariant: recorded after the decision and never able to change it. A rail that measures interruptions must not
+ * become one.
+ */
+function recordShellDecision(event: HarnessEvent, ctx: HandlerContext, decision: Decision): void {
+  coreFacade.observability.recordObs(event.projectDir, obsConfigFor(ctx.policy), {
+    provider: event.provider,
+    kind: "shell.start",
+    sessionKey: event.sessionKey,
+    model: event.model,
+    attrs: {
+      command: event.command,
+      permission: decision.kind,
+      posture: ctx.policy.mode,
+      // why: unattributed rather than guessed. A rate an operator cannot trace to a switch is a number, not a
+      // signal.
+      rule: "rule" in decision && decision.rule ? decision.rule : "none",
+    },
+  });
+}
+
 function handleShellBefore(event: HarnessEvent, ctx: HandlerContext): Decision {
   const { policy } = ctx;
-  return coreFacade.shellPolicy.evaluateShellCommand({
+  const decision = coreFacade.shellPolicy.evaluateShellCommand({
     command: event.command ?? "",
     sessionKey: event.sessionKey,
     projectDir: event.projectDir,
@@ -22,6 +54,8 @@ function handleShellBefore(event: HarnessEvent, ctx: HandlerContext): Decision {
     stallDetection: policy.shell.stallDetection,
     stallRepeatThreshold: policy.shell.stallRepeatThreshold,
   });
+  recordShellDecision(event, ctx, decision);
+  return decision;
 }
 
 // why: a read cannot mutate the policy surface, so it is the one class of event that stays available while a

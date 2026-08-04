@@ -478,3 +478,83 @@ test("an unchanged policy lets the tool through", async () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// hazard: `attrs.permission` was read in two places and written in none, so `rollup.shell.ask` was structurally
+// zero and the session report printed a truthful-looking `0` for every ask that ever happened. Obs fired only on
+// `*.after` events, which made the moment of decision the one moment never recorded.
+test("a posture ask is recorded with its permission, posture and rule", async () => {
+  const root = tempRoot();
+  try {
+    writeProjectPolicy(root, { version: 1, mode: "paired" });
+    const outcome = await runHandler(toolBeforeHandler, stdinOf(claudeShell(root, "git push origin main")));
+    assert.equal(outcome.decision.kind, "ask");
+
+    const events = coreFacade.observability
+      .readSignalEvents(root, "obs.jsonl", 50)
+      .filter((event) => event.kind === "shell.start");
+    assert.equal(events.length, 1, "expected exactly one recorded shell decision");
+    const recorded = events[0];
+    assert.equal(recorded?.attrs.permission, "ask");
+    assert.equal(recorded?.attrs.posture, "paired");
+    assert.equal(recorded?.attrs.rule, "shell-posture-paired");
+    // invariant: an ask is a signal, never debug — an interruption the operator lived through must survive in
+    // the default configuration or the rate is unmeasurable.
+    assert.equal(recorded?.level, "signal");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// why: at `paired` a destructive command matches both rules. Attributing it to the posture would read as
+// evidence the posture is noisy when the catastrophic switch is what fired.
+//
+// why this command: the floor denies `rm -rf /` and `sudo reboot` outright, before any policy layer runs, so
+// those never reach the shell rule and are recorded by nothing here. `dd` to a raw device is catastrophic to the
+// classifier and not a floor rule, which makes it the case that actually exercises the attribution.
+test("a catastrophic ask is recorded against the catastrophic rule, not the posture", async () => {
+  const root = tempRoot();
+  try {
+    writeProjectPolicy(root, { version: 1, mode: "paired" });
+    await runHandler(toolBeforeHandler, stdinOf(claudeShell(root, "dd if=/dev/zero of=/dev/sda")));
+    const recorded = coreFacade.observability
+      .readSignalEvents(root, "obs.jsonl", 50)
+      .find((event) => event.kind === "shell.start");
+    assert.equal(recorded?.attrs.rule, "shell-catastrophic");
+    assert.equal(recorded?.attrs.posture, "paired");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// why: an allow grades as debug and `debugEnabled` is false by default, so the common path writes nothing. Were
+// it otherwise, connecting this rail would put one append on every shell call the agent makes.
+test("an allowed command costs nothing in the default configuration", async () => {
+  const root = tempRoot();
+  try {
+    writeProjectPolicy(root, { version: 1, mode: "solo" });
+    const outcome = await runHandler(toolBeforeHandler, stdinOf(claudeShell(root, "ls -la")));
+    assert.equal(outcome.decision.kind, "allow");
+    assert.equal(
+      coreFacade.observability
+        .readSignalEvents(root, "obs.jsonl", 50)
+        .filter((event) => event.kind === "shell.start").length,
+      0,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// invariant: the counter the report has always printed. It could not move before, because nothing wrote the
+// attribute it reads.
+test("the rollup's shell ask counter stops being structurally unreachable", async () => {
+  const root = tempRoot();
+  try {
+    writeProjectPolicy(root, { version: 1, mode: "paired" });
+    await runHandler(toolBeforeHandler, stdinOf(claudeShell(root, "curl https://example.com")));
+    const rollup = coreFacade.observability.getRollup(root, "claude-sess-1");
+    assert.equal(rollup?.shell.ask, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

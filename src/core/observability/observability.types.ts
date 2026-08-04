@@ -136,7 +136,11 @@ export function resolveObsLevel(
   if (forceDebug) {
     return "debug";
   }
-  if (kind === "shell.end") {
+  // hazard: this branch used to key on `shell.end` alone, and a command that was denied or asked about never
+  // reaches an "after" event — so the only permission it could ever grade was `allow`, and `rollup.shell.ask`
+  // could not have moved even once the attribute was written. The decision is made at `shell.start`; that is the
+  // only phase where a non-allow permission exists ([/decisions/ad-026.md](/decisions/ad-026.md)).
+  if (kind === "shell.end" || kind === "shell.start") {
     const permission = String(attrs.permission ?? "allow");
     return permission === "allow" ? "debug" : "signal";
   }
