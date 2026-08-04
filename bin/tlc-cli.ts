@@ -419,12 +419,17 @@ export function route(args: string[]): Action {
 
 export type TestStep = { label: string; bin: string; args: string[] };
 
+// invariant: every suite is launched through the hermetic setup module. Without it the suite reads
+// CLAUDE_PROJECT_DIR from whatever started it, so 22 tests that build a fixture in a temp directory resolved
+// against the real repository — green from a shell, red from inside a hook.
+export const TEST_ENV_IMPORT = ["--import", "./tools/test-env.mjs"];
+
 export function buildTestSteps(): TestStep[] {
   return [
     { label: "biome check", bin: "npx", args: ["biome", "check"] },
     { label: "tsc --noEmit", bin: "npx", args: ["tsc", "--noEmit"] },
-    { label: "src suite", bin: "node", args: ["--test", "src/**/__test__/*.test.ts"] },
-    { label: "tools suite", bin: "node", args: ["--test", "tools/__test__/*.test.ts"] },
+    { label: "src suite", bin: "node", args: [...TEST_ENV_IMPORT, "--test", "src/**/__test__/*.test.ts"] },
+    { label: "tools suite", bin: "node", args: [...TEST_ENV_IMPORT, "--test", "tools/__test__/*.test.ts"] },
     { label: "check-boundaries", bin: "node", args: ["tools/check-boundaries.ts"] },
     { label: "check-docs-bundle", bin: "node", args: ["tools/check-docs-bundle.ts"] },
     { label: "capabilities in sync", bin: "node", args: ["tools/render-capabilities.ts", "--check"] },
