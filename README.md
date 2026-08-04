@@ -236,6 +236,7 @@ See `tlc harness help architecture` or [`docs/architecture.md`](docs/architectur
 | `tlc harness grind [on\|off]` | Lint/test follow-ups on stop |
 | `tlc harness pause` / `resume` | Disable / enable stop checks |
 | `tlc harness mode solo\|paired\|focus` | Operator posture |
+| `tlc harness attest` | Tamper-evident record of what each session ran under |
 | `tlc harness obs live` / `obs report` | Signal / session rollup |
 | `tlc harness prices refresh` / `lookup` | Cost catalogs |
 | `tlc harness lessons list` | Project lessons |

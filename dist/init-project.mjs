@@ -206,7 +206,8 @@ var SIGNAL_KINDS = new Set([
   "cost.turn",
   "cost.session_alert",
   "ship.claim",
-  "policy.deny"
+  "policy.deny",
+  "policy.observe"
 ]);
 var LIVE_ALLOWLIST = new Set([
   "session.start",
@@ -275,6 +276,10 @@ var DEFAULTS = {
   docs: {
     command: null,
     severity: "warn"
+  },
+  observe: {
+    enabled: false,
+    rails: []
   },
   comments: {
     enabled: false,

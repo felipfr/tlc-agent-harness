@@ -336,3 +336,32 @@ the denial counters stay honest ([/decisions/ad-027.md](/decisions/ad-027.md)).
 This is possible because the checker and the instruction are separate things here. In a system where the rule *is*
 the mechanism there is nothing to hold apart, and the only alternative — running the same task repeatedly with and
 without the rule — needs task repetition that real work does not offer.
+
+## resolution history
+
+When a gate passes after having failed, the harness records the files that changed between those two states against
+the failure's fingerprint. If that exact failure returns, the follow-up carries one line naming them.
+
+It is offered as **history, never as instruction**: past tense, and explicit that it is not a list to edit. A
+previous resolution is evidence, and evidence is what a plan may name — but the same list phrased as an order would
+send an agent to edit files that may be irrelevant this time, which is the harm AD-021 and AD-024 each removed
+through a different door ([/decisions/ad-028.md](/decisions/ad-028.md)).
+
+Bounded at 200 resolutions and 8 files each, pruning the oldest, because the store is read on the failure path.
+Scoped to this repository: a fix that worked in another codebase is exactly the kind of advice that reads plausible
+and is wrong.
+
+## attestation
+
+`tlc harness attest [--json]`. Every session appends one hash-chained record: which policy was in force, whether it
+changed mid-session without a harness command, which rails were active, refusals by rule, and gate outcomes.
+
+That is the artifact a reviewer needs in order to trust agent-written code, and it is the part governance-as-prompting
+never produces. Verification reports the index at which the chain broke, so a tampered record sends you to one line
+rather than to the whole file. A missing file is an empty valid chain, not a broken one.
+
+Two things it deliberately does **not** claim. It is chained, not signed — that detects a rewritten or removed
+record and does not prove authorship, because a key would mean key management. And every field is something the
+harness observed: there is no assertion that the code is correct, that anyone reviewed it, or that a human approved
+anything. An attestation implying those would be worse than none, because a reviewer would stop looking
+([/decisions/ad-028.md](/decisions/ad-028.md)).
