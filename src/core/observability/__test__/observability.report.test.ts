@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { groupByProvider, sessionReportMarkdown } from "../observability.report.ts";
+import { groupByProvider, railsNeverFired, sessionReportMarkdown } from "../observability.report.ts";
 import { newRollup } from "../observability.store.ts";
 import type { ObsEvent } from "../observability.types.ts";
 
@@ -102,4 +102,54 @@ test("a rollup from an older build renders instead of throwing", () => {
   const rollup = newRollup("session-a", "provider-a");
   (rollup.shell as { byRule?: Record<string, number> }).byRule = undefined;
   assert.doesNotThrow(() => sessionReportMarkdown(rollup));
+});
+
+// why: the question that decides something. A rail that never fired is either working perfectly or was never
+// needed, and either way it is paying for injected prose on every turn.
+test("railsNeverFired names an enabled rail with no firings and omits one that fired", () => {
+  const rollup = newRollup("session-a", "provider-a");
+  rollup.railsByRule = { "shell-posture-paired": 3 };
+  assert.deepEqual(railsNeverFired(rollup, ["shell-posture-paired", "shell-catastrophic", "comments"]), [
+    "comments",
+    "shell-catastrophic",
+  ]);
+});
+
+// invariant: the active list is a parameter. A report that guessed it would accuse a rail nobody switched on.
+test("railsNeverFired reports nothing when no rail is declared active", () => {
+  const rollup = newRollup("session-a", "provider-a");
+  rollup.railsByRule = { "shell-catastrophic": 1 };
+  assert.deepEqual(railsNeverFired(rollup, []), []);
+});
+
+test("the report names the silent rails and the price of the prose", () => {
+  const rollup = newRollup("session-a", "provider-a");
+  rollup.railsByRule = { "shell-posture-paired": 4 };
+  rollup.injected_chars = 2480;
+  const markdown = sessionReportMarkdown(rollup, ["shell-posture-paired", "comments"]);
+  assert.match(markdown, /shell-posture-paired \| 4/);
+  assert.match(markdown, /comments \| 0 — enabled and never fired/);
+  assert.match(markdown, /2480 characters/);
+});
+
+test("a per-gate breakdown separates one flaky gate from a broken build", () => {
+  const rollup = newRollup("session-a", "provider-a");
+  rollup.gates = { pass: 3, fail: 2 };
+  rollup.gatesByName = { lint: { pass: 3, fail: 0 }, test: { pass: 0, fail: 2 } };
+  const markdown = sessionReportMarkdown(rollup, []);
+  assert.match(markdown, /↳ test \| 0 \/ 2/);
+  assert.match(markdown, /↳ lint \| 3 \/ 0/);
+});
+
+// hazard: a rollup written by an older build has none of these fields, and the report runs on whatever is on disk.
+test("a rollup from an older build renders instead of throwing", () => {
+  const rollup = newRollup("session-a", "provider-a") as unknown as Record<string, unknown>;
+  rollup.railsByRule = undefined;
+  rollup.gatesByName = undefined;
+  assert.doesNotThrow(() => sessionReportMarkdown(rollup as never, ["comments"]));
+});
+
+test("with no rail activity at all the report grows no rails section", () => {
+  const markdown = sessionReportMarkdown(newRollup("session-a", "provider-a"), []);
+  assert.doesNotMatch(markdown, /## Rails/);
 });

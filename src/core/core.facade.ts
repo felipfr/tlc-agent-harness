@@ -36,7 +36,11 @@ import {
   writeProjectLessons as writeProjectLessonsInner,
 } from "./lesson/lesson.store.ts";
 import type { HarnessLesson } from "./lesson/lesson.types.ts";
-import { groupByProvider, sessionReportMarkdown } from "./observability/observability.report.ts";
+import {
+  groupByProvider,
+  railsNeverFired,
+  sessionReportMarkdown,
+} from "./observability/observability.report.ts";
 import {
   DEFAULT_OBS,
   recordAudit,
@@ -172,6 +176,7 @@ export const coreFacade = {
     recordAudit,
     groupByProvider,
     sessionReportMarkdown,
+    railsNeverFired,
     readSignalEvents,
     getRollup,
     pruneObs,

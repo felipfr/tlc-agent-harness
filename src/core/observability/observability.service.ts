@@ -129,14 +129,41 @@ function updateRollup(root: string, config: ObservabilityConfig, event: ObsEvent
   }
 
   if (event.kind === "gate.outcome") {
-    if (event.attrs.passed) {
+    const passed = Boolean(event.attrs.passed);
+    if (passed) {
       rollup.gates.pass += 1;
     } else {
       rollup.gates.fail += 1;
     }
+    // hazard: a rollup written by an older build has neither map, and incrementing into `undefined` would throw
+    // on the path that must never break a turn.
+    const name = String(event.attrs.gate ?? "unknown");
+    const byName = rollup.gatesByName ?? {};
+    const slot = byName[name] ?? { pass: 0, fail: 0 };
+    if (passed) {
+      slot.pass += 1;
+    } else {
+      slot.fail += 1;
+    }
+    byName[name] = slot;
+    rollup.gatesByName = byName;
   }
   if (event.kind === "policy.deny") {
     rollup.denials += 1;
+  }
+  if (event.kind === "session.start" && typeof event.attrs.injected_chars === "number") {
+    rollup.injected_chars = event.attrs.injected_chars;
+  }
+  // invariant: one place counts refusals by rule, whichever rail produced them. Two counters for one fact is how
+  // they come to disagree.
+  if (event.kind === "policy.deny" || event.kind === "shell.start" || event.kind === "shell.end") {
+    const permission = String(event.attrs.permission ?? "");
+    if (permission === "ask" || permission === "deny") {
+      const rule = String(event.attrs.rule ?? "none");
+      const byRule = rollup.railsByRule ?? {};
+      byRule[rule] = (byRule[rule] ?? 0) + 1;
+      rollup.railsByRule = byRule;
+    }
   }
   if (event.kind === "prompt.submit") {
     rollup.prompts += 1;

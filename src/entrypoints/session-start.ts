@@ -3,7 +3,13 @@ import { coreFacade } from "../core/index.ts";
 import { projectStateDir } from "../platform/paths.ts";
 import type { Handler, HandlerContext } from "./run.ts";
 import { main } from "./run.ts";
-import { currentGitBranch, currentGitSha, renderLessonLine, sessionIdFromKey } from "./support.ts";
+import {
+  currentGitBranch,
+  currentGitSha,
+  obsConfigFor,
+  renderLessonLine,
+  sessionIdFromKey,
+} from "./support.ts";
 
 export const sessionStartHandler: Handler = async (
   event: HarnessEvent,
@@ -100,7 +106,23 @@ export const sessionStartHandler: Handler = async (
       : "Grind OFF (default).",
   );
 
-  return { kind: "context", text: lines.join("\n"), env: { HARNESS_ACTIVE: "1" } };
+  const text = lines.join("\n");
+  // why: the harness injects prose on every session and had never told the operator what it costs. Rails are not
+  // free — they are paid in input tokens, on every turn, forever — and a cost nobody can see is a cost nobody
+  // weighs ([/decisions/ad-027.md](/decisions/ad-027.md)).
+  coreFacade.observability.recordObs(root, obsConfigFor(policy), {
+    provider: event.provider,
+    kind: "session.start",
+    sessionKey: event.sessionKey,
+    attrs: {
+      injected_chars: text.length,
+      injected_lines: lines.length,
+      posture: policy.mode,
+      lessons_injected: policy.intelligence.lessons.enabled,
+    },
+  });
+
+  return { kind: "context", text, env: { HARNESS_ACTIVE: "1" } };
 };
 
 if (import.meta.main) {

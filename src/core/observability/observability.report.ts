@@ -57,7 +57,52 @@ function interruptionsByRule(rollup: SessionRollup): string {
   return entries.map(([rule, count]) => `| ↳ ${rule} | ${count} |`).join("\n");
 }
 
-export function sessionReportMarkdown(rollup: SessionRollup): string {
+/**
+ * why: the question that decides something. A rail that never fired across a session is either working perfectly
+ * or was never needed, and either way it is paying for injected prose on every turn. Naming it is what makes
+ * deletion a decision instead of a feeling ([/decisions/ad-027.md](/decisions/ad-027.md)).
+ *
+ * invariant: the active list is a parameter. Core cannot see which rails a project enabled without reading policy,
+ * and a report that guessed the list would accuse a rail that was never switched on.
+ */
+export function railsNeverFired(rollup: SessionRollup, activeRules: readonly string[]): string[] {
+  const fired = new Set(Object.keys(rollup.railsByRule ?? {}));
+  return activeRules.filter((rule) => !fired.has(rule)).sort();
+}
+
+function railActivity(rollup: SessionRollup, activeRules: readonly string[]): string {
+  const fired = Object.entries(rollup.railsByRule ?? {}).sort((a, b) => b[1] - a[1]);
+  const silent = railsNeverFired(rollup, activeRules);
+  if (fired.length === 0 && silent.length === 0) {
+    return "";
+  }
+  const rows = [
+    "",
+    "## Rails",
+    "",
+    "| Rule | Fired |",
+    "|------|-------|",
+    ...fired.map(([rule, count]) => `| ${rule} | ${count} |`),
+    ...silent.map((rule) => `| ${rule} | 0 — enabled and never fired |`),
+  ];
+  if (rollup.injected_chars > 0) {
+    rows.push(
+      "",
+      `Injected at session start: ${rollup.injected_chars} characters. That is the price of the rails above, paid on every turn.`,
+    );
+  }
+  return rows.join("\n");
+}
+
+function gateDetail(rollup: SessionRollup): string {
+  const entries = Object.entries(rollup.gatesByName ?? {}).sort((a, b) => b[1].fail - a[1].fail);
+  if (entries.length === 0) {
+    return "";
+  }
+  return entries.map(([gate, s]) => `| ↳ ${gate} | ${s.pass} / ${s.fail} |`).join("\n");
+}
+
+export function sessionReportMarkdown(rollup: SessionRollup, activeRules: readonly string[] = []): string {
   const models = Object.entries(rollup.models)
     .sort((a, b) => b[1] - a[1])
     .map(([m, n]) => `| ${m} | ${n} |`)
@@ -99,6 +144,7 @@ export function sessionReportMarkdown(rollup: SessionRollup): string {
 | Compactions | ${rollup.comped} |
 | Policy denials | ${rollup.denials} |
 | Gates pass/fail | ${rollup.gates.pass} / ${rollup.gates.fail} |
+${gateDetail(rollup)}
 | Shell allow/ask/deny | ${rollup.shell.allow} / ${rollup.shell.ask} / ${rollup.shell.deny} |
 ${interruptionsByRule(rollup)}
 
@@ -125,5 +171,6 @@ ${subs || "| — | 0 | {} |"}
 \`\`\`json
 ${JSON.stringify(rollup.mcp, null, 2)}
 \`\`\`
+${railActivity(rollup, activeRules)}
 `;
 }

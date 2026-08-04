@@ -24,6 +24,16 @@ export type SessionRollup = {
    * nothing about which switch to reach for; "six from the paired posture, one from the catastrophic rule" does.
    */
   shell: { allow: number; ask: number; deny: number; byRule: Record<string, number> };
+  /**
+   * why: every refusal the harness made, shell and otherwise, keyed by the rule that made it. This is what turns
+   * "the harness interrupted me a lot" into "this rule interrupted you a lot", which is the only form an operator
+   * can act on ([/decisions/ad-027.md](/decisions/ad-027.md)).
+   */
+  railsByRule: Record<string, number>;
+  /** Per-gate pass/fail, so a single flaky gate is distinguishable from a codebase that does not build. */
+  gatesByName: Record<string, { pass: number; fail: number }>;
+  /** Characters of prose the harness injected at session start. The cost side of every rail, in one number. */
+  injected_chars: number;
   mcp: Record<string, number>;
   estimated_cost_usd: number;
   cost_incomplete: boolean;
@@ -182,6 +192,9 @@ export function newRollup(sessionKey: string, provider: string): SessionRollup {
     thoughts: 0,
     comped: 0,
     shell: { allow: 0, ask: 0, deny: 0, byRule: {} },
+    railsByRule: {},
+    gatesByName: {},
+    injected_chars: 0,
     mcp: {},
     estimated_cost_usd: 0,
     cost_incomplete: false,
