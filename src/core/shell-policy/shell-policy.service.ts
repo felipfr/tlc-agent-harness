@@ -12,9 +12,10 @@ const NETWORK = new Set(["curl", "ftp", "gh", "nc", "ncat", "rsync", "scp", "sft
 // the filesystem is unknowable. `tee` qualifies with or without `-a`, because the flagless form truncates and a
 // rule whose failure mode is silent data loss does not get a special case.
 const WRITE = new Set(["cp", "mv", "rm", "rmdir", "tee", "truncate"]);
-// why: these change a path without losing a byte of it — metadata, or an append. They are the routine ones, and
-// routine prompts are what turn an approval into a keystroke.
-const WRITE_PRESERVING = new Set(["chmod", "chown"]);
+// hazard: these lived in the preserving tier for one revision, on the reasoning that they lose no bytes. True and
+// beside the point: they decide who can read or execute a path, `-R` applies that to a whole tree, and the result
+// appears in no diff. Losing content and widening access are separate questions.
+const PRIVILEGE = new Set(["chmod", "chown"]);
 const DEVICE = /^\/dev\/(sd|nvme|vd|hd|disk)/;
 
 // invariant: classification reads head verbs from the shared tokenizer, never patterns in the raw
@@ -58,8 +59,8 @@ function classifySegment(words: ShellWord[]): ShellEffectClass {
     if (WRITE.has(verb) || (verb === "sed" && argText.includes("-i"))) {
       return "write";
     }
-    if (WRITE_PRESERVING.has(verb)) {
-      return "write-preserving";
+    if (PRIVILEGE.has(verb)) {
+      return "privilege";
     }
     // hazard: these two used to collapse into one branch, so an append was indistinguishable from an overwrite.
     // `>` truncates the target and `>>` does not, which is exactly the line this class exists to draw.
@@ -71,7 +72,14 @@ function classifySegment(words: ShellWord[]): ShellEffectClass {
   return "read";
 }
 
-const ORDER: ShellEffectClass[] = ["read", "write-preserving", "write", "network", "destructive"];
+const ORDER: ShellEffectClass[] = [
+  "read",
+  "write-preserving",
+  "write",
+  "privilege",
+  "network",
+  "destructive",
+];
 
 export function classifyShell(command: string): ShellEffectClass {
   let worst: ShellEffectClass = "read";
@@ -111,11 +119,14 @@ export type EvaluateShellCommandArgs = {
  * why: `paired` promises a check-in before a sizable non-destructive move, and `classifyShell` answers what
  * "sizable" means — a command that can lose something (`write`) or that leaves the machine (`network`).
  *
- * hazard: this used to include the whole `write` class, which asked about `chmod` and about appending to a file.
- * Repeated approval of routine actions becomes a keystroke rather than a decision, and a habituated reviewer is
- * the delivery mechanism for the one action that mattered — approval fatigue is a security defect, not an
- * ergonomics complaint. `write-preserving` is what left the tier; the set below is unchanged, because what a
- * command can do is decided in one place ([/decisions/ad-026.md](/decisions/ad-026.md)).
+ * hazard: this used to include the whole `write` class, which asked about appending to a file. Repeated approval
+ * of routine actions becomes a keystroke rather than a decision, and a habituated reviewer is the delivery
+ * mechanism for the one action that mattered — approval fatigue is a security defect, not an ergonomics
+ * complaint. Only `write-preserving` left the tier ([/decisions/ad-026.md](/decisions/ad-026.md)).
+ *
+ * hazard: `chmod` and `chown` left it too for one revision, and should not have. They lose no bytes, which was
+ * the criterion, and they still decide who can reach a path — the one change that shows up in no diff. `privilege`
+ * is a member here for that reason.
  *
  * invariant: this is a separate rule from `catastrophicAsk`, not an override of it. That switch keeps deciding
  * `destructive` at every posture; posture decides the tier below it. A posture that switched a capability off
@@ -124,7 +135,7 @@ export type EvaluateShellCommandArgs = {
  * hazard: the threshold is deliberately not applied to tool edits. An `Edit` of one line is a write too, and
  * asking before every one turns a posture into a permission prompt.
  */
-const PAIRED_ASK: ReadonlySet<ShellEffectClass> = new Set(["write", "network"]);
+const PAIRED_ASK: ReadonlySet<ShellEffectClass> = new Set(["write", "privilege", "network"]);
 
 // why: named here rather than at the call sites so the recorded rate and the rule that produced it cannot drift
 // apart. An operator reading "seven asks" needs to know which switch to reach for.
@@ -134,10 +145,16 @@ export const SHELL_RULES = {
   stall: "shell-stall",
 } as const;
 
+// why: three tiers ask, and each asks a different question. One sentence covering all of them would leave the
+// operator weighing the wrong risk, which fails in the same direction as not asking at all.
+const AT_STAKE: Record<string, string> = {
+  network: "reaches the network, so it leaves this machine and cannot be pulled back",
+  privilege: "changes who can reach a path, and that will not appear in any diff",
+  write: "can overwrite or remove a path that already exists",
+};
+
 function atStake(effect: ShellEffectClass): string {
-  return effect === "network"
-    ? "reaches the network, so it leaves this machine and cannot be pulled back"
-    : "can overwrite or remove a path that already exists";
+  return AT_STAKE[effect] ?? "changes something outside this turn";
 }
 
 function pairedPreCheck(command: string, mode: OperatorMode): Decision | null {

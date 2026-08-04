@@ -168,9 +168,10 @@ Each posture also states a **deadline**: an unclear goal belongs in the first ac
 the agent states an assumption rather than asking, because a late question is worse than a decision. `focus`
 admits exactly one early question ([/decisions/ad-026.md](/decisions/ad-026.md)).
 
-`paired` is enforced, not only stated: a shell command that reaches the network, or that can overwrite or remove
-an existing path, is asked about before it runs. Metadata changes and appends are not — a prompt the operator
-learns to clear without reading is the mechanism by which a consequential action gets waved through. `solo` and
+`paired` is enforced, not only stated: a shell command is asked about before it runs when it reaches the network,
+when it can overwrite or remove an existing path, or when it changes who can reach a path — the last because that
+change appears in no diff. An append is not asked about: a prompt the operator learns to clear without reading is
+the mechanism by which a consequential action gets waved through. `solo` and
 `focus` differ in what the agent raises, which is its judgement rather than a hook event, so their enforcement is
 the same.
 

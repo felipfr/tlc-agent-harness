@@ -62,12 +62,25 @@ test("classifyShell marks a command that can lose existing content as write", ()
   }
 });
 
-// why: metadata and appends change a path without losing a byte of it. Asking about these is what turns an
-// approval into a keystroke, and a habituated reviewer is how the consequential one gets waved through.
-test("classifyShell marks metadata changes and appends as write-preserving", () => {
-  for (const command of ["chmod +x script.sh", "chmod 755 x", "chown user f", "echo x >> f"]) {
-    assert.equal(classifyShell(command), "write-preserving", command);
+// why: an append changes a path without losing a byte of it. Asking about that is what turns an approval into a
+// keystroke, and a habituated reviewer is how the consequential one gets waved through.
+test("classifyShell marks an append as write-preserving", () => {
+  assert.equal(classifyShell("echo x >> f"), "write-preserving");
+});
+
+// hazard: these were classified as preserving for one revision, on the reasoning that they lose no bytes. True,
+// and the wrong axis: they decide who can reach a path, `-R` applies it to a whole tree, and the result appears
+// in no diff. `chmod -R 777 .` went through unremarked at `paired` until this class existed.
+test("classifyShell marks an access change as privilege, not as preserving", () => {
+  for (const command of ["chmod -R 777 .", "chmod +x script.sh", "chown -R nobody .", "chown user f"]) {
+    assert.equal(classifyShell(command), "privilege", command);
   }
+});
+
+// invariant: privilege outranks write, because an overwrite inside a repository is recoverable and visible while
+// a widened permission is neither.
+test("privilege outranks write when a command does both", () => {
+  assert.equal(classifyShell("chmod 777 . && rm g"), "privilege");
 });
 
 // hazard: `>` and `>>` used to collapse into one branch, so an append was indistinguishable from an overwrite —
@@ -77,8 +90,8 @@ test("an overwrite redirect and an append redirect are not the same class", () =
 });
 
 test("write-preserving ranks between read and write, so a mixed command resolves upward", () => {
-  assert.equal(classifyShell("chmod +x f && rm g"), "write");
-  assert.equal(classifyShell("ls && chmod +x f"), "write-preserving");
+  assert.equal(classifyShell("echo x >> f && rm g"), "write");
+  assert.equal(classifyShell("ls && echo x >> f"), "write-preserving");
 });
 
 test("classifyShell leaves a command that creates without overwriting as read", () => {
@@ -222,11 +235,12 @@ const MATRIX = [
   { command: "cp a b", effect: "write" },
   { command: "rm -rf node_modules", effect: "write" },
   { command: "echo x > f", effect: "write" },
+  { command: "chmod -R 777 .", effect: "privilege" },
 ] as const;
 
 // why: the routine ones. Each changes a path and none can lose a byte of it, so each is a prompt the operator
 // would learn to clear without reading — and that habit is what a hidden consequential action rides in on.
-const NOT_WORTH_ASKING = ["chmod 755 x", "chown user f", "echo x >> f", "mkdir -p build", "cat package.json"];
+const NOT_WORTH_ASKING = ["echo x >> f", "mkdir -p build", "touch f", "cat package.json", "npm test"];
 
 test("paired asks before a shell move that can lose something", () => {
   for (const { command } of MATRIX) {
@@ -241,11 +255,16 @@ test("paired asks before a shell move that can lose something", () => {
 });
 
 // invariant: the reason names what is at stake, because a prompt that does not is one the operator cannot weigh.
-test("the ask says what is at stake, and the two tiers say different things", () => {
-  const network = evaluateShellCommand(baseArgs({ command: "git push origin main", mode: "paired" }));
-  const write = evaluateShellCommand(baseArgs({ command: "rm -rf node_modules", mode: "paired" }));
-  assert.match(network.kind === "ask" ? network.reason : "", /leaves this machine/);
-  assert.match(write.kind === "ask" ? write.reason : "", /overwrite or remove/);
+test("the ask says what is at stake, and the three tiers say different things", () => {
+  const reasonFor = (command: string): string => {
+    const decision = evaluateShellCommand(baseArgs({ command, mode: "paired" }));
+    return decision.kind === "ask" ? decision.reason : "";
+  };
+  assert.match(reasonFor("git push origin main"), /leaves this machine/);
+  assert.match(reasonFor("rm -rf node_modules"), /overwrite or remove/);
+  assert.match(reasonFor("chmod -R 777 ."), /who can reach a path/);
+  // why: an operator weighing the wrong risk fails in the same direction as one who was never asked.
+  assert.equal(new Set([reasonFor("git push"), reasonFor("rm f"), reasonFor("chmod 777 f")]).size, 3);
 });
 
 test("paired leaves the routine commands alone", () => {

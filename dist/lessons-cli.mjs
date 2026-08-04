@@ -3521,7 +3521,7 @@ var WRAPPERS2 = new Set(["command", "doas", "env", "nice", "nohup", "sudo", "tim
 var MACHINE = new Set(["halt", "poweroff", "reboot", "shutdown"]);
 var NETWORK = new Set(["curl", "ftp", "gh", "nc", "ncat", "rsync", "scp", "sftp", "ssh", "telnet", "wget"]);
 var WRITE = new Set(["cp", "mv", "rm", "rmdir", "tee", "truncate"]);
-var WRITE_PRESERVING = new Set(["chmod", "chown"]);
+var PRIVILEGE = new Set(["chmod", "chown"]);
 var DEVICE = /^\/dev\/(sd|nvme|vd|hd|disk)/;
 function classifySegment(words2) {
   let index = 0;
@@ -3558,8 +3558,8 @@ function classifySegment(words2) {
     if (WRITE.has(verb) || verb === "sed" && argText.includes("-i")) {
       return "write";
     }
-    if (WRITE_PRESERVING.has(verb)) {
-      return "write-preserving";
+    if (PRIVILEGE.has(verb)) {
+      return "privilege";
     }
     if (argText.includes(">")) {
       return "write";
@@ -3568,7 +3568,14 @@ function classifySegment(words2) {
   }
   return "read";
 }
-var ORDER = ["read", "write-preserving", "write", "network", "destructive"];
+var ORDER = [
+  "read",
+  "write-preserving",
+  "write",
+  "privilege",
+  "network",
+  "destructive"
+];
 function classifyShell(command) {
   let worst = "read";
   for (const segment of tokenizeShell(command)) {
@@ -3590,14 +3597,19 @@ function stallFollowup(command, hits) {
   ].join(`
 `);
 }
-var PAIRED_ASK = new Set(["write", "network"]);
+var PAIRED_ASK = new Set(["write", "privilege", "network"]);
 var SHELL_RULES = {
   catastrophic: "shell-catastrophic",
   posture: "shell-posture-paired",
   stall: "shell-stall"
 };
+var AT_STAKE = {
+  network: "reaches the network, so it leaves this machine and cannot be pulled back",
+  privilege: "changes who can reach a path, and that will not appear in any diff",
+  write: "can overwrite or remove a path that already exists"
+};
 function atStake(effect) {
-  return effect === "network" ? "reaches the network, so it leaves this machine and cannot be pulled back" : "can overwrite or remove a path that already exists";
+  return AT_STAKE[effect] ?? "changes something outside this turn";
 }
 function pairedPreCheck(command, mode) {
   if (mode !== "paired") {

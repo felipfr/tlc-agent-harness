@@ -28,11 +28,12 @@ asking, because a late question is measurably worse than a decision. `focus` adm
 a goal it cannot read before starting — so it means *ask early or not at all*, never simply never ask
 ([/decisions/ad-026.md](/decisions/ad-026.md)).
 
-What `paired` does **not** ask about is deliberate: `chmod`, `chown` and appends change a path without losing a
-byte of it. Asking about those trains you to clear the prompt without reading it, and a habituated reviewer is
-how the one action that mattered gets waved through — approval fatigue is a security defect, not an ergonomics
-complaint. `cp`, `mv` and `tee` stay in the asking tier, because each can overwrite a destination and the harness
-cannot know whether that destination exists.
+Three tiers ask, and each names a different risk: a command that **leaves the machine**, one that **can overwrite
+or remove** an existing path, and one that **changes who can reach** a path. That last one — `chmod`, `chown` — is
+asked about even though it loses no data, because it is the only change that appears in no diff. An append is the
+one shape that does not ask: content survives it, and asking about it would train you to clear the prompt without
+reading, which is how the action that mattered gets waved through. `cp`, `mv` and `tee` stay in the asking tier,
+because each can overwrite a destination and the harness cannot know whether that destination exists.
 
 Precedence: the `harness-mode` state file, then a posture flag file, then `mode` in the config, then the default.
 Any other value is refused rather than absorbed — `tlc harness status` and `tlc harness doctor` name the rejected
