@@ -54,6 +54,7 @@ import { recordLessonFromFailure } from "./lesson/lesson.service.ts";
 import {
   creditLessons as creditLessonsInner,
   globalLessonsStorePath,
+  markGradeable,
   readGlobalLessons,
   readProjectLessons,
   touchAccessed as touchAccessedInner,
@@ -241,6 +242,7 @@ export const coreFacade = {
     readGlobalLessons,
     globalLessonsStorePath,
     creditLessons,
+    markGradeable,
     gardenAndPersistLessons,
     renderLessonsMarkdown,
     // why: one renderer. `src/entrypoints/support.ts` carried a copy because this was not exposed, so the tier

@@ -198,6 +198,7 @@ async function failGate(args: {
   // why: written after the lessons are chosen and before the turn resumes, so the next run of this same gate is
   // the thing that grades them ([/decisions/ad-039.md](/decisions/ad-039.md)).
   if (selected.usedIds.length > 0) {
+    await coreFacade.lesson.markGradeable(args.root, selected.usedIds);
     await coreFacade.handoff.patchHandoff(args.root, args.provider, {
       slice: {
         pending_lesson_credit: {

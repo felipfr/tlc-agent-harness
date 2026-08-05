@@ -33,6 +33,7 @@ function coreLesson(input: CoreLessonInput): HarnessLesson {
     refs: [],
     sessionKeys: [],
     injectedCount: 0,
+    gradeableCount: 0,
     helpedCount: 0,
     neutralCount: 0,
     firstSeenAt: EPOCH,
@@ -142,6 +143,7 @@ function normalizeLesson(raw: HarnessLesson, tier: LessonTier): HarnessLesson {
     refs: Array.isArray(raw.refs) ? raw.refs : [],
     sessionKeys: Array.isArray(raw.sessionKeys) ? raw.sessionKeys : [],
     injectedCount: Number.isFinite(raw.injectedCount) ? raw.injectedCount : 0,
+    gradeableCount: Number.isFinite(raw.gradeableCount) ? raw.gradeableCount : 0,
     helpedCount: Number.isFinite(raw.helpedCount) ? raw.helpedCount : 0,
     neutralCount: Number.isFinite(raw.neutralCount) ? raw.neutralCount : 0,
   };
@@ -256,6 +258,22 @@ export async function touchAccessed(root: string, ids: string[], now = new Date(
     lastAccessedAt: iso,
     updatedAt: iso,
     injectedCount: lesson.injectedCount + 1,
+  }));
+}
+
+/**
+ * Marks an injection as one a later gate run can grade.
+ *
+ * why: called where the pending credit is written, so the counter and the credit cannot disagree. Counting it at
+ * injection time instead would include session-start injections, which nothing ever grades
+ * ([/decisions/ad-044.md](/decisions/ad-044.md)).
+ */
+export async function markGradeable(root: string, ids: readonly string[], now = new Date()): Promise<void> {
+  const iso = now.toISOString();
+  await mutateWritableTiers(root, ids, (lesson) => ({
+    ...lesson,
+    gradeableCount: lesson.gradeableCount + 1,
+    updatedAt: iso,
   }));
 }
 

@@ -88,13 +88,17 @@ not graded by `test`.
 |---------|---------|
 | `helped n/m` | present when that gate recovered, at least once |
 | `neutral 0/m` | present at m failures and no recoveries |
-| `unproven` | **injected** and never graded — no evidence, not "fine" |
-| `not-injected` | never shown yet, so there has been nothing to measure |
+| `unproven` | injected **for a gate** and never graded — no evidence, not "fine" |
+| `session-only` | injected at session start and never for a gate, so this mechanism cannot measure it |
+| `not-injected` | never shown yet |
 
-`unproven` is its own state and `doctor` reports it as a warning; `not-injected` is kept apart from it so a
-store of brand-new lessons does not read as a store of unjustified ones. The rate is `null` over zero graded
-injections, never `0` — zero would read as "measured and it never helped", which is a claim the harness has not
-earned.
+Only `unproven` is a `doctor` warning. **A session-start injection is never graded** — only the retry path has a
+gate whose next run can decide — so a lesson with gate `any` is unprovable by this mechanism rather than
+unjustified, and saying otherwise would warn about a healthy store on every run
+([/decisions/ad-044.md](/decisions/ad-044.md)).
+
+The rate is `null` over zero graded injections, never `0` — zero would read as "measured and it never helped",
+which is a claim the harness has not earned.
 
 **This is not causal.** A gate passing after a lesson was injected does not prove the lesson caused it, and
 `neutral` does not mean the lesson was wrong. A causal answer needs the same task run twice, and real work does

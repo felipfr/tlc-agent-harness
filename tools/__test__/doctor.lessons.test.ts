@@ -60,6 +60,7 @@ function lesson(overrides: Partial<HarnessLesson> = {}): HarnessLesson {
     refs: [],
     sessionKeys: ["s-1", "s-2"],
     injectedCount: 0,
+    gradeableCount: 0,
     helpedCount: 0,
     neutralCount: 0,
     firstSeenAt: NOW,
@@ -123,7 +124,7 @@ test("an expired lesson is a warning pointing at garden", async () => {
 test("a lesson injected and never graded is a warning, not a healthy row", async () => {
   process.env.TLC_HOME = newDir("tlc-doctor-home-");
   const root = projectWithLessonsOn();
-  await upsertProjectLesson(root, lesson({ injectedCount: 3 }));
+  await upsertProjectLesson(root, lesson({ injectedCount: 3, gradeableCount: 3 }));
   const checks = checkLessonHealth(root);
   assert.equal(
     checks.some((check) => check.level === "ok"),
@@ -148,7 +149,10 @@ test("a lesson that was never injected is not reported as unproven", async () =>
 test("a graded lesson is not reported as unproven", async () => {
   process.env.TLC_HOME = newDir("tlc-doctor-home-");
   const root = projectWithLessonsOn();
-  await upsertProjectLesson(root, lesson({ injectedCount: 3, helpedCount: 1, neutralCount: 2 }));
+  await upsertProjectLesson(
+    root,
+    lesson({ injectedCount: 3, gradeableCount: 3, helpedCount: 1, neutralCount: 2 }),
+  );
   const checks = checkLessonHealth(root);
   assert.equal(checks.length, 1);
   assert.equal(checks[0]?.level, "ok");

@@ -335,7 +335,12 @@ export function checkLessonHealth(root: string): Check[] {
     checks.push({
       level: "warn",
       name: "unproven lessons",
-      detail: `${plural(unproven.length, "lesson")} have been injected and never graded by a following gate run, so nothing shows ${unproven.length === 1 ? "it" : "they"} help`,
+      // hazard: this read "1 lesson have been injected … so nothing shows it help". `plural` handled the noun and
+      // the verb agreement was hardcoded — the same defect as "1 warning(s)", one clause further along.
+      detail:
+        unproven.length === 1
+          ? "1 lesson has been injected for a gate and never graded, so nothing shows it helped"
+          : `${unproven.length} lessons have been injected for a gate and never graded, so nothing shows they helped`,
     });
   }
   if (checks.length === 0) {

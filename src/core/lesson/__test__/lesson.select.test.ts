@@ -39,6 +39,7 @@ function lesson(partial: Partial<HarnessLesson> & Pick<HarnessLesson, "id" | "in
     refs: [],
     sessionKeys: [],
     injectedCount: 0,
+    gradeableCount: 0,
     helpedCount: 0,
     neutralCount: 0,
     firstSeenAt: now,

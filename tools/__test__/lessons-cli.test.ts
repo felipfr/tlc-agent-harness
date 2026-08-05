@@ -48,6 +48,7 @@ function lesson(overrides: Partial<HarnessLesson> = {}): HarnessLesson {
     refs: [],
     sessionKeys: [],
     injectedCount: 0,
+    gradeableCount: 0,
     helpedCount: 0,
     neutralCount: 0,
     firstSeenAt: NOW.toISOString(),
@@ -124,8 +125,10 @@ describe("listText", () => {
 
   // invariant: unproven is reported as its own state, never folded into a zero rate.
   test("a lesson nothing has graded reads unproven rather than zero", () => {
-    const text = listText(listReport(newRoot(), [lesson({ injectedCount: 2 })], CONFIG, NOW));
-    assert.match(text, /effect=unproven \(injected 2x, graded 0x\)/);
+    const text = listText(
+      listReport(newRoot(), [lesson({ injectedCount: 2, gradeableCount: 2 })], CONFIG, NOW),
+    );
+    assert.match(text, /effect=unproven \(injected for a gate 2x, graded 0x\)/);
     assert.match(text, /unproven=1/);
   });
 
@@ -157,7 +160,7 @@ describe("listText", () => {
   test("a lesson that was never injected is counted apart from an unproven one", () => {
     const report = listReport(
       newRoot(),
-      [lesson(), lesson({ id: "lesson-2", injectedCount: 4 })],
+      [lesson(), lesson({ id: "lesson-2", injectedCount: 4, gradeableCount: 4 })],
       CONFIG,
       NOW,
     );

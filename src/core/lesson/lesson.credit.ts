@@ -13,12 +13,17 @@ export function helpRate(lesson: HarnessLesson): number | null {
   return graded === 0 ? null : lesson.helpedCount / graded;
 }
 
+/**
+ * hazard: this read `injectedCount`, which counts session-start injections. Those are never graded — a lesson
+ * whose gate is `any` is not even eligible on a retry — so a healthy pinned standing rule reported `unproven`
+ * forever and `doctor` warned about it on every run, in every repository
+ * ([/decisions/ad-044.md](/decisions/ad-044.md)).
+ */
 export function lessonEffectiveness(lesson: HarnessLesson): LessonEffectiveness {
   const rate = helpRate(lesson);
   if (rate === null) {
-    // why: a lesson nothing has shown yet is not an unjustified claim — there has been no opportunity to measure
-    // it. Folding the two together made every fresh store read as entirely unproven.
-    return lesson.injectedCount === 0 ? "not-injected" : "unproven";
+    // why: only an injection a gate could have graded can be unproven. Everything else has had no opportunity.
+    return lesson.gradeableCount === 0 ? "not-injected" : "unproven";
   }
   return rate > 0 ? "helped" : "neutral";
 }
@@ -35,10 +40,12 @@ export function creditLesson(lesson: HarnessLesson, verdict: LessonVerdict, now:
 export function effectivenessLine(lesson: HarnessLesson): string {
   const reading = lessonEffectiveness(lesson);
   if (reading === "not-injected") {
-    return "not-injected";
+    return lesson.injectedCount === 0
+      ? "not-injected"
+      : `session-only (injected ${lesson.injectedCount}x, never for a gate)`;
   }
   if (reading === "unproven") {
-    return `unproven (injected ${lesson.injectedCount}x, graded 0x)`;
+    return `unproven (injected for a gate ${lesson.gradeableCount}x, graded 0x)`;
   }
   return `${reading} ${lesson.helpedCount}/${gradedCount(lesson)}`;
 }

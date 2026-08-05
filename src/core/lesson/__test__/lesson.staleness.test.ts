@@ -68,6 +68,7 @@ function lesson(overrides: Partial<HarnessLesson> = {}): HarnessLesson {
     refs: [],
     sessionKeys: ["s-1", "s-2"],
     injectedCount: 0,
+    gradeableCount: 0,
     helpedCount: 0,
     neutralCount: 0,
     firstSeenAt: NOW.toISOString(),

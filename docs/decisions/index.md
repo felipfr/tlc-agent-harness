@@ -58,5 +58,6 @@ Handoff section and a link back to this index.
 | [AD-041](/decisions/ad-041.md) | A member something reads and nothing writes fails the gate | active |
 | [AD-042](/decisions/ad-042.md) | The suite gets an empty runtime home, and one renderer renders a lesson | active |
 | [AD-043](/decisions/ad-043.md) | A standing rule is pinned, not ranked, and the budget says what it dropped | active |
+| [AD-044](/decisions/ad-044.md) | Only an injection a gate could grade can be unproven | active |
 
 Related: [/architecture.md](/architecture.md), [/concepts.md](/concepts.md), [/providers/index.md](/providers/index.md).

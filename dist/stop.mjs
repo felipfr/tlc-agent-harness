@@ -1875,6 +1875,7 @@ function buildAuthoredLesson(input) {
     ...input.validTo ? { validTo: input.validTo } : {},
     sessionKeys: [],
     injectedCount: 0,
+    gradeableCount: 0,
     helpedCount: 0,
     neutralCount: 0,
     firstSeenAt: now,
@@ -1895,7 +1896,7 @@ function helpRate(lesson) {
 function lessonEffectiveness(lesson) {
   const rate = helpRate(lesson);
   if (rate === null) {
-    return lesson.injectedCount === 0 ? "not-injected" : "unproven";
+    return lesson.gradeableCount === 0 ? "not-injected" : "unproven";
   }
   return rate > 0 ? "helped" : "neutral";
 }
@@ -1910,10 +1911,10 @@ function creditLesson(lesson, verdict, now) {
 function effectivenessLine(lesson) {
   const reading = lessonEffectiveness(lesson);
   if (reading === "not-injected") {
-    return "not-injected";
+    return lesson.injectedCount === 0 ? "not-injected" : `session-only (injected ${lesson.injectedCount}x, never for a gate)`;
   }
   if (reading === "unproven") {
-    return `unproven (injected ${lesson.injectedCount}x, graded 0x)`;
+    return `unproven (injected for a gate ${lesson.gradeableCount}x, graded 0x)`;
   }
   return `${reading} ${lesson.helpedCount}/${gradedCount(lesson)}`;
 }
@@ -2048,6 +2049,7 @@ function coreLesson(input) {
     refs: [],
     sessionKeys: [],
     injectedCount: 0,
+    gradeableCount: 0,
     helpedCount: 0,
     neutralCount: 0,
     firstSeenAt: EPOCH,
@@ -2141,6 +2143,7 @@ function normalizeLesson(raw, tier) {
     refs: Array.isArray(raw.refs) ? raw.refs : [],
     sessionKeys: Array.isArray(raw.sessionKeys) ? raw.sessionKeys : [],
     injectedCount: Number.isFinite(raw.injectedCount) ? raw.injectedCount : 0,
+    gradeableCount: Number.isFinite(raw.gradeableCount) ? raw.gradeableCount : 0,
     helpedCount: Number.isFinite(raw.helpedCount) ? raw.helpedCount : 0,
     neutralCount: Number.isFinite(raw.neutralCount) ? raw.neutralCount : 0
   };
@@ -2221,6 +2224,14 @@ async function touchAccessed(root, ids, now = new Date) {
     lastAccessedAt: iso,
     updatedAt: iso,
     injectedCount: lesson.injectedCount + 1
+  }));
+}
+async function markGradeable(root, ids, now = new Date) {
+  const iso = now.toISOString();
+  await mutateWritableTiers(root, ids, (lesson) => ({
+    ...lesson,
+    gradeableCount: lesson.gradeableCount + 1,
+    updatedAt: iso
   }));
 }
 async function creditLessons(root, ids, verdict, now = new Date) {
@@ -2622,6 +2633,7 @@ async function recordLessonFromFailure(args) {
     refs: [],
     sessionKeys: withSessionKey([], args.sessionKey),
     injectedCount: 0,
+    gradeableCount: 0,
     helpedCount: 0,
     neutralCount: 0,
     firstSeenAt: now,
@@ -5227,6 +5239,7 @@ var coreFacade = {
     readGlobalLessons,
     globalLessonsStorePath,
     creditLessons: creditLessons2,
+    markGradeable,
     gardenAndPersistLessons,
     renderLessonsMarkdown,
     renderLessonBlock,
@@ -6416,6 +6429,7 @@ async function failGate(args) {
   }) : { lessons: [], usedIds: [], omitted: 0 };
   const lessonsBlock = formatLessonsBlock(selected.lessons, "Lessons for this gate (ranked — apply before inventing a new plan):", selected.omitted);
   if (selected.usedIds.length > 0) {
+    await coreFacade.lesson.markGradeable(args.root, selected.usedIds);
     await coreFacade.handoff.patchHandoff(args.root, args.provider, {
       slice: {
         pending_lesson_credit: {

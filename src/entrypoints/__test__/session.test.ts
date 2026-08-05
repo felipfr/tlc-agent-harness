@@ -91,6 +91,7 @@ function lesson(overrides: Partial<HarnessLesson> & Pick<HarnessLesson, "id">): 
     refs: [],
     sessionKeys: [],
     injectedCount: 0,
+    gradeableCount: 0,
     helpedCount: 0,
     neutralCount: 0,
     firstSeenAt: now,

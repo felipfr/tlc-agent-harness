@@ -61,8 +61,16 @@ export type HarnessLesson = {
   // why: promotion counts these, not `hitCount` — one stuck session repeating a failure is one observation of
   // the world, not several ([/decisions/ad-038.md](/decisions/ad-038.md)).
   sessionKeys: string[];
-  /** Times selected for injection. The denominator of every effectiveness reading. */
+  /** Times selected for injection, in any mode. */
   injectedCount: number;
+  /**
+   * Times injected **for a gate**, which is the only injection a later gate run can grade.
+   *
+   * hazard: `injectedCount` counts session-start injections too, and those are never graded — a lesson whose gate
+   * is `any` is not eligible on a retry at all, so judging it by `injectedCount` warned "unproven" forever on a
+   * perfectly healthy store ([/decisions/ad-044.md](/decisions/ad-044.md)).
+   */
+  gradeableCount: number;
   helpedCount: number;
   neutralCount: number;
   firstSeenAt: string;

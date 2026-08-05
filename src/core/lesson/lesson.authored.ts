@@ -85,6 +85,7 @@ export function buildAuthoredLesson(input: AuthoredLessonInput): HarnessLesson {
     // sessions and an authored lesson is already active, so it never consults this.
     sessionKeys: [],
     injectedCount: 0,
+    gradeableCount: 0,
     helpedCount: 0,
     neutralCount: 0,
     firstSeenAt: now,

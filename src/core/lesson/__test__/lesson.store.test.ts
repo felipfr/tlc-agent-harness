@@ -38,6 +38,7 @@ function lesson(id: string): HarnessLesson {
     refs: [],
     sessionKeys: [],
     injectedCount: 0,
+    gradeableCount: 0,
     helpedCount: 0,
     neutralCount: 0,
     firstSeenAt: now,
