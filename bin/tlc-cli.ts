@@ -325,21 +325,16 @@ export function classifyRuntimePath(
  * `git fetch` inside a contributor's repository. Caught by driving the real command against a linked install rather
  * than by any unit test ([/decisions/ad-046.md](/decisions/ad-046.md)).
  *
- * why: symlink-ness is also inferred from the path resolving elsewhere, so a chain of links or a bind-style layout
- * is classified as linked even where `lstat` on the last hop says otherwise.
+ * hazard: an earlier version also treated "resolves elsewhere" as linked, to catch a symlinked ancestor. macOS CI
+ * refuted it: `/var` is a symlink to `/private/var`, so every path under the system temp directory resolves
+ * elsewhere and a **managed** checkout was classified as linked — which would silently stop updates on the very
+ * platform the reporter uses. Only the last hop decides, which is the one thing `install.sh` actually creates.
  */
 export function runtimePathKind(dest: string): RuntimePathKind {
   return classifyRuntimePath(dest, {
     isSymlink: (path) => {
       try {
-        if (lstatSync(path).isSymbolicLink()) {
-          return true;
-        }
-      } catch {
-        return false;
-      }
-      try {
-        return realpathSync(path) !== path;
+        return lstatSync(path).isSymbolicLink();
       } catch {
         return false;
       }

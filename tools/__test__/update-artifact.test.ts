@@ -67,26 +67,22 @@ test("the real classifier agrees with the probe on a symlinked directory", () =>
 });
 
 /**
- * hazard: `resolveHarnessRoot` calls `realpathSync`, and an earlier version classified that resolved path. A linked
- * clone then read as `managed` and `update` ran `git fetch` inside a contributor's repository. Found by driving the
- * real command against a linked install, not by any unit test ([/decisions/ad-046.md](/decisions/ad-046.md)).
+ * hazard: only the last hop may decide. An earlier version also read "resolves elsewhere" as linked, to catch a
+ * symlinked ancestor. macOS CI refuted it — `/var` links to `/private/var`, so every path under the system temp
+ * directory resolves elsewhere and a **managed** checkout classified as linked, which would silently stop updates
+ * on that platform ([/decisions/ad-046.md](/decisions/ad-046.md)).
+ *
+ * This is the regression test for that: a real checkout whose path resolves elsewhere stays `managed`.
  */
-test("a path whose ancestor is a symlink is linked, though its own last hop is not", () => {
-  // why: the shape a machine really has when `~/.tlc` is itself a link, or when the home directory is
-  // (`/Users` against `/System/Volumes/Data/Users` on macOS). `lstat` on the final component says "plain
-  // directory", and only resolving the whole path shows it lands somewhere else.
+test("a managed checkout under a symlinked ancestor is still managed", () => {
   const real = newDir("tlc-real-");
   mkdirSync(join(real, "harness", ".git"), { recursive: true });
   const linkedParent = join(newDir("tlc-parent-"), "tlc");
   symlinkSync(real, linkedParent, "dir");
 
   const through = join(linkedParent, "harness");
-  assert.equal(
-    lstatSync(through).isSymbolicLink(),
-    false,
-    "the last hop must not be a link for this to bite",
-  );
-  assert.equal(runtimePathKind(through), "linked");
+  assert.equal(lstatSync(through).isSymbolicLink(), false, "the last hop is a plain directory");
+  assert.equal(runtimePathKind(through), "managed");
   assert.equal(runtimePathKind(join(real, "harness")), "managed");
 });
 

@@ -5438,14 +5438,7 @@ function runtimePathKind(dest) {
   return classifyRuntimePath(dest, {
     isSymlink: (path) => {
       try {
-        if (lstatSync(path).isSymbolicLink()) {
-          return true;
-        }
-      } catch {
-        return false;
-      }
-      try {
-        return realpathSync(path) !== path;
+        return lstatSync(path).isSymbolicLink();
       } catch {
         return false;
       }
