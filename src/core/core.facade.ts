@@ -53,6 +53,7 @@ import {
 } from "./lesson/lesson.select.ts";
 import { recordLessonFromFailure } from "./lesson/lesson.service.ts";
 import {
+  allLessons,
   creditLessons as creditLessonsInner,
   globalLessonsStorePath,
   markGradeable,
@@ -250,6 +251,9 @@ export const coreFacade = {
     writeProjectLessons,
     readProjectLessons,
     readGlobalLessons,
+    // why: the three tiers, deduped. The durable view renders from this rather than from the project store, or two
+    // of the three tiers never reach the host that depends on that file.
+    allLessons,
     globalLessonsStorePath,
     creditLessons,
     markGradeable,

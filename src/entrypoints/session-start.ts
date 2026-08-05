@@ -8,6 +8,7 @@ import {
   currentGitSha,
   formatLessonsBlock,
   obsConfigFor,
+  renderProviderLessonsView,
   sessionIdFromKey,
 } from "./support.ts";
 
@@ -88,9 +89,10 @@ export const sessionStartHandler: Handler = async (
   }
 
   if (policy.intelligence.lessons.enabled) {
+    const config = policy.intelligence.lessons;
     const selected = await coreFacade.lesson.selectLessons({
       projectDir: root,
-      config: policy.intelligence.lessons,
+      config,
       mode: "session",
       text: [handoff.blockers, handoff.next_action].filter(Boolean).join(" "),
     });
@@ -101,6 +103,16 @@ export const sessionStartHandler: Handler = async (
     );
     if (block) {
       lines.push("", block);
+    }
+    // hazard: the durable view was written only at session end, so on the host that depends on it the file carried
+    // the previous session's ranked set and did not exist at all during the first one. Written here it is in place
+    // before the first prompt ([/decisions/ad-050.md](/decisions/ad-050.md)).
+    if (
+      coreFacade.lesson.durableViewVerdict(config.syncRulesFile, ctx.capabilities.sessionStartContextReliable)
+        .writes
+    ) {
+      coreFacade.lesson.renderLessonsMarkdown(root, coreFacade.lesson.allLessons(root), config);
+      renderProviderLessonsView(event.provider, root);
     }
   }
 

@@ -5,8 +5,8 @@ import { isCommandResolutionFailure } from "../gate/gate.command.ts";
 import type { LessonsPolicyConfig } from "../policy/policy.types.ts";
 import { lessonLinkVerdict } from "./lesson.link.ts";
 import { hoursSince } from "./lesson.score.ts";
-import { isInjectable, packLessonsUnderBudget, rankLessonsForSync } from "./lesson.select.ts";
-import { gardenGlobalLessons, gardenProjectLessons, readProjectLessons } from "./lesson.store.ts";
+import { appliesHere, isInjectable, packLessonsUnderBudget, rankLessonsForSync } from "./lesson.select.ts";
+import { allLessons, gardenGlobalLessons, gardenProjectLessons } from "./lesson.store.ts";
 import type { HarnessLesson } from "./lesson.types.ts";
 import { validityReason } from "./lesson.validity.ts";
 
@@ -237,7 +237,11 @@ export function renderLessonsMarkdown(
   // invariant: the synced file is what an operator reads as current guidance, so it carries exactly what would
   // be injected — a withheld lesson appearing here would contradict the store.
   const now = new Date();
-  const ranked = rankLessonsForSync(lessons.filter((lesson) => isInjectable(lesson, now))).slice(0, 12);
+  // hazard: `appliesHere` as well as `isInjectable`. A global lesson whose refs miss in this repo is withheld from
+  // the injected block, so listing it here would make the file contradict the guidance the model receives.
+  const ranked = rankLessonsForSync(
+    lessons.filter((lesson) => isInjectable(lesson, now) && appliesHere(root, lesson)),
+  ).slice(0, 12);
   const { body } = packLessonsUnderBudget({
     lessons: ranked,
     maxChars: config.maxCharsSession,
@@ -270,8 +274,10 @@ export function gardenAndPersistLessons(
     if (!options.writeDurableView) {
       return { report, markdownPath: null };
     }
-    const lessons = readProjectLessons(root);
-    const path = renderLessonsMarkdown(root, lessons, config);
+    // hazard: this read `readProjectLessons`, so the file carried one of the three tiers. On the host where it is
+    // the only route to the model, a core or global lesson therefore reached nothing
+    // ([/decisions/ad-040.md](/decisions/ad-040.md), [/decisions/ad-050.md](/decisions/ad-050.md)).
+    const path = renderLessonsMarkdown(root, allLessons(root), config);
     return { report, markdownPath: path };
   });
 }

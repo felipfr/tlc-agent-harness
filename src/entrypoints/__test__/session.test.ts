@@ -316,6 +316,25 @@ test("session.end triggers the Cursor-native lessons view through the provider",
   }
 });
 
+/**
+ * hazard: the session-end write is a second call site, and it rendered from `readProjectLessons` while the CLI
+ * rendered from all three tiers. A sensor caught it: emptying the list there left every test green, because the only
+ * assertion on the file's content ran against the session-start path ([/decisions/ad-050.md](/decisions/ad-050.md)).
+ */
+test("the view written at session end carries the core tier too", async () => {
+  const root = tempRoot();
+  try {
+    writeProjectPolicy(root, {
+      intelligence: { lessons: { enabled: true, gardenOnSessionEnd: true, syncRulesFile: "always" } },
+    });
+    await runHandler(sessionEndHandler, stdinOf(cursorEnd(root)));
+    const body = readFileSync(join(root, ".cursor", "rules", "harness-lessons.mdc"), "utf8");
+    assert.match(body, /\/core\]/, "a shipped core lesson reaches the file written at session end");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("session.end triggers the Claude-native lessons view through the provider", async () => {
   const root = tempRoot();
   try {
@@ -339,6 +358,53 @@ test("session.end does not write the provider lessons view when syncRulesFile is
     });
     await runHandler(sessionEndHandler, stdinOf(cursorEnd(root)));
     assert.ok(!existsSync(join(root, ".cursor", "rules", "harness-lessons.mdc")));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * hazard: the durable view was written only at session end, so on the host that depends on it the file held the
+ * previous session's set and did not exist during the first session at all — the transport was always one session
+ * behind the lessons it was carrying ([/decisions/ad-050.md](/decisions/ad-050.md)).
+ */
+test("a Cursor session start puts the durable view in place before the first prompt", async () => {
+  const root = tempRoot();
+  try {
+    writeProjectPolicy(root, { intelligence: { lessons: { enabled: true } } });
+    await runHandler(sessionStartHandler, stdinOf(cursorStart(root)));
+    const view = join(root, ".cursor", "rules", "harness-lessons.mdc");
+    assert.ok(existsSync(view), "the rules file exists after the first session start");
+    assert.match(readFileSync(view, "utf8"), /alwaysApply: true/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * hazard: the view rendered from `readProjectLessons`, so it carried one of the three tiers. On the host where it is
+ * the only route to the model, every shipped core lesson and every global lesson reached nothing
+ * ([/decisions/ad-040.md](/decisions/ad-040.md)).
+ */
+test("the durable view carries the core tier, not only this project's lessons", async () => {
+  const root = tempRoot();
+  try {
+    writeProjectPolicy(root, { intelligence: { lessons: { enabled: true } } });
+    await runHandler(sessionStartHandler, stdinOf(cursorStart(root)));
+    const body = readFileSync(join(root, ".cursor", "rules", "harness-lessons.mdc"), "utf8");
+    assert.match(body, /\/core\]/, "a shipped core lesson reaches the file");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// invariant: the control. A host that delivers hook context gets no file written at session start either.
+test("a Claude session start writes no durable view", async () => {
+  const root = tempRoot();
+  try {
+    writeProjectPolicy(root, { intelligence: { lessons: { enabled: true } } });
+    await runHandler(sessionStartHandler, stdinOf(claudeStart(root)));
+    assert.ok(!existsSync(join(root, "CLAUDE.md")));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

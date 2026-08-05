@@ -1,19 +1,8 @@
 import type { Decision, HarnessEvent } from "../contracts/index.ts";
 import { coreFacade } from "../core/index.ts";
-import { renderClaudeLessonsView, renderCursorLessonsView } from "../providers/index.ts";
 import type { Handler, HandlerContext } from "./run.ts";
 import { main } from "./run.ts";
-import { sessionIdFromKey } from "./support.ts";
-
-function renderProviderLessonsView(providerName: string, root: string): string | null {
-  if (providerName === "cursor") {
-    return renderCursorLessonsView(root);
-  }
-  if (providerName === "claude") {
-    return renderClaudeLessonsView(root);
-  }
-  return null;
-}
+import { renderProviderLessonsView, sessionIdFromKey } from "./support.ts";
 
 export const sessionEndHandler: Handler = async (
   event: HarnessEvent,

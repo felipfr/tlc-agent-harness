@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { EffortLevel, HarnessEvent } from "../contracts/index.ts";
 import { coreFacade, type HarnessLesson, type ObservabilityConfig, type Policy } from "../core/index.ts";
 import { runProcess } from "../platform/process.ts";
-import type { ProviderPort } from "../providers/index.ts";
+import { type ProviderPort, renderClaudeLessonsView, renderCursorLessonsView } from "../providers/index.ts";
 
 // invariant: one definition, taken from core rather than restated.
 export const OBS_CONFIG = coreFacade.observability.DEFAULT_OBS;
@@ -103,6 +103,20 @@ export function readModelFromToolInput(toolInput: Record<string, unknown> | unde
  */
 export function renderLessonLine(lesson: HarnessLesson): string {
   return coreFacade.lesson.renderLessonBlock(lesson);
+}
+
+/**
+ * invariant: one dispatcher, imported by both session entrypoints. The durable view is written at session start and
+ * again at session end, and a copy of this switch in each would be the AD-042 defect a second time.
+ */
+export function renderProviderLessonsView(providerName: string, root: string): string | null {
+  if (providerName === "cursor") {
+    return renderCursorLessonsView(root);
+  }
+  if (providerName === "claude") {
+    return renderClaudeLessonsView(root);
+  }
+  return null;
 }
 
 /**
