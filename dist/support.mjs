@@ -2529,17 +2529,40 @@ var SYNC_TITLE = "Learned harness lessons (auto-synced; do not hand-edit):";
 function lessonsMarkdownPath(root) {
   return join10(dirname5(projectConfigPath(root)), "lessons.md");
 }
-function renderLessonsMarkdown(root, lessons, maxChars) {
+function emptySyncReason(lessons, config, now) {
+  if (!config.enabled) {
+    return "Lessons are switched off for this project (`intelligence.lessons.enabled` is false), so no gate failure is ever recorded. Ask the agent to run the harness-init skill to turn them on.";
+  }
+  if (lessons.length === 0) {
+    return "No lesson recorded yet. One is written when the *same* gate failure repeats inside a session — a gate that fails once, or fails differently each time, records nothing.";
+  }
+  const candidates = lessons.filter((lesson) => lesson.status === "candidate").length;
+  if (candidates > 0 && lessons.every((lesson) => lesson.status !== "active")) {
+    const noun = candidates === 1 ? "lesson" : "lessons";
+    return `${candidates} candidate ${noun} recorded, none promoted yet. Promotion needs the same failure in ${config.promoteHitCount} distinct sessions — see \`tlc harness lessons list\`.`;
+  }
+  const withheld = lessons.filter((lesson) => lesson.status === "active" && !isInjectable(lesson, now)).length;
+  if (withheld > 0) {
+    const noun = withheld === 1 ? "lesson is" : "lessons are";
+    return `${withheld} active ${noun} withheld — a named reference stopped resolving, or a validity window closed. Run \`tlc harness lessons list\` to see which.`;
+  }
+  return "No active project lessons yet.";
+}
+function renderLessonsMarkdown(root, lessons, config) {
   const now = new Date;
   const ranked = rankLessonsForSync(lessons.filter((lesson) => isInjectable(lesson, now))).slice(0, 12);
-  const { body } = packLessonsUnderBudget({ lessons: ranked, maxChars, title: SYNC_TITLE });
+  const { body } = packLessonsUnderBudget({
+    lessons: ranked,
+    maxChars: config.maxCharsSession,
+    title: SYNC_TITLE
+  });
   const path = lessonsMarkdownPath(root);
   mkdirSync5(dirname5(path), { recursive: true });
   const content = `# Harness lessons
 
 Auto-synced from gate failures; do not hand-edit.
 
-${body || "No active project lessons yet."}
+${body || emptySyncReason(lessons, config, now)}
 `;
   writeFileSync4(path, content, "utf8");
   return path;
@@ -2550,7 +2573,7 @@ function gardenAndPersistLessons(root, config, now = new Date) {
       return { report, markdownPath: null };
     }
     const lessons = readProjectLessons(root);
-    const path = renderLessonsMarkdown(root, lessons, config.maxCharsSession);
+    const path = renderLessonsMarkdown(root, lessons, config);
     return { report, markdownPath: path };
   });
 }

@@ -195,19 +195,61 @@ export function lessonsMarkdownPath(root: string): string {
   return join(dirname(projectConfigPath(root)), "lessons.md");
 }
 
-export function renderLessonsMarkdown(root: string, lessons: HarnessLesson[], maxChars: number): string {
+/**
+ * Why the synced file has nothing in it, in the operator's terms.
+ *
+ * hazard: one sentence — "No active project lessons yet." — covered a switched-off capability, an enabled one that
+ * had never seen a repeat failure, and a store full of candidates none of which had been promoted. Three different
+ * situations and nothing to tell them apart, so the file read as broken. An operator reported it as never updating,
+ * and it was being rewritten every session with the same empty text ([/decisions/ad-049.md](/decisions/ad-049.md)).
+ */
+export function emptySyncReason(
+  lessons: readonly HarnessLesson[],
+  config: LessonsPolicyConfig,
+  now: Date,
+): string {
+  if (!config.enabled) {
+    return "Lessons are switched off for this project (`intelligence.lessons.enabled` is false), so no gate failure is ever recorded. Ask the agent to run the harness-init skill to turn them on.";
+  }
+  if (lessons.length === 0) {
+    return "No lesson recorded yet. One is written when the *same* gate failure repeats inside a session — a gate that fails once, or fails differently each time, records nothing.";
+  }
+  const candidates = lessons.filter((lesson) => lesson.status === "candidate").length;
+  if (candidates > 0 && lessons.every((lesson) => lesson.status !== "active")) {
+    const noun = candidates === 1 ? "lesson" : "lessons";
+    return `${candidates} candidate ${noun} recorded, none promoted yet. Promotion needs the same failure in ${config.promoteHitCount} distinct sessions — see \`tlc harness lessons list\`.`;
+  }
+  const withheld = lessons.filter(
+    (lesson) => lesson.status === "active" && !isInjectable(lesson, now),
+  ).length;
+  if (withheld > 0) {
+    const noun = withheld === 1 ? "lesson is" : "lessons are";
+    return `${withheld} active ${noun} withheld — a named reference stopped resolving, or a validity window closed. Run \`tlc harness lessons list\` to see which.`;
+  }
+  return "No active project lessons yet.";
+}
+
+export function renderLessonsMarkdown(
+  root: string,
+  lessons: HarnessLesson[],
+  config: LessonsPolicyConfig,
+): string {
   // invariant: the synced file is what an operator reads as current guidance, so it carries exactly what would
   // be injected — a withheld lesson appearing here would contradict the store.
   const now = new Date();
   const ranked = rankLessonsForSync(lessons.filter((lesson) => isInjectable(lesson, now))).slice(0, 12);
-  const { body } = packLessonsUnderBudget({ lessons: ranked, maxChars, title: SYNC_TITLE });
+  const { body } = packLessonsUnderBudget({
+    lessons: ranked,
+    maxChars: config.maxCharsSession,
+    title: SYNC_TITLE,
+  });
   const path = lessonsMarkdownPath(root);
   mkdirSync(dirname(path), { recursive: true });
   const content = `# Harness lessons
 
 Auto-synced from gate failures; do not hand-edit.
 
-${body || "No active project lessons yet."}
+${body || emptySyncReason(lessons, config, now)}
 `;
   writeFileSync(path, content, "utf8");
   return path;
@@ -223,7 +265,7 @@ export function gardenAndPersistLessons(
       return { report, markdownPath: null };
     }
     const lessons = readProjectLessons(root);
-    const path = renderLessonsMarkdown(root, lessons, config.maxCharsSession);
+    const path = renderLessonsMarkdown(root, lessons, config);
     return { report, markdownPath: path };
   });
 }

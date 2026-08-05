@@ -392,7 +392,7 @@ async function main(argv: string[]): Promise<void> {
   }
 
   if (cmd === "sync-rules") {
-    const path = coreFacade.lesson.renderLessonsMarkdown(root, allLessons(root), config.maxCharsSession);
+    const path = coreFacade.lesson.renderLessonsMarkdown(root, allLessons(root), config);
     const projectLessons = coreFacade.lesson.readProjectLessons(root).length;
     if (json) {
       emitJson({ path, projectLessons });

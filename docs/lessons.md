@@ -246,6 +246,25 @@ capability is off or the writable tiers are empty. When everything is healthy it
 OK    lesson health — 10 lessons across the writable tiers, none stale, none out of window
 ```
 
+## When the synced file looks empty
+
+The synced markdown is a rendering of the store, so an empty one has a reason and now names it
+([/decisions/ad-049.md](/decisions/ad-049.md)):
+
+| What the file says | What is happening |
+| --- | --- |
+| `switched off … intelligence.lessons.enabled is false` | the capability is off, so no gate failure is ever recorded — and off is the default |
+| `No lesson recorded yet` | on, but no failure has repeated inside a session yet |
+| `N candidate lessons recorded, none promoted` | recorded, waiting for the same failure in `promoteHitCount` distinct sessions |
+| `N active lesson is withheld` | promoted, but a ref stopped resolving or a window closed |
+
+Three hurdles stand between a gate failing and that file showing anything: the capability has to be on, the *same*
+failure has to repeat inside a session, and the candidate has to be promoted across distinct sessions. One sentence
+covered all of them, which reads as broken.
+
+**`.specs/LESSONS.md` is not this file.** It belongs to the `/sdd` skill, which keeps its own lessons layer. The
+harness writes one file and nothing else.
+
 ## Reading the store from a test
 
 The suite runs with `TLC_HOME` pointed at an empty temporary directory, so no test can read the lessons an

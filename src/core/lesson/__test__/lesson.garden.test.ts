@@ -113,7 +113,11 @@ test("renderLessonsMarkdown writes the single lessons.md source of truth", () =>
       priority: 90,
       instruction: "Fix the test gate.",
     });
-    const path = renderLessonsMarkdown(root, [a], 4000);
+    const path = renderLessonsMarkdown(root, [a], {
+      ...DEFAULT_LESSONS_POLICY,
+      enabled: true,
+      maxCharsSession: 4000,
+    });
     assert.equal(path, lessonsMarkdownPath(root));
     const content = readFileSync(path, "utf8");
     assert.ok(content.includes("Fix the test gate."));
@@ -145,7 +149,11 @@ test("renderLessonsMarkdown notes omissions without truncating mid-sentence", ()
       status: "active",
       instruction: "Low priority noise lesson.",
     });
-    const path = renderLessonsMarkdown(root, [a, b, c], 420);
+    const path = renderLessonsMarkdown(root, [a, b, c], {
+      ...DEFAULT_LESSONS_POLICY,
+      enabled: true,
+      maxCharsSession: 420,
+    });
     const content = readFileSync(path, "utf8");
     assert.match(content, /_\(\d+ more active lessons? omitted under char budget\)_/);
     assert.equal(content.includes("\n…\n"), false);
