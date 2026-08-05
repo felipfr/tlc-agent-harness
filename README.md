@@ -185,6 +185,11 @@ Reload/restart the provider session afterward if hooks or the init skill should 
 `dist/` is rebuilt only when a bundle is missing. Rebuilding a complete `dist/` is what used to dirty the checkout
 and break every later update, because Bun and esbuild emit different bytes for the same source.
 
+**If `update` aborts on `dist/`, re-run the install one-liner once.** A stuck install cannot deliver its own fix —
+the fix lives in the revision `update` has to fetch — so the one-liner, which is fetched fresh from upstream, is
+the recovery route. It hard-resets a managed checkout and leaves `config.json`, `state/` and any linked clone
+untouched ([AD-048](docs/decisions/ad-048.md)). There is no `--force`.
+
 After a successful pull, prints a short digest of **optional catalog capabilities this project has not
 enabled yet** (benefit + trade-off + how to enable). Nothing is auto-enabled — use the harness-init skill or
 edit `.tlc/harness/config.json`.

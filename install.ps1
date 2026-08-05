@@ -34,8 +34,18 @@ if ($scriptRoot -and (Test-Path (Join-Path $scriptRoot "bin\tlc-exec.mjs")) -and
   $parentDir = Split-Path $Dest -Parent
   New-Item -ItemType Directory -Force -Path $parentDir | Out-Null
   New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
-  if (Test-Path (Join-Path $Dest ".git")) {
-    git -C $Dest pull --ff-only
+  # invariant: a reparse point is a link to somebody's clone, so no git command runs against it — the same
+  # ownership rule the CLI applies (AD-046).
+  $existing = Get-Item -LiteralPath $Dest -ErrorAction SilentlyContinue
+  if ($existing -and $existing.LinkType) {
+    Write-Host "install: $Dest is a link to $($existing.Target) — leaving that clone untouched"
+  } elseif (Test-Path (Join-Path $Dest ".git")) {
+    # why: a hard reset, not `pull --ff-only`. The runtime path is this installer's artifact, and `pull --ff-only`
+    # aborted whenever a previous build had rewritten dist/ with a different bundler. This is the recovery route
+    # that does not depend on the installed CLI ([/decisions/ad-048.md](/decisions/ad-048.md)).
+    Write-Host "install: moving the runtime at $Dest to origin/main"
+    git -C $Dest fetch origin
+    git -C $Dest reset --hard origin/main
   } elseif (Test-Path $Dest) {
     throw "install: $Dest exists and is not a git checkout — move it aside and re-run."
   } else {

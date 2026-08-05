@@ -42,6 +42,29 @@ On Windows, Cursor hooks use `cmd /c node "…\tlc-exec.mjs" …`; Claude Code h
   measured cost of the gap and the one-line fix). See [/decisions/ad-012.md](/decisions/ad-012.md).
 - Missing dist with Node present: run `tlc harness build` (needs Bun or esbuild once to compile).
 
+## `update` aborts on `dist/` and keeps aborting
+
+The one manual step, once, on Unix or Windows:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/felipfr/tlc-agent-harness/main/install.sh | bash
+```
+
+```powershell
+irm https://raw.githubusercontent.com/felipfr/tlc-agent-harness/main/install.ps1 | iex
+```
+
+**Why it has to be that and not `update`.** `update` runs from the installed runtime, and the fix for `update` is in
+the revision `update` has to fetch — so a stuck install cannot deliver its own fix. The one-liner is fetched from
+upstream every time, which makes it the only route independent of what is installed
+([/decisions/ad-048.md](/decisions/ad-048.md)).
+
+The installer moves a managed checkout to `origin/main` with a hard reset. `config.json` and `state/` are gitignored,
+so your policy, global lessons and obs history survive it. A **linked** runtime — a symlink to your own clone — is
+left completely alone.
+
+There is no `--force`: a managed runtime is already reset, and a linked clone is never written to.
+
 ## Stale runtime / need latest main
 
 ```bash

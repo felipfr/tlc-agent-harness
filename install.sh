@@ -45,11 +45,24 @@ if [[ -n "$script_root" && -f "$script_root/bin/tlc-exec.mjs" && "$script_root" 
   echo "install: linking $DEST → $script_root"
   mkdir -p "$(dirname "$DEST")" "$BIN_DIR"
   ln -sfn "$script_root" "$DEST"
+elif [[ -L "$DEST" ]]; then
+  # invariant: a symlinked runtime points at somebody's working clone, so no git command runs against it — the
+  # same ownership rule the CLI applies (AD-046). The link is left exactly as it is.
+  echo "install: $DEST is a link to $(readlink "$DEST") — leaving that clone untouched"
 else
   mkdir -p "$(dirname "$DEST")" "$BIN_DIR"
   if [[ -d "$DEST/.git" ]]; then
-    git -C "$DEST" pull --ff-only
-  elif [[ -e "$DEST" && ! -d "$DEST/.git" ]]; then
+    # why: a hard reset, not `pull --ff-only`. The runtime path is an artifact this installer created, so a local
+    # change in it is never the operator's work. `pull --ff-only` aborted whenever a previous build had rewritten
+    # dist/ with a different bundler, and this is the one recovery route that does not depend on the installed CLI
+    # — which is exactly what a broken updater cannot deliver ([/decisions/ad-048.md](/decisions/ad-048.md)).
+    #
+    # invariant: untracked files survive a hard reset, and config.json plus state/ are gitignored. Nothing the
+    # operator owns is inside what this discards.
+    echo "install: moving the runtime at $DEST to origin/main"
+    git -C "$DEST" fetch origin
+    git -C "$DEST" reset --hard origin/main
+  elif [[ -e "$DEST" ]]; then
     echo "install: $DEST exists and is not a git checkout — move it aside and re-run." >&2
     exit 1
   else

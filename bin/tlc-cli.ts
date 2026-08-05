@@ -720,8 +720,24 @@ export function route(args: string[]): Action {
     case "rebuild":
       return { kind: "build" };
     case "update":
-    case "upgrade":
-      return args.slice(1).includes("--check") ? { kind: "update-check" } : { kind: "update" };
+    case "upgrade": {
+      const flags = args.slice(1);
+      if (flags.includes("--check")) {
+        return { kind: "update-check" };
+      }
+      // hazard: this accepted any flag in silence. An operator whose update had failed typed `--force`, got no
+      // acknowledgement that it does not exist, and read the same failure as a refusal to force
+      // ([/decisions/ad-048.md](/decisions/ad-048.md)).
+      const leftover = unknownFlags(flags);
+      if (leftover.length > 0) {
+        throw new UsageError(
+          leftover[0] === "--force"
+            ? "update takes no --force: a managed runtime is already reset to upstream, and a linked clone is never written to. If update cannot move it, re-run the installer one-liner from the README."
+            : `unknown flag: ${leftover[0]}\nusage: tlc harness update [--check]`,
+        );
+      }
+      return { kind: "update" };
+    }
     case "version":
     case "--version":
       return { kind: "version" };

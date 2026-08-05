@@ -5898,8 +5898,18 @@ function route(args) {
     case "rebuild":
       return { kind: "build" };
     case "update":
-    case "upgrade":
-      return args.slice(1).includes("--check") ? { kind: "update-check" } : { kind: "update" };
+    case "upgrade": {
+      const flags = args.slice(1);
+      if (flags.includes("--check")) {
+        return { kind: "update-check" };
+      }
+      const leftover = unknownFlags(flags);
+      if (leftover.length > 0) {
+        throw new UsageError(leftover[0] === "--force" ? "update takes no --force: a managed runtime is already reset to upstream, and a linked clone is never written to. If update cannot move it, re-run the installer one-liner from the README." : `unknown flag: ${leftover[0]}
+usage: tlc harness update [--check]`);
+      }
+      return { kind: "update" };
+    }
     case "version":
     case "--version":
       return { kind: "version" };

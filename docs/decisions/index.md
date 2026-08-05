@@ -62,5 +62,6 @@ Handoff section and a link back to this index.
 | [AD-045](/decisions/ad-045.md) | A gate verdict is reused when the content hash of its inputs did not change | active |
 | [AD-046](/decisions/ad-046.md) | The runtime path is an artifact, and update never touches what it does not own | active |
 | [AD-047](/decisions/ad-047.md) | An instruction is not an affordance, and a refusal names the route that works | active |
+| [AD-048](/decisions/ad-048.md) | A broken updater cannot deliver its own fix, so the installer is the recovery route | active |
 
 Related: [/architecture.md](/architecture.md), [/concepts.md](/concepts.md), [/providers/index.md](/providers/index.md).
