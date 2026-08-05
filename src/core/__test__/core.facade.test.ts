@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { coreFacade } from "../core.facade.ts";
 import * as coreIndex from "../index.ts";
+import type { LessonsPolicyConfig } from "../policy/policy.types.ts";
 
 function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "tlc-core-facade-"));
@@ -61,7 +62,7 @@ test("facade.handoff round-trips a provider slice", async () => {
 
 test("facade.lesson.selectLessons is properly awaited and resolves to a real lesson list, not a pending Promise", async () => {
   const root = tempRoot();
-  const config = {
+  const config: LessonsPolicyConfig = {
     enabled: true,
     maxInjectSession: 5,
     maxInjectRetry: 8,
@@ -70,7 +71,7 @@ test("facade.lesson.selectLessons is properly awaited and resolves to a real les
     promoteHitCount: 2,
     decayLambda: 0.02,
     projectBoost: 1.5,
-    syncRulesFile: false,
+    syncRulesFile: "never",
     gardenOnSessionEnd: true,
   };
   try {

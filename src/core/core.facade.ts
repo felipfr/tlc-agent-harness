@@ -63,6 +63,7 @@ import {
   upsertProjectLesson as upsertProjectLessonInner,
   writeProjectLessons as writeProjectLessonsInner,
 } from "./lesson/lesson.store.ts";
+import { durableViewVerdict, resolveSyncMode } from "./lesson/lesson.sync.ts";
 import type { HarnessLesson, LessonTier } from "./lesson/lesson.types.ts";
 import { validityReason } from "./lesson/lesson.validity.ts";
 import {
@@ -96,7 +97,12 @@ import {
   recordPolicyBaseline,
   refreshPolicyBaselines,
 } from "./policy/policy.integrity.ts";
-import { isUnderCodePaths, loadPolicy, resolveProjectPosture } from "./policy/policy.loader.ts";
+import {
+  isUnderCodePaths,
+  loadPolicy,
+  resolveProjectPosture,
+  resolveProjectSyncMode,
+} from "./policy/policy.loader.ts";
 import { operatorBootstrapLines } from "./policy/policy.operator.ts";
 import { isOperatorMode, OPERATOR_MODES } from "./policy/policy.posture.ts";
 import { activeRails } from "./policy/policy.rails.ts";
@@ -249,6 +255,8 @@ export const coreFacade = {
     markGradeable,
     gardenAndPersistLessons,
     renderLessonsMarkdown,
+    durableViewVerdict,
+    resolveSyncMode,
     // why: one renderer. `src/entrypoints/support.ts` carried a copy because this was not exposed, so the tier
     // added to the core block never reached the text the model actually receives
     // ([/decisions/ad-040.md](/decisions/ad-040.md)).
@@ -301,6 +309,7 @@ export const coreFacade = {
     operatorBootstrapLines,
     loadPolicy,
     resolveProjectPosture,
+    resolveProjectSyncMode,
     OPERATOR_MODES,
     isOperatorMode,
     isUnderCodePaths,

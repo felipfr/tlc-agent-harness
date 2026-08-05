@@ -335,6 +335,65 @@ test("session.end does not write the provider lessons view when syncRulesFile is
   const root = tempRoot();
   try {
     writeProjectPolicy(root, {
+      intelligence: { lessons: { enabled: true, gardenOnSessionEnd: true, syncRulesFile: "never" } },
+    });
+    await runHandler(sessionEndHandler, stdinOf(cursorEnd(root)));
+    assert.ok(!existsSync(join(root, ".cursor", "rules", "harness-lessons.mdc")));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * hazard: this is the reported defect. An operator ran an all-defaults init on Cursor, switched lessons on, and the
+ * lessons reached the model by no route at all — the hook drops the text on that host and the durable view was off
+ * by default ([/decisions/ad-050.md](/decisions/ad-050.md)).
+ */
+test("a Cursor session with lessons on and no sync setting still gets the durable view", async () => {
+  const root = tempRoot();
+  try {
+    writeProjectPolicy(root, { intelligence: { lessons: { enabled: true, gardenOnSessionEnd: true } } });
+    await runHandler(sessionEndHandler, stdinOf(cursorEnd(root)));
+    assert.ok(existsSync(join(root, ".cursor", "rules", "harness-lessons.mdc")));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * invariant: the control for the test above. On a host that delivers hook context there is nothing to fall back to,
+ * so `auto` writes nothing — otherwise "auto" would just mean "always" and the capability would be decoration.
+ */
+test("a Claude session with lessons on and no sync setting writes no durable view", async () => {
+  const root = tempRoot();
+  try {
+    writeProjectPolicy(root, { intelligence: { lessons: { enabled: true, gardenOnSessionEnd: true } } });
+    await runHandler(sessionEndHandler, stdinOf(claudeEnd(root)));
+    assert.ok(!existsSync(join(root, "CLAUDE.md")));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// invariant: a config written before the mode existed keeps working — `true` still writes the view.
+test("the legacy boolean true still writes the Cursor view", async () => {
+  const root = tempRoot();
+  try {
+    writeProjectPolicy(root, {
+      intelligence: { lessons: { enabled: true, gardenOnSessionEnd: true, syncRulesFile: true } },
+    });
+    await runHandler(sessionEndHandler, stdinOf(cursorEnd(root)));
+    assert.ok(existsSync(join(root, ".cursor", "rules", "harness-lessons.mdc")));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// invariant: and `false` still withholds it, rather than falling through to the new default.
+test("the legacy boolean false still withholds the Cursor view", async () => {
+  const root = tempRoot();
+  try {
+    writeProjectPolicy(root, {
       intelligence: { lessons: { enabled: true, gardenOnSessionEnd: true, syncRulesFile: false } },
     });
     await runHandler(sessionEndHandler, stdinOf(cursorEnd(root)));

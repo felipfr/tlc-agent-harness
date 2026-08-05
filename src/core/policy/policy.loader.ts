@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { flagsDir, projectConfigPath, runtimeHome } from "../../platform/paths.ts";
+import { lessonsSyncMode, resolveSyncMode, type SyncModeResolution } from "../lesson/lesson.sync.ts";
 import { DEFAULTS } from "./policy.defaults.ts";
 import { type PostureResolution, resolvePosture } from "./policy.posture.ts";
 import type { PartialPolicy, Policy } from "./policy.types.ts";
@@ -73,6 +74,19 @@ export function resolveProjectPosture(root: string): PostureResolution {
   return postureOf(root, readConfigPair(root));
 }
 
+/**
+ * invariant: the resolution the loader applies, with the value it came from. `loadPolicy` normalises the mode, so
+ * the fact that a config still carries the old boolean is only recoverable here — and `lessons status` is where an
+ * operator learns to update it ([/decisions/ad-050.md](/decisions/ad-050.md)).
+ */
+export function resolveProjectSyncMode(root: string): SyncModeResolution {
+  const pair = readConfigPair(root);
+  return resolveSyncMode(
+    pair.fromProject.intelligence?.lessons?.syncRulesFile ??
+      pair.fromUser.intelligence?.lessons?.syncRulesFile,
+  );
+}
+
 export function loadPolicy(root: string): Policy {
   const pair = readConfigPair(root);
   const merged = deepMerge(deepMerge(DEFAULTS, pair.fromUser), pair.fromProject);
@@ -84,6 +98,10 @@ export function loadPolicy(root: string): Policy {
   if (flagExists(root, "grind-on")) {
     merged.grind.enabled = true;
   }
+
+  // why: normalised here rather than at each read site, so `Policy` stays honestly typed and a config written
+  // before the mode existed keeps the behaviour its operator chose ([/decisions/ad-050.md](/decisions/ad-050.md)).
+  merged.intelligence.lessons.syncRulesFile = lessonsSyncMode(merged.intelligence.lessons.syncRulesFile);
 
   return merged;
 }

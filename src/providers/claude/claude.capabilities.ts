@@ -11,7 +11,11 @@ export function claudeCapabilities(): ProviderCapabilities {
     toolOutputRewrite: true,
     contextAtToolBefore: true,
     contextAtToolAfter: true,
+    // why: `Stop` accepts `hookSpecificOutput.additionalContext` for feedback that continues the turn, which is
+    // exactly what a non-blocking gate advisory is.
     contextAtStop: true,
+    // why: `SessionStart` delivers `hookSpecificOutput.additionalContext`, capped at 10,000 characters. Only that
+    // field — a top-level `additional_context` is read as well and not deduplicated, so emitting both injects twice.
     sessionStartContextReliable: true,
     usageInPayload: false,
     effortSignal: true,

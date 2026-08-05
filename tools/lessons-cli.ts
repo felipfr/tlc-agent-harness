@@ -2,6 +2,7 @@ import { coreFacade } from "../src/core/index.ts";
 import type { GardenReport } from "../src/core/lesson/lesson.garden.ts";
 import { rankScore } from "../src/core/lesson/lesson.score.ts";
 import { allLessons, lessonsStorePath } from "../src/core/lesson/lesson.store.ts";
+import type { LessonsSyncMode } from "../src/core/lesson/lesson.sync.ts";
 import type { HarnessLesson, LessonLink } from "../src/core/lesson/lesson.types.ts";
 import { loadPolicy } from "../src/core/policy/policy.loader.ts";
 import type { LessonsPolicyConfig } from "../src/core/policy/policy.types.ts";
@@ -33,7 +34,13 @@ export type LessonsListReport = {
   count: number;
   storePath: string;
   globalStorePath: string;
-  config: { enabled: boolean; promoteHitCount: number; syncRulesFile: boolean };
+  config: {
+    enabled: boolean;
+    promoteHitCount: number;
+    syncRulesFile: LessonsSyncMode;
+    /** Present only while a config predating the mode is still in place. */
+    syncRulesFileCoercedFrom?: boolean;
+  };
   totals: {
     byTier: Record<string, number>;
     stale: number;
@@ -88,6 +95,7 @@ export function listReport(
   now: Date,
 ): LessonsListReport {
   const rows = lessonRows(root, lessons, config, now);
+  const { coercedFrom } = coreFacade.policy.resolveProjectSyncMode(root);
   const byTier: Record<string, number> = {};
   for (const row of rows) {
     byTier[row.tier] = (byTier[row.tier] ?? 0) + 1;
@@ -102,6 +110,9 @@ export function listReport(
       enabled: config.enabled,
       promoteHitCount: config.promoteHitCount,
       syncRulesFile: config.syncRulesFile,
+      // hazard: spread rather than assigned. An explicitly `undefined` property survives `deepEqual` and dies in
+      // `JSON.stringify`, which is how the report stopped surviving its own round trip.
+      ...(coercedFrom !== undefined ? { syncRulesFileCoercedFrom: coercedFrom } : {}),
     },
     totals: {
       byTier,
@@ -157,6 +168,13 @@ export function listText(report: LessonsListReport): string {
   lines.push(
     `enabled=${report.config.enabled} promoteHitCount=${report.config.promoteHitCount} syncRulesFile=${report.config.syncRulesFile}`,
   );
+  // why: the loader coerces silently so nothing breaks, and silence is how a config stays wrong for months. Named
+  // once, next to the value it produced ([/decisions/ad-050.md](/decisions/ad-050.md)).
+  if (report.config.syncRulesFileCoercedFrom !== undefined) {
+    lines.push(
+      `  syncRulesFile is still the old boolean ${report.config.syncRulesFileCoercedFrom} in .tlc/harness/config.json; it reads as ${report.config.syncRulesFile}. Set "auto" to let the provider decide.`,
+    );
+  }
   return lines.join("\n");
 }
 
@@ -379,7 +397,12 @@ async function main(argv: string[]): Promise<void> {
   }
 
   if (cmd === "garden") {
-    const { report, markdownPath } = await coreFacade.lesson.gardenAndPersistLessons(root, config);
+    // why: run from a terminal, where there is no host to ask about its hooks. `auto` resolves to writing, because
+    // the file this writes is `lessons.md` — the shared source an operator reads — and not a provider view.
+    const verdict = coreFacade.lesson.durableViewVerdict(config.syncRulesFile, false);
+    const { report, markdownPath } = await coreFacade.lesson.gardenAndPersistLessons(root, config, {
+      writeDurableView: verdict.writes,
+    });
     if (json) {
       emitJson({ report, markdownPath });
     } else {

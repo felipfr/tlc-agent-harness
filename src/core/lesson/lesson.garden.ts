@@ -255,13 +255,19 @@ ${body || emptySyncReason(lessons, config, now)}
   return path;
 }
 
+/**
+ * `writeDurableView` is the caller's verdict, not a re-read of the config: the mode alone cannot decide it, because
+ * `auto` depends on whether the host delivers context from its session-start hook. Core takes that as data rather
+ * than importing a provider ([/decisions/ad-050.md](/decisions/ad-050.md)).
+ */
 export function gardenAndPersistLessons(
   root: string,
   config: LessonsPolicyConfig,
+  options: { writeDurableView: boolean },
   now = new Date(),
 ): Promise<{ report: GardenReport; markdownPath: string | null }> {
   return gardenLessons(root, config, now).then((report) => {
-    if (!config.syncRulesFile) {
+    if (!options.writeDurableView) {
       return { report, markdownPath: null };
     }
     const lessons = readProjectLessons(root);

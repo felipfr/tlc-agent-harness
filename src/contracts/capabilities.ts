@@ -12,10 +12,10 @@ export type ProviderCapabilities = {
   contextAtToolAfter: boolean;
   contextAtStop: boolean;
   /**
-   * Whether context returned from the session-start hook reaches the model. Cursor accepts the field and logs it as
-   * merged, then drops it — its own staff called it "a bug on our side… a timing issue between when the hook runs and
-   * when the composer handle is created" (forum 158452, 2026-04-20; still reported against 3.14.7 on 2026-08-02).
-   * A host that declares false needs the durable provider view to carry lessons ([/decisions/ad-050.md](/decisions/ad-050.md)).
+   * Whether context returned from the session-start hook reaches the model. A host can accept the field, log it as
+   * merged, and still drop it, so this is not the same question as whether the field exists. A host declaring false
+   * needs the durable provider view to carry lessons; the adapter that declares it cites the evidence
+   * ([/decisions/ad-050.md](/decisions/ad-050.md)).
    */
   sessionStartContextReliable: boolean;
   usageInPayload: boolean;

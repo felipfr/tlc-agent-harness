@@ -33,7 +33,13 @@ export const sessionEndHandler: Handler = async (
   coreFacade.turn.resetLoop(root, event.sessionKey);
 
   if (policy.intelligence.lessons.enabled && policy.intelligence.lessons.gardenOnSessionEnd) {
-    const garden = await coreFacade.lesson.gardenAndPersistLessons(root, policy.intelligence.lessons);
+    const verdict = coreFacade.lesson.durableViewVerdict(
+      policy.intelligence.lessons.syncRulesFile,
+      ctx.capabilities.sessionStartContextReliable,
+    );
+    const garden = await coreFacade.lesson.gardenAndPersistLessons(root, policy.intelligence.lessons, {
+      writeDurableView: verdict.writes,
+    });
     if (garden.markdownPath) {
       renderProviderLessonsView(event.provider, root);
     }

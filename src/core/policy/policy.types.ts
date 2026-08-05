@@ -2,6 +2,7 @@ export type CommentMode = "declared" | "strict";
 
 import type { EffortLevel } from "../../contracts/effort.ts";
 import type { AppendFilesMode } from "../gate/gate.types.ts";
+import type { LessonsSyncMode } from "../lesson/lesson.sync.ts";
 
 // invariant: one word per posture. A second spelling for any of them is what let `"mode": "focus"` reach
 // the loader unvalidated, match no branch, and silently produce a policy with no posture line.
@@ -28,7 +29,7 @@ export type LessonsPolicyConfig = {
   promoteHitCount: number;
   decayLambda: number;
   projectBoost: number;
-  syncRulesFile: boolean;
+  syncRulesFile: LessonsSyncMode;
   gardenOnSessionEnd: boolean;
 };
 
