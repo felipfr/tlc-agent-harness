@@ -146,11 +146,13 @@ function checkShell(input: FloorInput): Decision {
   // around it. The rule belongs here, where the decision is made before any policy is read.
   const surface = checkPolicySurface(input.projectDir, command, segments);
   if (surface.kind === "deny") {
-    return denial(
-      "policy-surface-write",
-      `${surface.detail} Set a gate command with \`tlc harness gate test-command\` or \`gate lint-command\`, and run policy changes from your own terminal rather than from inside this session.`,
-      surface.note,
-    );
+    // invariant: the remedy comes from the branch that denied, so a read refusal names how to read and a write
+    // refusal names who may write. One fixed tail on both handed write advice to an agent trying to read
+    // ([/decisions/ad-047.md](/decisions/ad-047.md)).
+    const remedy =
+      surface.remedy ??
+      "Set a gate command with `tlc harness gate test-command` or `gate lint-command`, and run policy changes from your own terminal rather than from inside this session.";
+    return denial("policy-surface-write", `${surface.detail} ${remedy}`, surface.note);
   }
 
   return checkShellSecrets(segments, input.projectDir);

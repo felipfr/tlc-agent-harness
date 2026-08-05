@@ -169,6 +169,63 @@ export function setMode(root: string, raw: string): string {
   return MODE_CONFIRMATION[mode];
 }
 
+export type HandoffReport = {
+  root: string;
+  providers: Record<string, ReturnType<typeof coreFacade.handoff.readHandoff>>;
+};
+
+/**
+ * The sanctioned way to read handoff state.
+ *
+ * why: the bootstrap used to tell the agent to read `.tlc/harness/state/handoff.json`, a path the floor guards. So
+ * the instruction and the permission disagreed, and the obvious command — `test -f … && head -c 2000 …` — was
+ * refused with advice about writing policy. An instruction is not an affordance; the route the harness asks for has
+ * to be one it grants ([/decisions/ad-047.md](/decisions/ad-047.md)).
+ */
+export function handoffJson(root: string): HandoffReport {
+  const file = coreFacade.handoff.readHandoffFile(root);
+  const providers: HandoffReport["providers"] = {};
+  for (const provider of Object.keys(file.by_provider)) {
+    providers[provider] = coreFacade.handoff.readHandoff(root, provider);
+  }
+  return { root, providers };
+}
+
+export function handoffText(report: HandoffReport): string {
+  const names = Object.keys(report.providers);
+  if (names.length === 0) {
+    return `handoff @ ${report.root}\n  nothing recorded yet — this is a fresh start, not a missing file`;
+  }
+  const lines = [`handoff @ ${report.root}`];
+  for (const name of names.sort()) {
+    const slice = report.providers[name];
+    if (!slice) {
+      continue;
+    }
+    lines.push(`  ${name} (updated ${slice.updated_at})`);
+    for (const [label, value] of [
+      ["blockers", slice.blockers],
+      ["next", slice.next_action],
+      ["last gate", slice.last_gate_result],
+      ["last failure", slice.last_failure_category],
+    ] as const) {
+      if (value) {
+        lines.push(`    ${label}: ${value}`);
+      }
+    }
+    for (const [label, list] of [
+      ["in progress", slice.in_progress],
+      ["pending", slice.pending],
+      ["gaps", slice.previous_gaps?.map((gap) => gap.summary)],
+    ] as const) {
+      if (list && list.length > 0) {
+        lines.push(`    ${label}: ${list.slice(0, 6).join(" | ")}`);
+      }
+    }
+  }
+  return lines.join("\n");
+}
+
 /**
  * why: the artifact a reviewer can read. Everything in it is something the harness observed, and the chain is what
  * makes a rewritten middle detectable ([/decisions/ad-028.md](/decisions/ad-028.md)).
@@ -642,6 +699,7 @@ export type Action =
   | { kind: "mode"; value: string }
   | { kind: "gate"; field: GateField; argv: string[] }
   | { kind: "attest" }
+  | { kind: "handoff" }
   | { kind: "version" }
   | { kind: "update-check" }
   | { kind: "policy"; accept: string[] }
@@ -696,6 +754,8 @@ export function route(args: string[]): Action {
     }
     case "attest":
       return { kind: "attest" };
+    case "handoff":
+      return { kind: "handoff" };
     case "policy": {
       const sub = (args[1] ?? "").toLowerCase();
       if (!sub) {
@@ -1020,6 +1080,21 @@ function main(argv: string[]): void {
         emitJson(statusJson(root));
       } else {
         console.log(statusText(root));
+      }
+      break;
+    }
+    case "handoff": {
+      const leftover = unknownFlags(args.slice(1));
+      if (leftover.length > 0) {
+        console.error(`unknown flag: ${leftover[0]}`);
+        console.error("usage: tlc harness handoff [--json]");
+        process.exit(1);
+      }
+      const report = handoffJson(root);
+      if (json) {
+        emitJson(report);
+      } else {
+        console.log(handoffText(report));
       }
       break;
     }

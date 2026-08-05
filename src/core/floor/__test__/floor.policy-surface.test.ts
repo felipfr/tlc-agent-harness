@@ -213,13 +213,58 @@ test("the floor denies through evaluateFloor with the rule named", () => {
   assert.equal(decision.kind, "deny");
   if (decision.kind === "deny") {
     assert.match(decision.reason, /rule=policy-surface-write/);
-    assert.match(decision.reason, /tlc harness gate test-command/);
-    assert.match(decision.reason, /your own terminal/);
     // invariant: it carries the same shape as every other floor rule, including the line stating that no
     // config switch exists, and it never names a policy field the agent could be tempted to go set.
     assert.match(decision.reason, /it has no config switch/);
     assert.doesNotMatch(decision.reason, /grind\.|shipGate|policy\.json/);
   }
+});
+
+/**
+ * hazard: every policy-surface refusal used to end with the same sentence — set a gate command, make policy changes
+ * from your own terminal. An agent trying to *read* the handoff the harness had just told it to read got advice
+ * about *writing* policy, and could not plan around it ([/decisions/ad-047.md](/decisions/ad-047.md)).
+ */
+test("a refusal on an unproven reader says how to read, not how to change policy", () => {
+  const decision = evaluateFloor({
+    projectDir: PROJECT,
+    command: `python3 -c "print(open('${CONFIG}').read())"`,
+  });
+  assert.equal(decision.kind, "deny");
+  if (decision.kind === "deny") {
+    assert.match(decision.reason, /Reading is allowed/);
+    assert.match(decision.reason, /tlc harness handoff/);
+    assert.doesNotMatch(decision.reason, /tlc harness gate test-command/);
+    assert.doesNotMatch(decision.reason, /your own terminal/);
+  }
+});
+
+// invariant: a write refusal keeps naming who may write. The remedy comes from the branch that denied, so the two
+// cases cannot collapse back into one tail.
+test("a refusal on a mutating command still names the operator's route", () => {
+  const decision = evaluateFloor({ projectDir: PROJECT, command: "tlc harness pause" });
+  assert.equal(decision.kind, "deny");
+  if (decision.kind === "deny") {
+    assert.match(decision.reason, /your own terminal/);
+    assert.doesNotMatch(decision.reason, /Reading is allowed/);
+  }
+});
+
+/**
+ * hazard: `test` and `[` were missing from the proven readers, so the obvious way to read the handoff —
+ * `test -f handoff.json && head -c 2000 handoff.json` — was refused. They evaluate a predicate and produce an exit
+ * code; neither can write a file, which makes them strictly safer than `echo`, already on the list.
+ */
+test("test and [ are proven readers, so guarding a read before it is allowed", () => {
+  assertAllowed(`test -f ${HANDOFF} && head -c 2000 ${HANDOFF}`);
+  assertAllowed(`[ -f ${HANDOFF} ] && cat ${HANDOFF}`);
+  assertAllowed(`test -s ${CONFIG}`);
+});
+
+// invariant: allowlisting the verb does not allowlist a redirect. `test` cannot write on its own, and the redirect
+// rules are what stop it being used as a carrier.
+test("a redirect onto the surface is still denied even with an allowed verb", () => {
+  assertDenied(`test -f ${HANDOFF} > ${CONFIG}`);
 });
 
 test("the floor still allows the reads the bootstrap asks for", () => {

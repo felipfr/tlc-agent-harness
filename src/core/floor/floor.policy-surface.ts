@@ -11,7 +11,18 @@ import {
 } from "./floor.tokenize.ts";
 import { firstOperand, verbOf } from "./floor.verb.ts";
 
-export type PolicySurfaceVerdict = { kind: "allow" } | { kind: "deny"; detail: string; note: string };
+/**
+ * `remedy` is the way out for *this* denial.
+ *
+ * hazard: every policy-surface refusal used to end with the same sentence — set a gate command, make policy changes
+ * from your own terminal. That is advice about *writing* policy, handed to an agent that was trying to *read* the
+ * handoff the harness had just told it to read. A refusal a model cannot plan around is the opaque-refusal failure
+ * the 2026 tool-use literature names, and it is what confused a colleague's agent
+ * ([/decisions/ad-047.md](/decisions/ad-047.md)).
+ */
+export type PolicySurfaceVerdict =
+  | { kind: "allow" }
+  | { kind: "deny"; detail: string; note: string; remedy?: string };
 
 const ALLOW: PolicySurfaceVerdict = { kind: "allow" };
 
@@ -40,6 +51,13 @@ const PROVEN_READERS = new Set([
   "stat",
   "strings",
   "tail",
+  // why: `test` and `[` evaluate a predicate and produce an exit code. They have no way to write a file at all —
+  // no output flag, no redirection of their own — so they are strictly safer than `echo`, which is already here.
+  // Their absence was an incomplete allowlist rather than a decision: the harness tells an agent to read the
+  // handoff, and `test -f handoff.json && head -c 2000 handoff.json` — the obvious way to do it — was denied
+  // ([/decisions/ad-047.md](/decisions/ad-047.md)).
+  "test",
+  "[",
   "wc",
   "xxd",
 ]);
@@ -83,9 +101,19 @@ const HARNESS_BINS = new Set(["tlc", "tlc.cmd"]);
 // by a floor rule with no config switch, exactly like the rest ([/decisions/ad-030.md](/decisions/ad-030.md)).
 const MUTATING_SUBCOMMANDS = new Set(["pause", "resume", "grind", "mode", "init", "gate", "policy"]);
 
-function deny(detail: string, note: string): PolicySurfaceVerdict {
-  return { kind: "deny", detail, note };
+function deny(detail: string, note: string, remedy?: string): PolicySurfaceVerdict {
+  return { kind: "deny", detail, note, ...(remedy ? { remedy } : {}) };
 }
+
+/**
+ * The route that does work, named in the refusal itself.
+ *
+ * why: reading harness state is ordinary work the bootstrap asks for by name, so a refusal on that path has to say
+ * how to do it rather than what not to do. The command exists so nothing has to reach into the protected path at
+ * all — an instruction that points at a path the floor guards is three layers disagreeing.
+ */
+export const READ_REMEDY =
+  "Reading is allowed: run `tlc harness handoff` for handoff state, `tlc harness policy` for the resolved policy, or use a proven reader (cat, head, jq, grep, ls, stat, test) on the path.";
 
 // why: the harness directory prefix is derived from the path module rather than written as a literal, so a
 // change to the on-disk layout cannot leave this rule matching a path that no longer exists. The relative
@@ -226,6 +254,7 @@ function checkSegment(projectDir: string, segment: ShellSegment): PolicySurfaceV
       : deny(
           `\`git ${subcommand}\` can write the working tree, so it cannot be proven to only read the harness policy surface.`,
           `git ${subcommand} on the policy surface`,
+          READ_REMEDY,
         );
   }
   if (references.some((word) => word.unresolved)) {
@@ -237,6 +266,7 @@ function checkSegment(projectDir: string, segment: ShellSegment): PolicySurfaceV
   return deny(
     `\`${head.verb}\` is not a proven reader, so this command cannot be shown to only read the harness policy surface.`,
     `${head.verb} on the policy surface`,
+    READ_REMEDY,
   );
 }
 

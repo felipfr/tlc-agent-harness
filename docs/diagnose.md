@@ -81,6 +81,25 @@ Re-run the platform installer, or ensure the CLI shim is on PATH:
 3. Confirm `.tlc/harness/state/` is writable in the project.
 4. `tlc harness obs live` after a prompt submit / stop / denial.
 
+## The floor blocked a command that only reads harness state
+
+Reading is ordinary work and the bootstrap asks for it, so a refusal there means the *verb* could not be proven to
+only read — not that reading is forbidden. The refusal now says so and names the way through
+([/decisions/ad-047.md](/decisions/ad-047.md)):
+
+```bash
+tlc harness handoff          # handoff state, no shell needed
+tlc harness policy           # the resolved policy
+tlc harness handoff --json   # same, for a script
+```
+
+Proven readers on the policy surface: `cat`, `head`, `tail`, `less`, `more`, `grep`, `rg`, `jq`, `ls`, `stat`,
+`file`, `wc`, `cmp`, `diff`, `od`, `xxd`, `strings`, `md5sum`, `sha256sum`, `echo`, `printf`, `test`, `[`, and
+`git show|diff|log|status|ls-files|cat-file|blame`.
+
+`awk` and `sort` are **not** readers, on purpose — `awk '{print > f}'` and `sort -o f` write a file the head verb
+never reveals. A redirect onto the surface is denied whatever the verb, so `test -f x > config.json` still fails.
+
 ## The gate runs on a turn that changed nothing
 
 It does not any more, and this is how to confirm it. A verdict is keyed on a content hash of the gate command and

@@ -917,6 +917,8 @@ var PROVEN_READERS = new Set([
   "stat",
   "strings",
   "tail",
+  "test",
+  "[",
   "wc",
   "xxd"
 ]);
@@ -948,9 +950,10 @@ var EXECUTES_STDIN = new Set([
 ]);
 var HARNESS_BINS = new Set(["tlc", "tlc.cmd"]);
 var MUTATING_SUBCOMMANDS = new Set(["pause", "resume", "grind", "mode", "init", "gate", "policy"]);
-function deny(detail, note) {
-  return { kind: "deny", detail, note };
+function deny(detail, note, remedy) {
+  return { kind: "deny", detail, note, ...remedy ? { remedy } : {} };
 }
+var READ_REMEDY = "Reading is allowed: run `tlc harness handoff` for handoff state, `tlc harness policy` for the resolved policy, or use a proven reader (cat, head, jq, grep, ls, stat, test) on the path.";
 function harnessPrefix(projectDir) {
   const state = normalizeSeparators(relative2(projectDir, projectStateDir(projectDir)));
   return state.slice(0, state.lastIndexOf("/"));
@@ -1036,12 +1039,12 @@ function checkSegment(projectDir, segment) {
   }
   if (head.verb === "git") {
     const subcommand = firstOperand(head.args)?.text.toLowerCase() ?? "";
-    return GIT_READERS.has(subcommand) ? ALLOW : deny(`\`git ${subcommand}\` can write the working tree, so it cannot be proven to only read the harness policy surface.`, `git ${subcommand} on the policy surface`);
+    return GIT_READERS.has(subcommand) ? ALLOW : deny(`\`git ${subcommand}\` can write the working tree, so it cannot be proven to only read the harness policy surface.`, `git ${subcommand} on the policy surface`, READ_REMEDY);
   }
   if (references.some((word) => word.unresolved)) {
     return deny("this command builds a harness policy path at runtime, so the file it would touch cannot be established.", "unresolvable policy-surface path");
   }
-  return deny(`\`${head.verb}\` is not a proven reader, so this command cannot be shown to only read the harness policy surface.`, `${head.verb} on the policy surface`);
+  return deny(`\`${head.verb}\` is not a proven reader, so this command cannot be shown to only read the harness policy surface.`, `${head.verb} on the policy surface`, READ_REMEDY);
 }
 function checkHeredocs(projectDir, heredocs) {
   const prefix = harnessPrefix(projectDir);
@@ -1147,7 +1150,8 @@ function checkShell(input) {
   }
   const surface = checkPolicySurface(input.projectDir, command, segments);
   if (surface.kind === "deny") {
-    return denial("policy-surface-write", `${surface.detail} Set a gate command with \`tlc harness gate test-command\` or \`gate lint-command\`, and run policy changes from your own terminal rather than from inside this session.`, surface.note);
+    const remedy = surface.remedy ?? "Set a gate command with `tlc harness gate test-command` or `gate lint-command`, and run policy changes from your own terminal rather than from inside this session.";
+    return denial("policy-surface-write", `${surface.detail} ${remedy}`, surface.note);
   }
   return checkShellSecrets(segments, input.projectDir);
 }
@@ -3969,7 +3973,10 @@ var BY_POSTURE = {
   focus: "Posture focus: deepest autonomy, fewest interruptions. Only an irreversible or destructive action and a real dead-end reach the operator. The one exception is a goal you cannot read before you start — ask that once, up front, because it is cheaper than everything you would build on a misreading. After that, ambiguity is yours to settle by taking the most reasonable reading and stating the assumption in one line."
 };
 function operatorBootstrapLines(policy, stateDir) {
-  const lines = [...BASE, `Hold state on disk at ${stateDir}/handoff.json between turns and sessions.`];
+  const lines = [
+    ...BASE,
+    `State is held between turns and sessions at ${stateDir}/handoff.json — read it with \`tlc harness handoff\`, and let the harness write it.`
+  ];
   lines.push(BY_POSTURE[policy.mode]);
   if (policy.shipGate.enabled) {
     lines.push("Ship protocol: the ship gate reacts only to an explicit line `HARNESS_SHIP_CLAIM: <summary>` — free-English done or shipped is ignored. After that claim, cite recent PASS evidence under the configured evidenceDir before stopping.");
@@ -5526,6 +5533,50 @@ function setMode(root, raw) {
   coreFacade.policy.refreshPolicyBaselines(root);
   return MODE_CONFIRMATION[mode];
 }
+function handoffJson(root) {
+  const file = coreFacade.handoff.readHandoffFile(root);
+  const providers = {};
+  for (const provider of Object.keys(file.by_provider)) {
+    providers[provider] = coreFacade.handoff.readHandoff(root, provider);
+  }
+  return { root, providers };
+}
+function handoffText(report) {
+  const names = Object.keys(report.providers);
+  if (names.length === 0) {
+    return `handoff @ ${report.root}
+  nothing recorded yet — this is a fresh start, not a missing file`;
+  }
+  const lines = [`handoff @ ${report.root}`];
+  for (const name of names.sort()) {
+    const slice = report.providers[name];
+    if (!slice) {
+      continue;
+    }
+    lines.push(`  ${name} (updated ${slice.updated_at})`);
+    for (const [label, value] of [
+      ["blockers", slice.blockers],
+      ["next", slice.next_action],
+      ["last gate", slice.last_gate_result],
+      ["last failure", slice.last_failure_category]
+    ]) {
+      if (value) {
+        lines.push(`    ${label}: ${value}`);
+      }
+    }
+    for (const [label, list] of [
+      ["in progress", slice.in_progress],
+      ["pending", slice.pending],
+      ["gaps", slice.previous_gaps?.map((gap) => gap.summary)]
+    ]) {
+      if (list && list.length > 0) {
+        lines.push(`    ${label}: ${list.slice(0, 6).join(" | ")}`);
+      }
+    }
+  }
+  return lines.join(`
+`);
+}
 function attestText(root) {
   const records = coreFacade.attest.readAttestations(root);
   const verdict = coreFacade.attest.verifyChain(records);
@@ -5881,6 +5932,8 @@ function route(args) {
     }
     case "attest":
       return { kind: "attest" };
+    case "handoff":
+      return { kind: "handoff" };
     case "policy": {
       const sub = (args[1] ?? "").toLowerCase();
       if (!sub) {
@@ -6138,6 +6191,21 @@ function main(argv) {
       }
       break;
     }
+    case "handoff": {
+      const leftover = unknownFlags(args.slice(1));
+      if (leftover.length > 0) {
+        console.error(`unknown flag: ${leftover[0]}`);
+        console.error("usage: tlc harness handoff [--json]");
+        process.exit(1);
+      }
+      const report = handoffJson(root);
+      if (json) {
+        emitJson(report);
+      } else {
+        console.log(handoffText(report));
+      }
+      break;
+    }
     case "attest": {
       const leftover = unknownFlags(args.slice(1));
       if (leftover.length > 0) {
@@ -6290,6 +6358,8 @@ export {
   missingBundles,
   linkedRuntimeMessage,
   helpText,
+  handoffText,
+  handoffJson,
   grindOn,
   grindFlagPath,
   gatesPaused,

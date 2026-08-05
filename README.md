@@ -70,8 +70,8 @@ them. Every denial names its rule.
 | `policy-surface-write` | Any shell route to `.tlc/harness/config.json`, `flags/` or `state/` — a redirect, an interpreter, a heredoc program — plus the same paths under the runtime home `~/.tlc/harness`, and `tlc harness pause \| resume \| grind \| mode \| init \| gate` from inside an agent session |
 
 Harness policy and state are not agent-writable, through a tool or a shell. Reading them stays allowed: a
-proven reader (`cat`, `grep`, `jq`, `git show`) on those paths passes, and anything not proven to only read
-does not. Policy changes are the operator's, from a terminal outside the agent session:
+proven reader (`cat`, `grep`, `jq`, `test`, `git show`) on those paths passes, and anything not proven to only
+read does not — and the refusal names the way through, including `tlc harness handoff`. Policy changes are the operator's, from a terminal outside the agent session:
 
 ```bash
 tlc harness gate test-command node --test 'src/**/__test__/*.test.ts'
@@ -247,6 +247,7 @@ See `tlc harness help architecture` or [`docs/architecture.md`](docs/architectur
 | `tlc harness pause` / `resume` | Disable / enable stop checks |
 | `tlc harness mode solo\|paired\|focus` | Operator posture |
 | `tlc harness attest` | Tamper-evident record of what each session ran under |
+| `tlc harness handoff` | Handoff state between turns and sessions — the sanctioned reader |
 | `tlc harness obs live` / `obs report` | Signal / session rollup |
 | `tlc harness prices refresh` / `lookup` | Cost catalogs |
 | `tlc harness lessons list` | Lessons across the three tiers, with staleness and effectiveness |

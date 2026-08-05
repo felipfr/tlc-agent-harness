@@ -48,7 +48,9 @@ export const sessionStartHandler: Handler = async (
     },
     slice: {
       session_key: event.sessionKey,
-      next_action: "Read .tlc/harness/state/handoff.json if resuming; otherwise start from the user request.",
+      // why: names the command, not the file. The path is on the policy surface, so an instruction pointing at it
+      // asked for something the floor then refused ([/decisions/ad-047.md](/decisions/ad-047.md)).
+      next_action: "Run `tlc harness handoff` if resuming; otherwise start from the user request.",
     },
   });
 

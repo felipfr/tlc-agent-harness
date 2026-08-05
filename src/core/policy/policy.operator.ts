@@ -33,7 +33,13 @@ const BY_POSTURE: Record<OperatorMode, string> = {
 };
 
 export function operatorBootstrapLines(policy: Policy, stateDir: string): string[] {
-  const lines = [...BASE, `Hold state on disk at ${stateDir}/handoff.json between turns and sessions.`];
+  // why: the command, and the path only as where it lands. Naming the file as the route asked the agent for an
+  // action the floor refuses, and the refusal then gave advice about writing policy
+  // ([/decisions/ad-047.md](/decisions/ad-047.md)).
+  const lines = [
+    ...BASE,
+    `State is held between turns and sessions at ${stateDir}/handoff.json — read it with \`tlc harness handoff\`, and let the harness write it.`,
+  ];
   lines.push(BY_POSTURE[policy.mode]);
 
   if (policy.shipGate.enabled) {

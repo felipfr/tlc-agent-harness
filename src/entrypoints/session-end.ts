@@ -25,7 +25,7 @@ export const sessionEndHandler: Handler = async (
 
   await coreFacade.handoff.patchHandoff(root, event.provider, {
     slice: {
-      next_action: "Session ended. Read .tlc/harness/state/handoff.json before resuming.",
+      next_action: "Session ended. Run `tlc harness handoff` before resuming.",
     },
   });
 

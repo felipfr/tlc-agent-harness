@@ -61,5 +61,6 @@ Handoff section and a link back to this index.
 | [AD-044](/decisions/ad-044.md) | Only an injection a gate could grade can be unproven | active |
 | [AD-045](/decisions/ad-045.md) | A gate verdict is reused when the content hash of its inputs did not change | active |
 | [AD-046](/decisions/ad-046.md) | The runtime path is an artifact, and update never touches what it does not own | active |
+| [AD-047](/decisions/ad-047.md) | An instruction is not an affordance, and a refusal names the route that works | active |
 
 Related: [/architecture.md](/architecture.md), [/concepts.md](/concepts.md), [/providers/index.md](/providers/index.md).

@@ -367,12 +367,18 @@ test("session.end renders no stdout and exit 0 under Claude", async () => {
   }
 });
 
-test("session.start writes a handoff next_action pointer for its own provider slice", async () => {
+/**
+ * invariant: the pointer names the command, never the file. The path is on the policy surface, so an instruction to
+ * read it asked for something the floor refuses — a colleague's agent followed the instruction and was blocked
+ * ([/decisions/ad-047.md](/decisions/ad-047.md)).
+ */
+test("session.start points at the sanctioned command, not at the protected path", async () => {
   const root = tempRoot();
   try {
     await runHandler(sessionStartHandler, stdinOf(cursorStart(root)));
     const handoff = coreFacade.handoff.readHandoff(root, "cursor");
-    assert.match(String(handoff.next_action), /handoff\.json/);
+    assert.match(String(handoff.next_action), /tlc harness handoff/);
+    assert.doesNotMatch(String(handoff.next_action), /\.tlc\/harness\/state/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
