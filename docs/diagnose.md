@@ -50,6 +50,19 @@ tlc harness update
 
 Then reload/restart the provider session.
 
+**What update may write depends on what the runtime path is.** `tlc harness doctor` prints it as
+`runtime ownership` ([/decisions/ad-046.md](/decisions/ad-046.md)):
+
+| Kind | What update does |
+| --- | --- |
+| `managed checkout` | fetches and moves it to upstream with a hard reset — the harness owns its contents, so a local change there is never yours |
+| `link to a working clone` | **nothing** in the clone. Refreshes only the CLI link, the skill link and provider hooks. Pull that clone yourself |
+| `not a git checkout` | nothing to pull — re-install with the README one-liner |
+
+Update never rebuilds `dist/` when every bundle is present. It used to, and because Bun and esbuild emit different
+bytes for the same source, the rebuild left the checkout permanently dirty and every later update failed. If you see
+`update: dist/ complete — no rebuild`, that is the fix working.
+
 After update, `tlc harness doctor` reports non-blocking `WARN:` lines for off/missing opt-ins (and for
 default-on features you explicitly set to `false`). They do not fail doctor by themselves. A missing
 `.tlc/harness/config.json` still fails the project-policy check until you init.

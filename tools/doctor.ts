@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync, readlinkSync } from "node:fs";
 import { homedir, platform as osPlatform } from "node:os";
 import { dirname, join } from "node:path";
+import { runtimePathKind } from "../bin/tlc-cli.ts";
 import { findBunOnPath, writeRuntimeCache } from "../bin/tlc-exec.mjs";
 import { isCursorWired } from "../bin/write-user-hooks.mjs";
 import type { ProviderWiring } from "../src/contracts/index.ts";
@@ -103,6 +104,26 @@ export function checkNodeVersion(nodeVersion: string, bunPath: string | null = n
   return checks;
 }
 
+/**
+ * why: both kinds are supported installs, so both are `ok` — but a contributor whose runtime is a link to their own
+ * clone needs to see that, or `update` declining to pull reads as a broken update
+ * ([/decisions/ad-046.md](/decisions/ad-046.md)).
+ */
+export function runtimeOwnershipCheck(home: string): Check {
+  const kind = runtimePathKind(home);
+  const detail: Record<ReturnType<typeof runtimePathKind>, string> = {
+    managed: "managed checkout — `tlc harness update` moves it to upstream and owns its contents",
+    linked: "link to a working clone — update never writes here; pull that clone yourself",
+    unmanaged: "not a git checkout — update cannot pull; re-install with the README one-liner",
+    absent: "missing — install with the README one-liner",
+  };
+  return {
+    level: kind === "managed" || kind === "linked" ? "ok" : "fail",
+    name: "runtime ownership",
+    detail: detail[kind],
+  };
+}
+
 export function checkRuntimePaths(home: string, platform: NodeJS.Platform): Check[] {
   const launcher = join(home, "bin", "tlc-exec.mjs");
   const distSample = join(home, "dist", "stop.mjs");
@@ -110,6 +131,7 @@ export function checkRuntimePaths(home: string, platform: NodeJS.Platform): Chec
   return [
     { level: "ok", name: "platform", detail: platform },
     { level: existsSync(launcher) ? "ok" : "fail", name: "global runtime", detail: home },
+    runtimeOwnershipCheck(home),
     {
       level: existsSync(distSample) ? "ok" : "fail",
       name: "dist bundles",

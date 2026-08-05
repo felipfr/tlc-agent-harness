@@ -5397,6 +5397,9 @@ function writeStdout(text) {
   process.stdout.write(text);
 }
 
+// bin/tlc-cli.ts
+if (false) {}
+
 // bin/tlc-exec.mjs
 if (false) {}
 // src/providers/provider.degrade.ts

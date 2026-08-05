@@ -9,12 +9,12 @@ import {
   attestText,
   buildTestSteps,
   ensureFlagsDir,
-  ffFailureMessage,
   focusFlagPath,
   gatesPaused,
   grindFlagPath,
   grindOn,
   helpText,
+  linkedRuntimeMessage,
   modeFilePath,
   pairedFlagPath,
   pendingText,
@@ -23,6 +23,7 @@ import {
   policyText,
   pricesHelpText,
   readMode,
+  resetFailureMessage,
   resolveExecutable,
   resolveProjectRoot,
   route,
@@ -36,6 +37,7 @@ import {
   statusJson,
   statusText,
   UsageError,
+  unmanagedRuntimeMessage,
 } from "../../bin/tlc-cli.ts";
 import { coreFacade } from "../../src/core/index.ts";
 import { flagsDir, projectConfigPath, projectStateDir } from "../../src/platform/paths.ts";
@@ -870,14 +872,22 @@ describe("version and update --check", () => {
     assert.match(pendingText({ ok: true, commits: 2, decisions: [] }), /no decisions landed in that range/);
   });
 
-  // hazard: the old message named "Fix the checkout or re-install", which is the two things an operator cannot
-  // choose between without knowing which applies. Both routes are spelled out and neither is run for them.
-  test("a fast-forward failure names both routes and gives the command for one", () => {
-    const message = ffFailureMessage("/opt/tlc", "origin/main");
-    assert.match(message, /git -C \/opt\/tlc reset --hard origin\/main/);
-    assert.match(message, /re-run the installer/);
-    assert.match(message, /Nothing was changed/);
-    assert.match(message, /throws work away/);
+  /**
+   * hazard: this asserted that the failure message hands the operator `git reset --hard` at the runtime path. On a
+   * contributor's machine that path is a symlink to their working repository, so the message was telling them to
+   * destroy uncommitted work — and it offered "re-run the installer, which replaces the checkout", which runs
+   * `git pull --ff-only`, the command that had just failed. Both are gone; ownership decides what update may write
+   * ([/decisions/ad-046.md](/decisions/ad-046.md)). The replacement lives in `update-artifact.test.ts`.
+   */
+  test("no update message hands the operator a destructive command", () => {
+    for (const message of [
+      linkedRuntimeMessage("/opt/tlc", "/opt/clone"),
+      unmanagedRuntimeMessage("/opt/tlc"),
+      resetFailureMessage("/opt/tlc", "origin/main", "fatal: x"),
+    ]) {
+      assert.doesNotMatch(message, /reset --hard/);
+      assert.doesNotMatch(message, /replaces the checkout/);
+    }
   });
 
   test("route recognises version and separates update from update --check", () => {

@@ -1,5 +1,14 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { coreFacade } from "../src/core/index.ts";
@@ -279,14 +288,107 @@ export function upstreamRef(dest: string): string {
   return `origin/${read(["rev-parse", "--abbrev-ref", "HEAD"]) || "main"}`;
 }
 
-export function ffFailureMessage(dest: string, mergeRef: string): string {
+/**
+ * What kind of runtime path this is, which decides what `update` may write to it.
+ *
+ * The distinction is the whole fix. A `managed` path is an artifact the installer created and the harness owns, so
+ * a conflict in it is not a decision for the operator — it is discarded. A `linked` path is a symlink to somebody's
+ * working clone, so nothing there may be written by a harness command at all
+ * ([/decisions/ad-046.md](/decisions/ad-046.md)).
+ */
+export type RuntimePathKind = "managed" | "linked" | "unmanaged" | "absent";
+
+/**
+ * hazard: `install.sh` links the runtime path to the clone it was run from, so on a contributor's machine
+ * `~/.tlc/harness` is a symlink to their working repository. The old failure message told them to run
+ * `git reset --hard` there, which would have destroyed uncommitted work. Verified on this machine.
+ *
+ * invariant: the symlink test comes first and is decided by the path, never by its contents. A linked clone
+ * contains a `.git` too, so testing for that first would classify it as ours.
+ */
+export function classifyRuntimePath(
+  dest: string,
+  probe: { isSymlink: (path: string) => boolean; exists: (path: string) => boolean },
+): RuntimePathKind {
+  if (probe.isSymlink(dest)) {
+    return "linked";
+  }
+  if (!probe.exists(dest)) {
+    return "absent";
+  }
+  return probe.exists(join(dest, ".git")) ? "managed" : "unmanaged";
+}
+
+/**
+ * hazard: this must be asked about the **configured** home, not a resolved one. `resolveHarnessRoot` calls
+ * `realpathSync`, so passing its result made a linked clone look like a managed checkout — and `update` then ran
+ * `git fetch` inside a contributor's repository. Caught by driving the real command against a linked install rather
+ * than by any unit test ([/decisions/ad-046.md](/decisions/ad-046.md)).
+ *
+ * why: symlink-ness is also inferred from the path resolving elsewhere, so a chain of links or a bind-style layout
+ * is classified as linked even where `lstat` on the last hop says otherwise.
+ */
+export function runtimePathKind(dest: string): RuntimePathKind {
+  return classifyRuntimePath(dest, {
+    isSymlink: (path) => {
+      try {
+        if (lstatSync(path).isSymbolicLink()) {
+          return true;
+        }
+      } catch {
+        return false;
+      }
+      try {
+        return realpathSync(path) !== path;
+      } catch {
+        return false;
+      }
+    },
+    exists: existsSync,
+  });
+}
+
+/**
+ * The bundles an install needs but does not have.
+ *
+ * why: derived from the entrypoints on disk, the same way `bin/tlc-build` derives them. A fixed list would stop
+ * naming a new entrypoint and the missing bundle would only surface when a hook fired.
+ */
+export function missingBundles(dest: string): string[] {
+  const entrypoints = join(dest, "src", "entrypoints");
+  if (!existsSync(entrypoints)) {
+    return [];
+  }
+  const expected = readdirSync(entrypoints)
+    .filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))
+    .map((name) => `${name.slice(0, -3)}.mjs`);
+  return expected.filter((bundle) => !existsSync(join(dest, "dist", bundle)));
+}
+
+export function linkedRuntimeMessage(dest: string, target: string | null): string {
   return [
-    `update: fast-forward failed (${mergeRef}) — the runtime checkout has commits that upstream does not.`,
-    "Two ways out, both yours to choose:",
-    `  discard local changes at the runtime path:  git -C ${dest} reset --hard ${mergeRef}`,
-    "  or re-run the installer from the README, which replaces the checkout",
-    "Nothing was changed. Neither command is run for you, because the first one throws work away.",
+    `update: the runtime path is a link to a working clone${target ? ` → ${target}` : ""}.`,
+    "Nothing in it is touched by this command — updating that clone is your own `git pull`.",
+    "Refreshing the machine-local parts only: CLI link, init skill, provider hooks.",
   ].join("\n");
+}
+
+export function unmanagedRuntimeMessage(dest: string): string {
+  return [
+    `update: ${dest} is not a git checkout, so there is nothing to pull.`,
+    "Re-install with the curl/irm one-liner from the README to get a managed runtime.",
+  ].join("\n");
+}
+
+export function resetFailureMessage(dest: string, mergeRef: string, gitOutput: string): string {
+  return [
+    `update: could not move the runtime to ${mergeRef}.`,
+    `  path: ${dest} (managed checkout)`,
+    gitOutput.trim() ? `  git: ${gitOutput.trim().split("\n").slice(-3).join(" / ")}` : "",
+    "Nothing was changed. Re-install with the one-liner from the README if this persists.",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export type RuntimeRevision = { revision: string | null; date: string | null };
@@ -777,7 +879,16 @@ function runUpdate(root: string): never {
     process.exit(1);
   }
 
-  if (existsSync(join(dest, ".git"))) {
+  // invariant: classified from the configured home, never from `dest`. `dest` is `realpathSync`-resolved, so asking
+  // it hides the link and update writes into somebody's clone.
+  const kind = runtimePathKind(home);
+  if (kind === "linked") {
+    // invariant: no git command runs against a linked clone, not even a read. The machine-local refresh below is
+    // the whole of what update may do here ([/decisions/ad-046.md](/decisions/ad-046.md)).
+    console.log(linkedRuntimeMessage(home, dest === home ? null : dest));
+  } else if (kind === "unmanaged") {
+    console.log(unmanagedRuntimeMessage(dest));
+  } else {
     const fetch = spawnSync("git", ["-C", dest, "fetch", "origin"], {
       stdio: "inherit",
       env: process.env,
@@ -787,19 +898,27 @@ function runUpdate(root: string): never {
       process.exit(fetch.status ?? 1);
     }
     const mergeRef = upstreamRef(dest);
-    const merge = spawnSync("git", ["-C", dest, "merge", "--ff-only", mergeRef], {
-      stdio: "inherit",
+    // why: a hard reset, not a fast-forward merge. The artifact is the harness's own, so a local change in it is
+    // never the operator's work and never a conflict they have to resolve. `dist/` bundles rebuilt by an older
+    // update with a different bundler made every fast-forward fail — measured 223,390 bytes from Bun against
+    // 228,018 from esbuild for the same source ([/decisions/ad-046.md](/decisions/ad-046.md)).
+    //
+    // invariant: `state/` and `config.json` are gitignored, so a reset cannot remove them. A test asserts that
+    // rather than trusting it.
+    const reset = spawnSync("git", ["-C", dest, "reset", "--hard", mergeRef], {
+      encoding: "utf8",
       env: process.env,
     });
-    if ((merge.status ?? 1) !== 0) {
-      // hazard: this used to end "Fix the checkout or re-install", which names the two things an operator cannot
-      // choose between without knowing which applies. Both routes are spelled out, and neither is run for them:
-      // discarding local commits at the runtime path is their call ([/decisions/ad-031.md](/decisions/ad-031.md)).
-      console.error(ffFailureMessage(dest, mergeRef));
-      process.exit(merge.status ?? 1);
+    if ((reset.status ?? 1) !== 0) {
+      console.error(resetFailureMessage(dest, mergeRef, `${reset.stderr ?? ""}${reset.stdout ?? ""}`));
+      process.exit(reset.status ?? 1);
     }
-  } else {
-    console.log("update: no .git at runtime path — skipped pull (linked checkout?).");
+    const after = runtimeRevision(dest).revision;
+    console.log(
+      revisionBefore === after
+        ? `update: runtime already at ${after ?? "unknown"} — nothing to move`
+        : `update: runtime ${revisionBefore ?? "unknown"} → ${after ?? "unknown"}`,
+    );
   }
 
   const binDir = process.env.TLC_BIN_DIR || join(homedir(), ".local", "bin");
@@ -836,10 +955,18 @@ function runUpdate(root: string): never {
     }
   }
 
-  if (existsSync(buildBinPath())) {
+  // invariant: never build into the artifact when it is already complete. `dist/` is committed for the Node
+  // fallback (AD-012) and the gate keeps it matching `src/`, so the pulled revision already carries the right
+  // bundles. Rebuilding them with a different bundler is what dirtied every user's checkout
+  // ([/decisions/ad-046.md](/decisions/ad-046.md)).
+  const missing = missingBundles(dest);
+  if (missing.length === 0) {
+    console.log("update: dist/ complete — no rebuild, so the runtime path stays clean");
+  } else if (existsSync(buildBinPath())) {
+    console.log(`update: ${missing.length} bundle(s) missing — building`);
     const build = spawnSync(buildBinPath(), [], { stdio: "inherit", env: process.env });
     if ((build.status ?? 1) !== 0) {
-      console.log("update: build skipped/failed — ok if dist/ already matches the pulled revision");
+      console.log(`update: build failed — ${missing.length} bundle(s) still missing from dist/`);
     }
   }
 

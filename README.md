@@ -171,9 +171,19 @@ cd tlc-agent-harness
 tlc harness update
 ```
 
-Pulls the runtime, refreshes CLI + init skill + provider wiring, best-effort `tlc harness build`, then runs
-doctor. Same outcome as re-running the install one-liner. Reload/restart the provider session afterward if
-hooks or the init skill should refresh.
+Moves the runtime to upstream, refreshes CLI + init skill + provider wiring, then runs doctor.
+Reload/restart the provider session afterward if hooks or the init skill should refresh.
+
+**The runtime path is an artifact the harness owns**, and update never touches anything else
+([AD-046](docs/decisions/ad-046.md)):
+
+| `tlc harness doctor` says | What update writes |
+| --- | --- |
+| `managed checkout` | moves it to upstream with a hard reset. Do not develop there — a local change is discarded |
+| `link to a working clone` | nothing in the clone. That is a contributor install; you pull it yourself |
+
+`dist/` is rebuilt only when a bundle is missing. Rebuilding a complete `dist/` is what used to dirty the checkout
+and break every later update, because Bun and esbuild emit different bytes for the same source.
 
 After a successful pull, prints a short digest of **optional catalog capabilities this project has not
 enabled yet** (benefit + trade-off + how to enable). Nothing is auto-enabled — use the harness-init skill or

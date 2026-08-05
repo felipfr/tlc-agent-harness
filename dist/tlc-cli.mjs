@@ -3,7 +3,16 @@ var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // bin/tlc-cli.ts
 import { spawnSync } from "node:child_process";
-import { existsSync as existsSync24, mkdirSync as mkdirSync15, readFileSync as readFileSync25, realpathSync, rmSync as rmSync4, writeFileSync as writeFileSync14 } from "node:fs";
+import {
+  existsSync as existsSync24,
+  lstatSync,
+  mkdirSync as mkdirSync15,
+  readdirSync as readdirSync6,
+  readFileSync as readFileSync25,
+  realpathSync,
+  rmSync as rmSync4,
+  writeFileSync as writeFileSync14
+} from "node:fs";
 import { homedir as homedir3 } from "node:os";
 import { delimiter, join as join25 } from "node:path";
 
@@ -5596,14 +5605,65 @@ function upstreamRef(dest) {
   }
   return `origin/${read(["rev-parse", "--abbrev-ref", "HEAD"]) || "main"}`;
 }
-function ffFailureMessage(dest, mergeRef) {
+function classifyRuntimePath(dest, probe) {
+  if (probe.isSymlink(dest)) {
+    return "linked";
+  }
+  if (!probe.exists(dest)) {
+    return "absent";
+  }
+  return probe.exists(join25(dest, ".git")) ? "managed" : "unmanaged";
+}
+function runtimePathKind(dest) {
+  return classifyRuntimePath(dest, {
+    isSymlink: (path) => {
+      try {
+        if (lstatSync(path).isSymbolicLink()) {
+          return true;
+        }
+      } catch {
+        return false;
+      }
+      try {
+        return realpathSync(path) !== path;
+      } catch {
+        return false;
+      }
+    },
+    exists: existsSync24
+  });
+}
+function missingBundles(dest) {
+  const entrypoints = join25(dest, "src", "entrypoints");
+  if (!existsSync24(entrypoints)) {
+    return [];
+  }
+  const expected = readdirSync6(entrypoints).filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts")).map((name) => `${name.slice(0, -3)}.mjs`);
+  return expected.filter((bundle) => !existsSync24(join25(dest, "dist", bundle)));
+}
+function linkedRuntimeMessage(dest, target) {
   return [
-    `update: fast-forward failed (${mergeRef}) — the runtime checkout has commits that upstream does not.`,
-    "Two ways out, both yours to choose:",
-    `  discard local changes at the runtime path:  git -C ${dest} reset --hard ${mergeRef}`,
-    "  or re-run the installer from the README, which replaces the checkout",
-    "Nothing was changed. Neither command is run for you, because the first one throws work away."
+    `update: the runtime path is a link to a working clone${target ? ` → ${target}` : ""}.`,
+    "Nothing in it is touched by this command — updating that clone is your own `git pull`.",
+    "Refreshing the machine-local parts only: CLI link, init skill, provider hooks."
   ].join(`
+`);
+}
+function unmanagedRuntimeMessage(dest) {
+  return [
+    `update: ${dest} is not a git checkout, so there is nothing to pull.`,
+    "Re-install with the curl/irm one-liner from the README to get a managed runtime."
+  ].join(`
+`);
+}
+function resetFailureMessage(dest, mergeRef, gitOutput) {
+  return [
+    `update: could not move the runtime to ${mergeRef}.`,
+    `  path: ${dest} (managed checkout)`,
+    gitOutput.trim() ? `  git: ${gitOutput.trim().split(`
+`).slice(-3).join(" / ")}` : "",
+    "Nothing was changed. Re-install with the one-liner from the README if this persists."
+  ].filter(Boolean).join(`
 `);
 }
 function runtimeRevision(dest) {
@@ -5966,7 +6026,12 @@ function runUpdate(root) {
     console.error("update: install once with the curl/irm installer from the README, then retry.");
     process.exit(1);
   }
-  if (existsSync24(join25(dest, ".git"))) {
+  const kind = runtimePathKind(home);
+  if (kind === "linked") {
+    console.log(linkedRuntimeMessage(home, dest === home ? null : dest));
+  } else if (kind === "unmanaged") {
+    console.log(unmanagedRuntimeMessage(dest));
+  } else {
     const fetch = spawnSync("git", ["-C", dest, "fetch", "origin"], {
       stdio: "inherit",
       env: process.env
@@ -5976,16 +6041,16 @@ function runUpdate(root) {
       process.exit(fetch.status ?? 1);
     }
     const mergeRef = upstreamRef(dest);
-    const merge = spawnSync("git", ["-C", dest, "merge", "--ff-only", mergeRef], {
-      stdio: "inherit",
+    const reset = spawnSync("git", ["-C", dest, "reset", "--hard", mergeRef], {
+      encoding: "utf8",
       env: process.env
     });
-    if ((merge.status ?? 1) !== 0) {
-      console.error(ffFailureMessage(dest, mergeRef));
-      process.exit(merge.status ?? 1);
+    if ((reset.status ?? 1) !== 0) {
+      console.error(resetFailureMessage(dest, mergeRef, `${reset.stderr ?? ""}${reset.stdout ?? ""}`));
+      process.exit(reset.status ?? 1);
     }
-  } else {
-    console.log("update: no .git at runtime path — skipped pull (linked checkout?).");
+    const after = runtimeRevision(dest).revision;
+    console.log(revisionBefore === after ? `update: runtime already at ${after ?? "unknown"} — nothing to move` : `update: runtime ${revisionBefore ?? "unknown"} → ${after ?? "unknown"}`);
   }
   const binDir = process.env.TLC_BIN_DIR || join25(homedir3(), ".local", "bin");
   mkdirSync15(binDir, { recursive: true });
@@ -6019,10 +6084,14 @@ function runUpdate(root) {
       console.log("update: hooks unchanged (merge manually or: node bin/write-user-hooks.mjs --force)");
     }
   }
-  if (existsSync24(buildBinPath())) {
+  const missing = missingBundles(dest);
+  if (missing.length === 0) {
+    console.log("update: dist/ complete — no rebuild, so the runtime path stays clean");
+  } else if (existsSync24(buildBinPath())) {
+    console.log(`update: ${missing.length} bundle(s) missing — building`);
     const build = spawnSync(buildBinPath(), [], { stdio: "inherit", env: process.env });
     if ((build.status ?? 1) !== 0) {
-      console.log("update: build skipped/failed — ok if dist/ already matches the pulled revision");
+      console.log(`update: build failed — ${missing.length} bundle(s) still missing from dist/`);
     }
   }
   announceNewCapabilities(root, dest);
@@ -6201,6 +6270,7 @@ export {
   versionText,
   versionJson,
   upstreamRef,
+  unmanagedRuntimeMessage,
   statusText,
   statusJson,
   skipFlagPath,
@@ -6209,11 +6279,13 @@ export {
   setGrind,
   setGateCommand,
   runtimeRevision,
+  runtimePathKind,
   runTestSteps,
   route,
   resolveProjectRoot,
   resolveHarnessRoot,
   resolveExecutable,
+  resetFailureMessage,
   readMode,
   pricesHelpText,
   policyText,
@@ -6222,14 +6294,16 @@ export {
   pendingText,
   pairedFlagPath,
   modeFilePath,
+  missingBundles,
+  linkedRuntimeMessage,
   helpText,
   grindOn,
   grindFlagPath,
   gatesPaused,
   focusFlagPath,
-  ffFailureMessage,
   execBinPath,
   ensureFlagsDir,
+  classifyRuntimePath,
   buildTestSteps,
   buildBinPath,
   attestText,

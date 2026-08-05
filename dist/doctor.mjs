@@ -3,227 +3,41 @@ var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
 // tools/doctor.ts
 import { spawnSync } from "node:child_process";
-import { existsSync as existsSync27, lstatSync, readFileSync as readFileSync28, readlinkSync } from "node:fs";
+import { existsSync as existsSync28, lstatSync as lstatSync2, readFileSync as readFileSync29, readlinkSync } from "node:fs";
 import { homedir as homedir3, platform as osPlatform } from "node:os";
-import { dirname as dirname8, join as join28 } from "node:path";
+import { dirname as dirname8, join as join29 } from "node:path";
 
-// bin/tlc-exec.mjs
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { delimiter, dirname, join } from "node:path";
-function bunExecutableName(platform = process.platform) {
-  return platform === "win32" ? "bun.exe" : "bun";
-}
-function findBunOnPath(env = process.env, platform = process.platform) {
-  const pathValue = env.PATH ?? "";
-  const bunName = bunExecutableName(platform);
-  for (const dir of pathValue.split(delimiter)) {
-    if (!dir) {
-      continue;
-    }
-    const candidate = join(dir, bunName);
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-  }
-  return null;
-}
-function runtimeCachePath(harnessHome) {
-  return join(harnessHome, "state", "runtime-cache.json");
-}
-function writeRuntimeCache(harnessHome, bunPath) {
-  const cachePath = runtimeCachePath(harnessHome);
-  mkdirSync(dirname(cachePath), { recursive: true });
-  const record = { bunPath, checkedAt: new Date().toISOString() };
-  writeFileSync(cachePath, `${JSON.stringify(record)}
-`);
-  return record;
-}
-if (false) {}
+// bin/tlc-cli.ts
+import {
+  existsSync as existsSync24,
+  lstatSync,
+  mkdirSync as mkdirSync15,
+  readdirSync as readdirSync6,
+  readFileSync as readFileSync25,
+  realpathSync,
+  rmSync as rmSync4,
+  writeFileSync as writeFileSync14
+} from "node:fs";
+import { delimiter, join as join25 } from "node:path";
 
-// bin/write-user-hooks.mjs
-import { existsSync as existsSync4, mkdirSync as mkdirSync4, readFileSync as readFileSync4, writeFileSync as writeFileSync3 } from "node:fs";
-
-// src/providers/claude/claude.wiring.ts
-import { existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync as readFileSync2, realpathSync as realpathSync2, writeFileSync as writeFileSync2 } from "node:fs";
-import { dirname as dirname2, join as join3 } from "node:path";
-
-// src/platform/paths.ts
-import { homedir } from "node:os";
+// src/core/attest/attest.service.ts
+import { createHash } from "node:crypto";
 import { join as join2 } from "node:path";
-function harnessDir(root) {
-  return join2(root, ".tlc", "harness");
-}
-function runtimeHome() {
-  return process.env.TLC_HOME ?? join2(homedir(), ".tlc", "harness");
-}
-function runtimeStateDir() {
-  return join2(runtimeHome(), "state");
-}
-function runtimeSpoolPath() {
-  return join2(runtimeStateDir(), "obs-spool.jsonl");
-}
-function projectConfigPath(root) {
-  return join2(harnessDir(root), "config.json");
-}
-function projectStateDir(root) {
-  return join2(harnessDir(root), "state");
-}
-function flagsDir(root) {
-  return join2(projectStateDir(root), "flags");
-}
-function presenceDir(root) {
-  return join2(projectStateDir(root), "presence");
-}
-function loopsDir(root) {
-  return join2(projectStateDir(root), "loops");
-}
-function bootDir(root) {
-  return join2(projectStateDir(root), "boot");
-}
-function policyBaselineDir(root) {
-  return join2(projectStateDir(root), "policy-baseline");
-}
-function claudeConfigDir() {
-  const custom = process.env.CLAUDE_CONFIG_DIR?.trim();
-  return custom && custom.length > 0 ? custom : join2(homedir(), ".claude");
-}
-function cursorConfigDir() {
-  const custom = process.env.CURSOR_CONFIG_DIR?.trim();
-  return custom && custom.length > 0 ? custom : join2(homedir(), ".cursor");
-}
 
-// src/providers/claude/claude.wiring.ts
-var ENTRY_SPECS = [
-  { hookEvent: "SessionStart", handler: "session-start", timeoutSeconds: 10 },
-  { hookEvent: "SessionEnd", handler: "session-end", timeoutSeconds: 10 },
-  { hookEvent: "UserPromptSubmit", handler: "prompt-submit", timeoutSeconds: 5 },
-  { hookEvent: "PreToolUse", handler: "tool-before", timeoutSeconds: 10, failClosed: true },
-  { hookEvent: "PostToolUse", handler: "tool-after", timeoutSeconds: 10 },
-  { hookEvent: "PostToolUseFailure", handler: "tool-failure", timeoutSeconds: 5 },
-  { hookEvent: "SubagentStart", handler: "subagent-start", timeoutSeconds: 5, failClosed: true },
-  { hookEvent: "SubagentStop", handler: "subagent-stop", timeoutSeconds: 5 },
-  { hookEvent: "Stop", handler: "stop", timeoutSeconds: 120, loopLimit: 5 },
-  { hookEvent: "PreCompact", handler: "compact-before", timeoutSeconds: 5 },
-  { hookEvent: "MessageDisplay", handler: "response-after", timeoutSeconds: 5 }
-];
-function claudeSettingsPath() {
-  return join3(claudeConfigDir(), "settings.json");
-}
-function claudeWiring(runtime) {
-  const entries = ENTRY_SPECS.map((spec) => ({
-    hookEvent: spec.hookEvent,
-    handler: spec.handler,
-    command: "node",
-    args: [runtime.launcherPath, spec.handler],
-    timeoutSeconds: spec.timeoutSeconds,
-    ...spec.failClosed !== undefined ? { failClosed: spec.failClosed } : {},
-    ...spec.loopLimit !== undefined ? { loopLimit: spec.loopLimit } : {}
-  }));
-  return {
-    target: claudeSettingsPath(),
-    strategy: "merge",
-    entries
-  };
-}
-function isPlainRecord(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-function isHooksRecord(value) {
-  return isPlainRecord(value);
-}
-function deepEqual(a, b) {
-  if (a === b) {
-    return true;
-  }
-  if (Array.isArray(a) || Array.isArray(b)) {
-    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
-      return false;
-    }
-    return a.every((item, index) => deepEqual(item, b[index]));
-  }
-  if (isPlainRecord(a) && isPlainRecord(b)) {
-    const aKeys = Object.keys(a);
-    const bKeys = Object.keys(b);
-    if (aKeys.length !== bKeys.length) {
-      return false;
-    }
-    return aKeys.every((key) => bKeys.includes(key) && deepEqual(a[key], b[key]));
-  }
-  return false;
-}
-function desiredHooksFor(entries) {
-  const hooks = {};
-  for (const entry of entries) {
-    const group = {
-      hooks: [{ type: "command", command: entry.command, args: entry.args }]
-    };
-    hooks[entry.hookEvent] = [...hooks[entry.hookEvent] ?? [], group];
-  }
-  return hooks;
-}
-var LAUNCHER_MARKER = "tlc-exec.mjs";
-function isHarnessGroup(group) {
-  return JSON.stringify(group ?? null).includes(LAUNCHER_MARKER);
-}
-function canonicalLauncherPath(path, resolve = realpathSync2) {
-  try {
-    return resolve(path);
-  } catch {
-    return path;
-  }
-}
-function canonicalizeGroups(groups, resolve) {
-  return JSON.parse(JSON.stringify(groups ?? null, (_key, value) => typeof value === "string" && value.includes(LAUNCHER_MARKER) ? canonicalLauncherPath(value, resolve) : value));
-}
-function mergeClaudeSettings(existingText, entries) {
-  const desired = desiredHooksFor(entries);
-  let settings = {};
-  if (existingText !== null && existingText.trim() !== "") {
-    let parsed;
-    try {
-      parsed = JSON.parse(existingText);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return { ok: false, error: message, block: JSON.stringify({ hooks: desired }, null, 2) };
-    }
-    if (!isPlainRecord(parsed)) {
-      return {
-        ok: false,
-        error: "settings.json root is not a JSON object",
-        block: JSON.stringify({ hooks: desired }, null, 2)
-      };
-    }
-    settings = parsed;
-  }
-  const currentHooks = isHooksRecord(settings.hooks) ? settings.hooks : {};
-  const mergedHooks = { ...currentHooks };
-  let changed = false;
-  for (const [hookEvent, groups] of Object.entries(desired)) {
-    const existingGroups = mergedHooks[hookEvent] ?? [];
-    const foreign = existingGroups.filter((group) => !isHarnessGroup(group));
-    const nextGroups = [...foreign, ...groups];
-    if (!deepEqual(canonicalizeGroups(existingGroups), canonicalizeGroups(nextGroups))) {
-      changed = true;
-    }
-    mergedHooks[hookEvent] = nextGroups;
-  }
-  const mergedSettings = { ...settings, hooks: mergedHooks };
-  return { ok: true, settingsText: JSON.stringify(mergedSettings, null, 2), changed };
-}
 // src/platform/fs-jsonl.ts
-import { appendFileSync, existsSync as existsSync3, mkdirSync as mkdirSync3, readFileSync as readFileSync3 } from "node:fs";
-import { dirname as dirname3 } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname } from "node:path";
 function appendRecord(path, value) {
-  mkdirSync3(dirname3(path), { recursive: true });
+  mkdirSync(dirname(path), { recursive: true });
   appendFileSync(path, `${JSON.stringify(value)}
 `);
 }
 function readTail(path, n) {
-  if (!existsSync3(path)) {
+  if (!existsSync(path)) {
     return [];
   }
   const records = [];
-  for (const line of readFileSync3(path, "utf8").split(`
+  for (const line of readFileSync(path, "utf8").split(`
 `)) {
     const trimmed = line.trim();
     if (trimmed.length === 0) {
@@ -235,766 +49,56 @@ function readTail(path, n) {
   }
   return records.slice(-n);
 }
-// src/providers/provider.degrade.ts
-var NO_HUMAN_MODES = new Set(["bypassPermissions", "dontAsk"]);
-// src/providers/claude/claude.capabilities.ts
-function claudeCapabilities() {
-  return {
-    enforcesHooks: true,
-    askSupportedOn: ["tool.before", "shell.before", "mcp.before", "read.before"],
-    sessionEnv: false,
-    nativeLoopCounter: false,
-    dedicatedShellEvent: false,
-    toolInputRewrite: true,
-    toolOutputRewrite: true,
-    contextAtToolBefore: true,
-    contextAtToolAfter: true,
-    usageInPayload: false,
-    effortSignal: true,
-    thoughtEvent: false
-  };
-}
 
-// src/providers/claude/claude.detect.ts
-var PASCAL_CASE_EVENT_NAME = /^[A-Z][a-zA-Z0-9]*$/;
-function detectClaude(raw) {
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-    return false;
-  }
-  const value = raw;
-  const eventName = value.hook_event_name;
-  if (typeof eventName !== "string" || !PASCAL_CASE_EVENT_NAME.test(eventName)) {
-    return false;
-  }
-  return typeof value.cwd === "string" || typeof value.transcript_path === "string";
+// src/platform/paths.ts
+import { homedir } from "node:os";
+import { join } from "node:path";
+function harnessDir(root) {
+  return join(root, ".tlc", "harness");
 }
-
-// src/contracts/effort.ts
-var EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
-function effortOrdinal(level) {
-  return EFFORT_LEVELS.indexOf(level);
+function runtimeHome() {
+  return process.env.TLC_HOME ?? join(homedir(), ".tlc", "harness");
 }
-function compareEffort(a, b) {
-  return effortOrdinal(a) - effortOrdinal(b);
+function runtimeStateDir() {
+  return join(runtimeHome(), "state");
 }
-function isEffortLevel(value) {
-  return typeof value === "string" && EFFORT_LEVELS.includes(value);
+function runtimeSpoolPath() {
+  return join(runtimeStateDir(), "obs-spool.jsonl");
 }
-
-// src/platform/sanitize.ts
-var ALLOWED = /[A-Za-z0-9._-]/;
-var EMPTY_PLACEHOLDER = "_empty_";
-function sanitizeSegment(input) {
-  if (input.length === 0) {
-    return EMPTY_PLACEHOLDER;
-  }
-  let out = "";
-  for (const ch of input) {
-    if (ALLOWED.test(ch)) {
-      out += ch;
-      continue;
-    }
-    for (const byte of Buffer.from(ch, "utf8")) {
-      out += `%${byte.toString(16).toUpperCase().padStart(2, "0")}`;
-    }
-  }
-  return out;
+function projectConfigPath(root) {
+  return join(harnessDir(root), "config.json");
 }
-function normalizeSeparators(input) {
-  return input.replace(/\\/g, "/");
+function projectStateDir(root) {
+  return join(harnessDir(root), "state");
 }
-
-// src/providers/claude/claude.inbound.ts
-var EVENT_KIND_BY_HOOK = {
-  SessionStart: "session.start",
-  SessionEnd: "session.end",
-  UserPromptSubmit: "prompt.submit",
-  PostToolUseFailure: "tool.failure",
-  SubagentStart: "subagent.start",
-  SubagentStop: "subagent.stop",
-  Stop: "stop",
-  PreCompact: "compact.before",
-  MessageDisplay: "response.after"
-};
-var MCP_TOOL_NAME = /^mcp__/;
-function asString(value) {
-  return typeof value === "string" ? value : undefined;
+function flagsDir(root) {
+  return join(projectStateDir(root), "flags");
 }
-function asNumber(value) {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+function presenceDir(root) {
+  return join(projectStateDir(root), "presence");
 }
-function asRecord(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? value : undefined;
+function loopsDir(root) {
+  return join(projectStateDir(root), "loops");
 }
-function asStatus(value) {
-  return value === "completed" || value === "aborted" || value === "error" ? value : undefined;
+function bootDir(root) {
+  return join(projectStateDir(root), "boot");
 }
-function sessionKeyFor(raw) {
-  const seed = asString(raw.session_id) ?? "default";
-  return `claude-${sanitizeSegment(seed)}`;
+function policyBaselineDir(root) {
+  return join(projectStateDir(root), "policy-baseline");
 }
-function projectDirFor(raw) {
-  const envDir = process.env.CLAUDE_PROJECT_DIR;
-  if (envDir) {
-    return envDir;
-  }
-  const cwd = asString(raw.cwd);
-  if (cwd) {
-    return cwd;
-  }
-  return process.cwd();
+function claudeConfigDir() {
+  const custom = process.env.CLAUDE_CONFIG_DIR?.trim();
+  return custom && custom.length > 0 ? custom : join(homedir(), ".claude");
 }
-function effortFor(raw) {
-  const effort = asRecord(raw.effort);
-  const level = effort?.level;
-  return isEffortLevel(level) ? level : undefined;
+function cursorConfigDir() {
+  const custom = process.env.CURSOR_CONFIG_DIR?.trim();
+  return custom && custom.length > 0 ? custom : join(homedir(), ".cursor");
 }
-function preToolUseKind(toolName) {
-  if (toolName === "Bash") {
-    return "shell.before";
-  }
-  if (toolName && MCP_TOOL_NAME.test(toolName)) {
-    return "mcp.before";
-  }
-  if (toolName === "Read") {
-    return "read.before";
-  }
-  return "tool.before";
-}
-function postToolUseKind(toolName) {
-  if (toolName === "Bash") {
-    return "shell.after";
-  }
-  if (toolName && MCP_TOOL_NAME.test(toolName)) {
-    return "mcp.after";
-  }
-  if (toolName === "Edit" || toolName === "Write") {
-    return "edit.after";
-  }
-  return "tool.after";
-}
-function claudeToEvent(raw) {
-  const hookEventName = asString(raw.hook_event_name);
-  if (!hookEventName) {
-    return null;
-  }
-  const toolName = asString(raw.tool_name);
-  const toolInput = asRecord(raw.tool_input);
-  let eventKind;
-  if (hookEventName === "PreToolUse") {
-    eventKind = preToolUseKind(toolName);
-  } else if (hookEventName === "PostToolUse") {
-    eventKind = postToolUseKind(toolName);
-  } else {
-    eventKind = EVENT_KIND_BY_HOOK[hookEventName];
-  }
-  if (!eventKind) {
-    return null;
-  }
-  const event = {
-    provider: "claude",
-    event: eventKind,
-    sessionKey: sessionKeyFor(raw),
-    projectDir: projectDirFor(raw),
-    raw
-  };
-  const permissionMode = asString(raw.permission_mode);
-  if (permissionMode) {
-    event.permissionMode = permissionMode;
-  }
-  const isSpawnEvent = eventKind === "subagent.start" || eventKind === "subagent.stop";
-  const model = isSpawnEvent ? undefined : asString(raw.model);
-  if (model) {
-    event.model = model;
-  }
-  const effort = effortFor(raw);
-  if (effort) {
-    event.effort = effort;
-  }
-  const contextUsagePercent = asNumber(raw.context_usage_percent);
-  if (contextUsagePercent !== undefined) {
-    event.contextUsagePercent = contextUsagePercent;
-  }
-  const transcriptPath = asString(raw.transcript_path);
-  if (transcriptPath) {
-    event.transcriptPath = transcriptPath;
-  }
-  if (!isSpawnEvent) {
-    const callerAgentType = asString(raw.agent_type);
-    if (callerAgentType) {
-      event.subagentType = callerAgentType;
-    }
-  }
-  switch (eventKind) {
-    case "prompt.submit": {
-      const text = asString(raw.prompt);
-      if (text !== undefined) {
-        event.text = text;
-      }
-      break;
-    }
-    case "response.after": {
-      const text = asString(raw.text);
-      if (text !== undefined) {
-        event.text = text;
-      }
-      break;
-    }
-    case "shell.before":
-    case "shell.after": {
-      const command = toolInput ? asString(toolInput.command) : undefined;
-      if (command !== undefined) {
-        event.command = command;
-      }
-      break;
-    }
-    case "mcp.before":
-    case "mcp.after": {
-      if (toolName) {
-        event.toolName = toolName;
-      }
-      if (toolInput) {
-        event.toolInput = toolInput;
-      }
-      break;
-    }
-    case "read.before": {
-      const filePath = toolInput ? asString(toolInput.file_path) : undefined;
-      if (filePath !== undefined) {
-        event.filePath = filePath;
-      }
-      break;
-    }
-    case "edit.after": {
-      if (toolName) {
-        event.toolName = toolName;
-      }
-      const filePath = toolInput ? asString(toolInput.file_path) : undefined;
-      if (filePath !== undefined) {
-        event.filePath = filePath;
-      }
-      break;
-    }
-    case "tool.before":
-    case "tool.after":
-    case "tool.failure": {
-      if (toolName) {
-        event.toolName = toolName;
-      }
-      if (toolInput) {
-        event.toolInput = toolInput;
-      }
-      const filePath = toolInput ? asString(toolInput.file_path) : undefined;
-      if (filePath !== undefined) {
-        event.filePath = filePath;
-      }
-      const spawnSubagentType = toolInput ? asString(toolInput.subagent_type) : undefined;
-      if (spawnSubagentType) {
-        event.spawnSubagentType = spawnSubagentType;
-      }
-      const spawnModel = toolInput ? asString(toolInput.model) : undefined;
-      if (spawnModel) {
-        event.spawnModel = spawnModel;
-      }
-      break;
-    }
-    case "subagent.start":
-    case "subagent.stop": {
-      const spawnSubagentType = asString(raw.agent_type) ?? asString(raw.subagent_type) ?? (toolInput ? asString(toolInput.subagent_type) : undefined);
-      if (spawnSubagentType) {
-        event.spawnSubagentType = spawnSubagentType;
-      }
-      const spawnModel = (toolInput ? asString(toolInput.model) : undefined) ?? asString(raw.model);
-      if (spawnModel) {
-        event.spawnModel = spawnModel;
-      }
-      break;
-    }
-    case "stop": {
-      const status = asStatus(raw.status);
-      if (status) {
-        event.status = status;
-      }
-      break;
-    }
-    default:
-      break;
-  }
-  return event;
-}
-
-// src/providers/claude/claude.outbound.ts
-var HOOK_EVENT_NAME_BY_KIND = {
-  "session.start": "SessionStart",
-  "session.end": "SessionEnd",
-  "prompt.submit": "UserPromptSubmit",
-  "tool.before": "PreToolUse",
-  "tool.after": "PostToolUse",
-  "tool.failure": "PostToolUseFailure",
-  "shell.before": "PreToolUse",
-  "shell.after": "PostToolUse",
-  "mcp.before": "PreToolUse",
-  "mcp.after": "PostToolUse",
-  "read.before": "PreToolUse",
-  "edit.after": "PostToolUse",
-  "subagent.start": "SubagentStart",
-  "subagent.stop": "SubagentStop",
-  stop: "Stop",
-  "compact.before": "PreCompact",
-  "response.after": "MessageDisplay",
-  "thought.after": "MessageDisplay"
-};
-function renderPermission(permissionDecision, hookEventName, reason) {
-  const hookSpecificOutput = { hookEventName, permissionDecision };
-  if (reason !== undefined) {
-    hookSpecificOutput.permissionDecisionReason = reason;
-  }
-  return JSON.stringify({ hookSpecificOutput });
-}
-function claudeRender(decision, event) {
-  const hookEventName = HOOK_EVENT_NAME_BY_KIND[event.event];
-  switch (decision.kind) {
-    case "abstain":
-      return { stdout: null, exitCode: 0 };
-    case "allow":
-      return { stdout: renderPermission("allow", hookEventName, undefined), exitCode: 0 };
-    case "deny":
-      return { stdout: renderPermission("deny", hookEventName, decision.reason), exitCode: 0 };
-    case "ask":
-      return { stdout: renderPermission("ask", hookEventName, decision.reason), exitCode: 0 };
-    case "context":
-      return {
-        stdout: JSON.stringify({ hookSpecificOutput: { hookEventName, additionalContext: decision.text } }),
-        exitCode: 0
-      };
-    case "continue":
-      return { stdout: JSON.stringify({ decision: "block", reason: decision.text }), exitCode: 0 };
-    case "rewriteInput":
-      return {
-        stdout: JSON.stringify({ hookSpecificOutput: { hookEventName, updatedInput: decision.input } }),
-        exitCode: 0
-      };
-    default: {
-      const exhaustive = decision;
-      throw new Error(`unreachable decision kind: ${JSON.stringify(exhaustive)}`);
-    }
-  }
-}
-
-// src/providers/claude/claude.policy-defaults.ts
-function claudePolicyDefaults() {
-  return {
-    allowedModels: ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5-20251001"],
-    blockedPatterns: [],
-    minEffort: null,
-    untrustedTools: ["WebFetch", "WebSearch"]
-  };
-}
-
-// src/providers/claude/index.ts
-var claudeProvider = {
-  name: "claude",
-  detect: detectClaude,
-  capabilities: claudeCapabilities,
-  policyDefaults: claudePolicyDefaults,
-  toEvent: claudeToEvent,
-  render: claudeRender,
-  wiring: claudeWiring
-};
-
-// src/providers/cursor/cursor.capabilities.ts
-function cursorCapabilities() {
-  return {
-    enforcesHooks: true,
-    askSupportedOn: ["shell.before", "mcp.before"],
-    sessionEnv: true,
-    nativeLoopCounter: true,
-    dedicatedShellEvent: true,
-    toolInputRewrite: true,
-    toolOutputRewrite: true,
-    contextAtToolBefore: false,
-    contextAtToolAfter: true,
-    usageInPayload: true,
-    effortSignal: false,
-    thoughtEvent: true
-  };
-}
-
-// src/providers/cursor/cursor.detect.ts
-var CAMEL_CASE_EVENT_NAME = /^[a-z][a-zA-Z0-9]*$/;
-function detectCursor(raw) {
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
-    return false;
-  }
-  const value = raw;
-  const eventName = value.hook_event_name;
-  if (typeof eventName !== "string" || !CAMEL_CASE_EVENT_NAME.test(eventName)) {
-    return false;
-  }
-  return Array.isArray(value.workspace_roots);
-}
-
-// src/providers/cursor/cursor.inbound.ts
-var EVENT_KIND_BY_HOOK2 = {
-  sessionStart: "session.start",
-  sessionEnd: "session.end",
-  beforeSubmitPrompt: "prompt.submit",
-  preToolUse: "tool.before",
-  postToolUse: "tool.after",
-  postToolUseFailure: "tool.failure",
-  beforeShellExecution: "shell.before",
-  afterShellExecution: "shell.after",
-  beforeMCPExecution: "mcp.before",
-  afterMCPExecution: "mcp.after",
-  beforeReadFile: "read.before",
-  afterFileEdit: "edit.after",
-  subagentStart: "subagent.start",
-  subagentStop: "subagent.stop",
-  stop: "stop",
-  preCompact: "compact.before",
-  afterAgentResponse: "response.after",
-  afterAgentThought: "thought.after"
-};
-function asString2(value) {
-  return typeof value === "string" ? value : undefined;
-}
-function asNumber2(value) {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-function asRecord2(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? value : undefined;
-}
-function asStatus2(value) {
-  return value === "completed" || value === "aborted" || value === "error" ? value : undefined;
-}
-function sessionKeyFor2(raw) {
-  const seed = asString2(raw.conversation_id) || asString2(raw.session_id) || "default";
-  return `cursor-${sanitizeSegment(seed)}`;
-}
-function projectDirFor2(raw) {
-  const envDir = process.env.CURSOR_PROJECT_DIR;
-  if (envDir) {
-    return envDir;
-  }
-  const roots = raw.workspace_roots;
-  if (Array.isArray(roots)) {
-    const first = asString2(roots[0]);
-    if (first) {
-      return first;
-    }
-  }
-  return process.cwd();
-}
-function cursorToEvent(raw) {
-  const hookEventName = asString2(raw.hook_event_name);
-  const eventKind = hookEventName ? EVENT_KIND_BY_HOOK2[hookEventName] : undefined;
-  if (!eventKind) {
-    return null;
-  }
-  const event = {
-    provider: "cursor",
-    event: eventKind,
-    sessionKey: sessionKeyFor2(raw),
-    projectDir: projectDirFor2(raw),
-    raw
-  };
-  const model = asString2(raw.model);
-  if (model) {
-    event.model = model;
-  }
-  const contextUsagePercent = asNumber2(raw.context_usage_percent);
-  if (contextUsagePercent !== undefined) {
-    event.contextUsagePercent = contextUsagePercent;
-  }
-  switch (eventKind) {
-    case "prompt.submit": {
-      const text = asString2(raw.prompt);
-      if (text !== undefined) {
-        event.text = text;
-      }
-      break;
-    }
-    case "response.after": {
-      const text = asString2(raw.text);
-      if (text !== undefined) {
-        event.text = text;
-      }
-      break;
-    }
-    case "thought.after": {
-      const text = asString2(raw.thought) ?? asString2(raw.text);
-      if (text !== undefined) {
-        event.text = text;
-      }
-      break;
-    }
-    case "tool.before":
-    case "tool.after":
-    case "tool.failure": {
-      const toolName = asString2(raw.tool_name);
-      if (toolName) {
-        event.toolName = toolName;
-      }
-      const toolInput = asRecord2(raw.tool_input);
-      if (toolInput) {
-        event.toolInput = toolInput;
-      }
-      const subagentType = asString2(raw.subagent_type);
-      if (subagentType) {
-        event.subagentType = subagentType;
-      }
-      const toolSpawnModel = toolInput ? asString2(toolInput.model) : undefined;
-      if (toolSpawnModel) {
-        event.spawnModel = toolSpawnModel;
-      }
-      const toolSpawnType = toolInput ? asString2(toolInput.subagent_type) : undefined;
-      if (toolSpawnType) {
-        event.spawnSubagentType = toolSpawnType;
-      }
-      break;
-    }
-    case "shell.before":
-    case "shell.after": {
-      const command = asString2(raw.command);
-      if (command !== undefined) {
-        event.command = command;
-      }
-      break;
-    }
-    case "mcp.before":
-    case "mcp.after": {
-      const toolName = asString2(raw.tool_name);
-      if (toolName) {
-        event.toolName = toolName;
-      }
-      const toolInput = asRecord2(raw.tool_input);
-      if (toolInput) {
-        event.toolInput = toolInput;
-      }
-      const command = asString2(raw.command);
-      if (command !== undefined) {
-        event.command = command;
-      }
-      break;
-    }
-    case "read.before":
-    case "edit.after": {
-      const filePath = asString2(raw.file_path);
-      if (filePath !== undefined) {
-        event.filePath = filePath;
-      }
-      break;
-    }
-    case "subagent.start":
-    case "subagent.stop": {
-      const spawnSubagentType = asString2(raw.subagent_type);
-      if (spawnSubagentType) {
-        event.spawnSubagentType = spawnSubagentType;
-      }
-      const spawnModel = asString2(raw.subagent_model);
-      if (spawnModel) {
-        event.spawnModel = spawnModel;
-      }
-      break;
-    }
-    case "stop": {
-      const status = asStatus2(raw.status);
-      if (status) {
-        event.status = status;
-      }
-      const loopCount = asNumber2(raw.loop_count);
-      if (loopCount !== undefined) {
-        event.loopCount = loopCount;
-      }
-      break;
-    }
-    default:
-      break;
-  }
-  return event;
-}
-
-// src/providers/cursor/cursor.outbound.ts
-function renderDenyOrAsk(permission, decision) {
-  const body = { permission };
-  if (decision.userNote !== undefined) {
-    body.user_message = decision.userNote;
-  }
-  body.agent_message = decision.reason;
-  return JSON.stringify(body);
-}
-function cursorRender(decision, _event) {
-  switch (decision.kind) {
-    case "abstain":
-      return { stdout: "{}", exitCode: 0 };
-    case "allow":
-      return { stdout: JSON.stringify({ permission: "allow" }), exitCode: 0 };
-    case "deny":
-      return { stdout: renderDenyOrAsk("deny", decision), exitCode: 0 };
-    case "ask":
-      return { stdout: renderDenyOrAsk("ask", decision), exitCode: 0 };
-    case "context": {
-      const body = {};
-      if (decision.env !== undefined) {
-        body.env = decision.env;
-      }
-      body.additional_context = decision.text;
-      return { stdout: JSON.stringify(body), exitCode: 0 };
-    }
-    case "continue":
-      return { stdout: JSON.stringify({ followup_message: decision.text }), exitCode: 0 };
-    case "rewriteInput":
-      return { stdout: JSON.stringify({ updated_input: decision.input }), exitCode: 0 };
-    default: {
-      const exhaustive = decision;
-      throw new Error(`unreachable decision kind: ${JSON.stringify(exhaustive)}`);
-    }
-  }
-}
-
-// src/providers/cursor/cursor.policy-defaults.ts
-function cursorPolicyDefaults() {
-  return {
-    allowedModels: [
-      "composer-2.5",
-      "cursor-grok-4.5-high",
-      "glm-5.2-high",
-      "kimi-k2.7-code",
-      "gpt-5.3-codex-high"
-    ],
-    blockedPatterns: ["-fast(?:$|[^a-z0-9])", "/fast(?:$|[^a-z0-9])", "composer-2\\.5-fast"],
-    minEffort: null,
-    untrustedTools: ["Fetch", "WebSearch"]
-  };
-}
-
-// src/providers/cursor/cursor.wiring.ts
-import { join as join4 } from "node:path";
-var ENTRY_SPECS2 = [
-  { hookEvent: "sessionStart", handler: "session-start", timeoutSeconds: 10 },
-  { hookEvent: "sessionEnd", handler: "session-end", timeoutSeconds: 10 },
-  { hookEvent: "beforeSubmitPrompt", handler: "prompt-submit", timeoutSeconds: 5 },
-  { hookEvent: "afterAgentThought", handler: "tool-after", timeoutSeconds: 5 },
-  { hookEvent: "preCompact", handler: "compact-before", timeoutSeconds: 5 },
-  { hookEvent: "subagentStart", handler: "subagent-start", timeoutSeconds: 5, failClosed: true },
-  { hookEvent: "subagentStop", handler: "subagent-stop", timeoutSeconds: 5 },
-  { hookEvent: "preToolUse", handler: "tool-before", timeoutSeconds: 5, failClosed: true },
-  { hookEvent: "postToolUse", handler: "tool-after", timeoutSeconds: 5 },
-  { hookEvent: "postToolUseFailure", handler: "tool-failure", timeoutSeconds: 5 },
-  { hookEvent: "beforeShellExecution", handler: "tool-before", timeoutSeconds: 10, failClosed: true },
-  { hookEvent: "afterShellExecution", handler: "tool-after", timeoutSeconds: 10 },
-  { hookEvent: "beforeMCPExecution", handler: "tool-before", timeoutSeconds: 10 },
-  { hookEvent: "afterMCPExecution", handler: "tool-after", timeoutSeconds: 5 },
-  { hookEvent: "beforeReadFile", handler: "tool-before", timeoutSeconds: 5 },
-  { hookEvent: "afterFileEdit", handler: "tool-after", timeoutSeconds: 30, matcher: "Write" },
-  { hookEvent: "stop", handler: "stop", timeoutSeconds: 120, loopLimit: 5 },
-  { hookEvent: "afterAgentResponse", handler: "response-after", timeoutSeconds: 5, matcher: "AgentResponse" }
-];
-function commandFor(runtime) {
-  if (process.platform === "win32") {
-    return { command: "cmd", argsPrefix: ["/c", "node", runtime.launcherPath] };
-  }
-  return { command: "node", argsPrefix: [runtime.launcherPath] };
-}
-function cursorWiring(runtime) {
-  const { command, argsPrefix } = commandFor(runtime);
-  const entries = ENTRY_SPECS2.map((spec) => ({
-    hookEvent: spec.hookEvent,
-    handler: spec.handler,
-    command,
-    args: [...argsPrefix, spec.handler],
-    timeoutSeconds: spec.timeoutSeconds,
-    ...spec.failClosed !== undefined ? { failClosed: spec.failClosed } : {},
-    ...spec.matcher !== undefined ? { matcher: spec.matcher } : {},
-    ...spec.loopLimit !== undefined ? { loopLimit: spec.loopLimit } : {}
-  }));
-  return {
-    target: join4(cursorConfigDir(), "hooks.json"),
-    strategy: "replace",
-    entries
-  };
-}
-function commandTokens(command) {
-  return [...command.matchAll(/"([^"]*)"|(\S+)/g)].map((match) => match[1] ?? match[2] ?? "");
-}
-function cursorWiringProblems(text, runtime, fileExists) {
-  if (text === null) {
-    return [{ hookEvent: "(file)", reason: "no hooks file at the expected path" }];
-  }
-  let parsed;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return [{ hookEvent: "(file)", reason: "the hooks file is not valid JSON" }];
-  }
-  const hooks = parsed !== null && typeof parsed === "object" ? parsed.hooks ?? {} : {};
-  const problems = [];
-  for (const spec of ENTRY_SPECS2) {
-    const list = Array.isArray(hooks[spec.hookEvent]) ? hooks[spec.hookEvent] : [];
-    const commands = list.map((row) => row !== null && typeof row === "object" ? String(row.command ?? "") : "").filter((command) => command.includes(runtime.launcherPath));
-    if (commands.length === 0) {
-      problems.push({ hookEvent: spec.hookEvent, reason: "no harness entry — run: tlc harness update" });
-      continue;
-    }
-    for (const command of commands) {
-      const tokens = commandTokens(command);
-      const scriptAt = tokens.findIndex((token) => token === runtime.launcherPath);
-      if (scriptAt < 1) {
-        problems.push({
-          hookEvent: spec.hookEvent,
-          reason: `no executable before the script: \`${command}\``
-        });
-        continue;
-      }
-      if (!fileExists(runtime.launcherPath)) {
-        problems.push({
-          hookEvent: spec.hookEvent,
-          reason: `the script does not exist: ${runtime.launcherPath}`
-        });
-        continue;
-      }
-      if (tokens[scriptAt + 1] === undefined || tokens[scriptAt + 1] === "") {
-        problems.push({
-          hookEvent: spec.hookEvent,
-          reason: `no handler after the script: \`${command}\``
-        });
-      }
-    }
-  }
-  return problems;
-}
-function formatWiringProblems(problems, max = 3) {
-  const shown = problems.slice(0, max).map((problem) => `${problem.hookEvent}: ${problem.reason}`).join("; ");
-  const rest = problems.length - Math.min(problems.length, max);
-  return rest > 0 ? `${shown}; and ${rest} more` : shown;
-}
-
-// src/providers/cursor/index.ts
-var cursorProvider = {
-  name: "cursor",
-  detect: detectCursor,
-  capabilities: cursorCapabilities,
-  policyDefaults: cursorPolicyDefaults,
-  toEvent: cursorToEvent,
-  render: cursorRender,
-  wiring: cursorWiring
-};
-
-// src/providers/provider.registry.ts
-var providers = [cursorProvider, claudeProvider];
-// bin/write-user-hooks.mjs
-var CURSOR_MARKER = "tlc-exec.mjs";
-function isCursorWired(targetPath) {
-  return existsSync4(targetPath) && readFileSync4(targetPath, "utf8").includes(CURSOR_MARKER);
-}
-if (false) {}
 
 // src/core/attest/attest.service.ts
-import { createHash } from "node:crypto";
-import { join as join5 } from "node:path";
 var CHAIN_ROOT = "genesis";
 function attestationPath(root) {
-  return join5(projectStateDir(root), "attestation.jsonl");
+  return join2(projectStateDir(root), "attestation.jsonl");
 }
 function contentHash(record) {
   const ordered = [
@@ -1089,22 +193,22 @@ function formatAvailableInventory(caps) {
 }
 
 // src/core/capability/capability.store.ts
-import { existsSync as existsSync6, readFileSync as readFileSync6 } from "node:fs";
-import { join as join6 } from "node:path";
+import { existsSync as existsSync3, readFileSync as readFileSync3 } from "node:fs";
+import { join as join3 } from "node:path";
 
 // src/platform/fs-atomic.ts
 import { randomBytes } from "node:crypto";
 import {
   closeSync,
-  existsSync as existsSync5,
-  mkdirSync as mkdirSync5,
+  existsSync as existsSync2,
+  mkdirSync as mkdirSync2,
   openSync,
-  readFileSync as readFileSync5,
+  readFileSync as readFileSync2,
   renameSync,
   rmSync,
-  writeFileSync as writeFileSync4
+  writeFileSync
 } from "node:fs";
-import { dirname as dirname4 } from "node:path";
+import { dirname as dirname2 } from "node:path";
 
 // src/platform/backoff.ts
 function nextDelay(options) {
@@ -1158,14 +262,14 @@ async function writeJsonAtomic(path, value, options = {}) {
     random,
     sleep,
     rename = renameSync,
-    writeFile = (p, data) => writeFileSync4(p, data, "utf8"),
+    writeFile = (p, data) => writeFileSync(p, data, "utf8"),
     removeFile = (p) => {
       try {
         rmSync(p, { force: true });
       } catch {}
     }
   } = options;
-  mkdirSync5(dirname4(path), { recursive: true });
+  mkdirSync2(dirname2(path), { recursive: true });
   const tempPath = tempPathFor(path);
   writeFile(tempPath, `${JSON.stringify(value, null, 2)}
 `);
@@ -1179,17 +283,17 @@ async function writeJsonAtomic(path, value, options = {}) {
   }
 }
 function readJson(path) {
-  if (!existsSync5(path)) {
+  if (!existsSync2(path)) {
     return null;
   }
   try {
-    return JSON.parse(readFileSync5(path, "utf8"));
+    return JSON.parse(readFileSync2(path, "utf8"));
   } catch {
     return null;
   }
 }
 async function withFileLock(lockPath, fn) {
-  mkdirSync5(dirname4(lockPath), { recursive: true });
+  mkdirSync2(dirname2(lockPath), { recursive: true });
   const attempts = 200;
   let acquired = false;
   for (let attempt = 0;attempt < attempts; attempt++) {
@@ -1227,17 +331,17 @@ async function updateJsonAtomic(path, mutator, options) {
 
 // src/core/capability/capability.store.ts
 function readJson2(path) {
-  if (!existsSync6(path)) {
+  if (!existsSync3(path)) {
     return null;
   }
   try {
-    return JSON.parse(readFileSync6(path, "utf8"));
+    return JSON.parse(readFileSync3(path, "utf8"));
   } catch {
     return null;
   }
 }
 function catalogPath(home = runtimeHome()) {
-  return join6(home, "capabilities", "catalog.json");
+  return join3(home, "capabilities", "catalog.json");
 }
 function loadCatalog(home = runtimeHome()) {
   const raw = readJson2(catalogPath(home));
@@ -1250,7 +354,7 @@ function readProjectPolicyRaw(projectDir) {
   return readJson2(projectConfigPath(projectDir));
 }
 function runtimeSeenPath(projectDir) {
-  return join6(projectStateDir(projectDir), "runtime-seen.json");
+  return join3(projectStateDir(projectDir), "runtime-seen.json");
 }
 function readRuntimeSeen(projectDir) {
   const raw = readJson2(runtimeSeenPath(projectDir));
@@ -1267,12 +371,12 @@ async function writeRuntimeSeen(projectDir, catalogVersion) {
 }
 
 // src/core/comment-policy/comment-policy.service.ts
-import { readFileSync as readFileSync8 } from "node:fs";
-import { join as join8 } from "node:path";
+import { readFileSync as readFileSync5 } from "node:fs";
+import { join as join5 } from "node:path";
 
 // src/platform/git.ts
-import { existsSync as existsSync7, readFileSync as readFileSync7 } from "node:fs";
-import { join as join7 } from "node:path";
+import { existsSync as existsSync4, readFileSync as readFileSync4 } from "node:fs";
+import { join as join4 } from "node:path";
 
 // src/platform/process.ts
 import { spawn } from "node:child_process";
@@ -1323,6 +427,29 @@ async function runProcess(args) {
   });
 }
 
+// src/platform/sanitize.ts
+var ALLOWED = /[A-Za-z0-9._-]/;
+var EMPTY_PLACEHOLDER = "_empty_";
+function sanitizeSegment(input) {
+  if (input.length === 0) {
+    return EMPTY_PLACEHOLDER;
+  }
+  let out = "";
+  for (const ch of input) {
+    if (ALLOWED.test(ch)) {
+      out += ch;
+      continue;
+    }
+    for (const byte of Buffer.from(ch, "utf8")) {
+      out += `%${byte.toString(16).toUpperCase().padStart(2, "0")}`;
+    }
+  }
+  return out;
+}
+function normalizeSeparators(input) {
+  return input.replace(/\\/g, "/");
+}
+
 // src/platform/git.ts
 async function gitLines(projectDir, args) {
   const result = await runProcess({ command: ["git", ...args], cwd: projectDir });
@@ -1333,7 +460,7 @@ async function gitLines(projectDir, args) {
 `).map((line) => line.trim()).filter(Boolean);
 }
 async function listAddedLines(projectDir, relativePaths) {
-  if (!existsSync7(join7(projectDir, ".git")) || relativePaths.length === 0) {
+  if (!existsSync4(join4(projectDir, ".git")) || relativePaths.length === 0) {
     return [];
   }
   const tracked = new Set(await gitLines(projectDir, ["ls-files", "--", ...relativePaths]));
@@ -1342,7 +469,7 @@ async function listAddedLines(projectDir, relativePaths) {
     if (!tracked.has(file)) {
       let raw = "";
       try {
-        raw = readFileSync7(join7(projectDir, file), "utf8");
+        raw = readFileSync4(join4(projectDir, file), "utf8");
       } catch {
         continue;
       }
@@ -1532,7 +659,7 @@ function diskLineReader(projectDir) {
     let lines = cache.get(file);
     if (lines === undefined) {
       try {
-        lines = readFileSync8(join8(projectDir, file), "utf8").split(`
+        lines = readFileSync5(join5(projectDir, file), "utf8").split(`
 `);
       } catch {
         lines = [];
@@ -2079,8 +1206,8 @@ function evaluateFloor(input) {
 
 // src/core/gate/gate.artifact.ts
 import { createHash as createHash2 } from "node:crypto";
-import { existsSync as existsSync8, mkdirSync as mkdirSync6, readFileSync as readFileSync9, unlinkSync, writeFileSync as writeFileSync5 } from "node:fs";
-import { dirname as dirname5, join as join9 } from "node:path";
+import { existsSync as existsSync5, mkdirSync as mkdirSync3, readFileSync as readFileSync6, unlinkSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { dirname as dirname3, join as join6 } from "node:path";
 
 // src/core/gate/gate.findings.ts
 var DETAIL_MAX = 500;
@@ -2214,7 +1341,7 @@ var OUTPUT_TAIL_MAX = 8000;
 var FINDINGS_MAX = 8;
 var FAIL_HINT = /(?:\bFAIL(?:ED)?\b|\bERROR\b|Error:|error\[|AssertionError|\bpanic:|✗|×|✕|✖|failures?\s*[:=]\s*[1-9])/i;
 function lastGatePath(root) {
-  return join9(projectStateDir(root), "last-gate.json");
+  return join6(projectStateDir(root), "last-gate.json");
 }
 function trimOutputTail(combined, max = OUTPUT_TAIL_MAX) {
   const text = combined.trim();
@@ -2224,11 +1351,11 @@ function trimOutputTail(combined, max = OUTPUT_TAIL_MAX) {
   return text.length <= max ? text : text.slice(-max);
 }
 function readJson3(path) {
-  if (!existsSync8(path)) {
+  if (!existsSync5(path)) {
     return null;
   }
   try {
-    return JSON.parse(readFileSync9(path, "utf8"));
+    return JSON.parse(readFileSync6(path, "utf8"));
   } catch {
     return null;
   }
@@ -2290,8 +1417,8 @@ function writeLastGate(args) {
     ...args.inputsHash ? { inputsHash: args.inputsHash } : {}
   };
   const path = lastGatePath(args.root);
-  mkdirSync6(dirname5(path), { recursive: true });
-  writeFileSync5(path, `${JSON.stringify(artifact, null, 2)}
+  mkdirSync3(dirname3(path), { recursive: true });
+  writeFileSync2(path, `${JSON.stringify(artifact, null, 2)}
 `, "utf8");
   return artifact;
 }
@@ -2387,7 +1514,7 @@ function isCommandResolutionFailure(args) {
 
 // src/core/gate/gate.inputs.ts
 import { createHash as createHash3 } from "node:crypto";
-import { readFileSync as readFileSync10, statSync } from "node:fs";
+import { readFileSync as readFileSync7, statSync } from "node:fs";
 import { isAbsolute as isAbsolute2, resolve as resolve3 } from "node:path";
 var MAX_FILES = 400;
 var MAX_BYTES = 12000000;
@@ -2401,7 +1528,7 @@ function fileEntry(root, relative3) {
     if (!stat.isFile()) {
       return null;
     }
-    const contents = readFileSync10(absolute);
+    const contents = readFileSync7(absolute);
     return {
       entry: `${relative3}\x00${stat.size}\x00${createHash3("sha256").update(contents).digest("hex")}`,
       bytes: stat.size
@@ -2446,16 +1573,16 @@ function cachedVerdict(last, gate, current) {
 // src/core/gate/gate.lock.ts
 import {
   closeSync as closeSync2,
-  existsSync as existsSync9,
-  mkdirSync as mkdirSync7,
+  existsSync as existsSync6,
+  mkdirSync as mkdirSync4,
   openSync as openSync2,
-  readFileSync as readFileSync11,
+  readFileSync as readFileSync8,
   statSync as statSync2,
   unlinkSync as unlinkSync2,
-  writeFileSync as writeFileSync6
+  writeFileSync as writeFileSync3
 } from "node:fs";
 import { hostname } from "node:os";
-import { dirname as dirname6, join as join10 } from "node:path";
+import { dirname as dirname4, join as join7 } from "node:path";
 var GATE_LOCK_WAIT_MS = 120000;
 var GATE_LOCK_STALE_MS = 30 * 60 * 1000;
 var GATE_LOCK_UNREADABLE_GRACE_MS = 5000;
@@ -2467,23 +1594,23 @@ class GateLockTimeoutError extends Error {
   }
 }
 function gateLockPath(root) {
-  return join10(projectStateDir(root), "grind.lock");
+  return join7(projectStateDir(root), "grind.lock");
 }
 function defaultSleep2(ms) {
   return new Promise((resolve4) => setTimeout(resolve4, ms));
 }
 function readLockBody(path) {
-  if (!existsSync9(path)) {
+  if (!existsSync6(path)) {
     return null;
   }
   try {
-    return JSON.parse(readFileSync11(path, "utf8"));
+    return JSON.parse(readFileSync8(path, "utf8"));
   } catch {
     return null;
   }
 }
 function lockAgeMs(path, now) {
-  if (!existsSync9(path)) {
+  if (!existsSync6(path)) {
     return null;
   }
   try {
@@ -2551,11 +1678,11 @@ function describeHolder(root, options = {}) {
   return `${body.provider} session ${body.session} (pid ${body.pid})`;
 }
 function tryAcquire(path, body) {
-  mkdirSync7(dirname6(path), { recursive: true });
+  mkdirSync4(dirname4(path), { recursive: true });
   try {
     const fd = openSync2(path, "wx");
     try {
-      writeFileSync6(fd, JSON.stringify(body));
+      writeFileSync3(fd, JSON.stringify(body));
     } finally {
       closeSync2(fd);
     }
@@ -2656,8 +1783,8 @@ function gapsFromArtifact(args) {
 }
 
 // src/core/handoff/handoff.store.ts
-import { existsSync as existsSync10, readFileSync as readFileSync12 } from "node:fs";
-import { join as join11 } from "node:path";
+import { existsSync as existsSync7, readFileSync as readFileSync9 } from "node:fs";
+import { join as join8 } from "node:path";
 
 // src/core/handoff/handoff.types.ts
 var HANDOFF_SCHEMA = "harness.handoff.v2";
@@ -2678,18 +1805,18 @@ function isHandoffFile(value) {
 
 // src/core/handoff/handoff.store.ts
 function handoffPath(root) {
-  return join11(projectStateDir(root), "handoff.json");
+  return join8(projectStateDir(root), "handoff.json");
 }
 function handoffLockPath(root) {
   return `${handoffPath(root)}.lock`;
 }
 function readHandoffFile(root) {
   const path = handoffPath(root);
-  if (!existsSync10(path)) {
+  if (!existsSync7(path)) {
     return defaultHandoffFile();
   }
   try {
-    const parsed = JSON.parse(readFileSync12(path, "utf8"));
+    const parsed = JSON.parse(readFileSync9(path, "utf8"));
     if (isHandoffFile(parsed)) {
       return parsed;
     }
@@ -2809,11 +1936,11 @@ function effectivenessLine(lesson) {
 }
 
 // src/core/lesson/lesson.garden.ts
-import { mkdirSync as mkdirSync8, writeFileSync as writeFileSync7 } from "node:fs";
-import { dirname as dirname7, join as join13 } from "node:path";
+import { mkdirSync as mkdirSync5, writeFileSync as writeFileSync4 } from "node:fs";
+import { dirname as dirname5, join as join10 } from "node:path";
 
 // src/core/lesson/lesson.link.ts
-import { existsSync as existsSync11, readFileSync as readFileSync13 } from "node:fs";
+import { existsSync as existsSync8, readFileSync as readFileSync10 } from "node:fs";
 import { isAbsolute as isAbsolute3, resolve as resolve4 } from "node:path";
 var LINK_SEPARATOR = ":";
 function parseLessonLink(raw) {
@@ -2840,14 +1967,14 @@ function resolveLinkPath(root, link) {
 }
 function checkLessonLink(root, link) {
   const absolute = resolveLinkPath(root, link);
-  if (absolute === null || !existsSync11(absolute)) {
+  if (absolute === null || !existsSync8(absolute)) {
     return "path-missing";
   }
   if (!link.symbol) {
     return "present";
   }
   try {
-    return readFileSync13(absolute, "utf8").includes(link.symbol) ? "present" : "symbol-missing";
+    return readFileSync10(absolute, "utf8").includes(link.symbol) ? "present" : "symbol-missing";
   } catch {
     return "unreadable";
   }
@@ -2922,8 +2049,8 @@ function rankScore(lesson, args) {
 }
 
 // src/core/lesson/lesson.store.ts
-import { existsSync as existsSync12, readFileSync as readFileSync14 } from "node:fs";
-import { join as join12 } from "node:path";
+import { existsSync as existsSync9, readFileSync as readFileSync11 } from "node:fs";
+import { join as join9 } from "node:path";
 var EPOCH = "1970-01-01T00:00:00.000Z";
 function coreLesson(input) {
   return {
@@ -3016,10 +2143,10 @@ var CORE_LESSONS = [
   })
 ];
 function lessonsStorePath(root) {
-  return join12(projectStateDir(root), "lessons.json");
+  return join9(projectStateDir(root), "lessons.json");
 }
 function globalLessonsStorePath() {
-  return join12(runtimeStateDir(), "lessons.json");
+  return join9(runtimeStateDir(), "lessons.json");
 }
 function storePathFor(root, tier) {
   return tier === "global" ? globalLessonsStorePath() : lessonsStorePath(root);
@@ -3038,11 +2165,11 @@ function normalizeLesson(raw, tier) {
   };
 }
 function readStore(path, tier) {
-  if (!existsSync12(path)) {
+  if (!existsSync9(path)) {
     return [];
   }
   try {
-    const file = JSON.parse(readFileSync14(path, "utf8"));
+    const file = JSON.parse(readFileSync11(path, "utf8"));
     return Array.isArray(file.lessons) ? file.lessons.map((lesson) => normalizeLesson(lesson, tier)) : [];
   } catch {
     return [];
@@ -3100,7 +2227,7 @@ async function mutateWritableTiers(root, ids, patch) {
   const idSet = new Set(ids);
   for (const tier of ["project", "global"]) {
     const path = storePathFor(root, tier);
-    if (!existsSync12(path)) {
+    if (!existsSync9(path)) {
       continue;
     }
     await mutateStore(path, tier, (current) => current.map((lesson) => idSet.has(lesson.id) ? patch(lesson) : lesson));
@@ -3131,7 +2258,7 @@ async function gardenProjectLessons(root, mutate) {
   return mutateStore(lessonsStorePath(root), "project", mutate);
 }
 async function gardenGlobalLessons(mutate) {
-  if (!existsSync12(globalLessonsStorePath())) {
+  if (!existsSync9(globalLessonsStorePath())) {
     return [];
   }
   return mutateStore(globalLessonsStorePath(), "global", mutate);
@@ -3422,21 +2549,21 @@ async function gardenLessons(root, config, now = new Date) {
 }
 var SYNC_TITLE = "Learned harness lessons (auto-synced; do not hand-edit):";
 function lessonsMarkdownPath(root) {
-  return join13(dirname7(projectConfigPath(root)), "lessons.md");
+  return join10(dirname5(projectConfigPath(root)), "lessons.md");
 }
 function renderLessonsMarkdown(root, lessons, maxChars) {
   const now = new Date;
   const ranked = rankLessonsForSync(lessons.filter((lesson) => isInjectable(lesson, now))).slice(0, 12);
   const { body } = packLessonsUnderBudget({ lessons: ranked, maxChars, title: SYNC_TITLE });
   const path = lessonsMarkdownPath(root);
-  mkdirSync8(dirname7(path), { recursive: true });
+  mkdirSync5(dirname5(path), { recursive: true });
   const content = `# Harness lessons
 
 Auto-synced from gate failures; do not hand-edit.
 
 ${body || "No active project lessons yet."}
 `;
-  writeFileSync7(path, content, "utf8");
+  writeFileSync4(path, content, "utf8");
   return path;
 }
 function gardenAndPersistLessons(root, config, now = new Date) {
@@ -3695,11 +2822,11 @@ ${railActivity(rollup, activeRules)}
 import { createHash as createHash6, randomUUID } from "node:crypto";
 
 // src/core/observability/observability.store.ts
-import { existsSync as existsSync13, mkdirSync as mkdirSync9, readdirSync, readFileSync as readFileSync15, unlinkSync as unlinkSync3, writeFileSync as writeFileSync8 } from "node:fs";
-import { basename as basename3, join as join14 } from "node:path";
+import { existsSync as existsSync10, mkdirSync as mkdirSync6, readdirSync, readFileSync as readFileSync12, unlinkSync as unlinkSync3, writeFileSync as writeFileSync5 } from "node:fs";
+import { basename as basename3, join as join11 } from "node:path";
 function safeMkdir(dir) {
   try {
-    mkdirSync9(dir, { recursive: true });
+    mkdirSync6(dir, { recursive: true });
     return true;
   } catch {
     return false;
@@ -3724,7 +2851,7 @@ function appendObsRecord(root, file, event, spool = false) {
     return false;
   }
   try {
-    appendRecord(join14(projectStateDir(root), file), event);
+    appendRecord(join11(projectStateDir(root), file), event);
   } catch {
     return false;
   }
@@ -3738,7 +2865,7 @@ function appendAuditRecord(root, record, spool = false) {
     return false;
   }
   try {
-    appendRecord(join14(projectStateDir(root), "audit.jsonl"), record);
+    appendRecord(join11(projectStateDir(root), "audit.jsonl"), record);
   } catch {
     return false;
   }
@@ -3759,13 +2886,13 @@ function spoolLineTimestamp(line) {
 }
 function pruneSpool(retentionDays, now = Date.now()) {
   const path = runtimeSpoolPath();
-  if (!existsSync13(path)) {
+  if (!existsSync10(path)) {
     return 0;
   }
   const cutoff = now - retentionDays * 24 * 60 * 60 * 1000;
   let lines = [];
   try {
-    lines = readFileSync15(path, "utf8").split(`
+    lines = readFileSync12(path, "utf8").split(`
 `).filter((line) => line.trim().length > 0);
   } catch {
     return 0;
@@ -3778,7 +2905,7 @@ function pruneSpool(retentionDays, now = Date.now()) {
     return 0;
   }
   try {
-    writeFileSync8(path, kept.length > 0 ? `${kept.join(`
+    writeFileSync5(path, kept.length > 0 ? `${kept.join(`
 `)}
 ` : "", "utf8");
   } catch {
@@ -3788,20 +2915,20 @@ function pruneSpool(retentionDays, now = Date.now()) {
 }
 function readSignalEvents(root, file, limit = 200) {
   try {
-    return readTail(join14(projectStateDir(root), file), limit);
+    return readTail(join11(projectStateDir(root), file), limit);
   } catch {
     return [];
   }
 }
 function rollupPath(root, sessionKey) {
-  return join14(projectStateDir(root), "sessions", `${sanitizeSegment(sessionKey)}.json`);
+  return join11(projectStateDir(root), "sessions", `${sanitizeSegment(sessionKey)}.json`);
 }
 function readJson4(path) {
-  if (!existsSync13(path)) {
+  if (!existsSync10(path)) {
     return null;
   }
   try {
-    return JSON.parse(readFileSync15(path, "utf8"));
+    return JSON.parse(readFileSync12(path, "utf8"));
   } catch {
     return null;
   }
@@ -3839,13 +2966,13 @@ function loadRollup(root, sessionKey, provider) {
   return readJson4(rollupPath(root, sessionKey)) ?? newRollup(sessionKey, provider);
 }
 function saveRollup(root, rollup) {
-  const dir = join14(projectStateDir(root), "sessions");
+  const dir = join11(projectStateDir(root), "sessions");
   if (!safeMkdir(dir)) {
     return false;
   }
   rollup.updated_at = new Date().toISOString();
   try {
-    writeFileSync8(rollupPath(root, rollup.session_id), `${JSON.stringify(rollup, null, 2)}
+    writeFileSync5(rollupPath(root, rollup.session_id), `${JSON.stringify(rollup, null, 2)}
 `, "utf8");
     return true;
   } catch {
@@ -3856,8 +2983,8 @@ function getRollup(root, sessionKey) {
   return readJson4(rollupPath(root, sessionKey));
 }
 function pruneObs(root, retentionDays) {
-  const dir = join14(projectStateDir(root), "sessions");
-  if (!existsSync13(dir)) {
+  const dir = join11(projectStateDir(root), "sessions");
+  if (!existsSync10(dir)) {
     return;
   }
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
@@ -3868,7 +2995,7 @@ function pruneObs(root, retentionDays) {
     return;
   }
   for (const name of names) {
-    const full = join14(dir, name);
+    const full = join11(dir, name);
     const data = readJson4(full);
     if (data && Date.parse(data.updated_at) < cutoff) {
       try {
@@ -4258,8 +3385,8 @@ function detectDeviations(text) {
 }
 
 // src/core/policy/policy.loader.ts
-import { existsSync as existsSync15, readFileSync as readFileSync17 } from "node:fs";
-import { join as join16 } from "node:path";
+import { existsSync as existsSync12, readFileSync as readFileSync14 } from "node:fs";
+import { join as join13 } from "node:path";
 
 // src/core/policy/policy.defaults.ts
 var DEFAULT_LESSONS_POLICY = {
@@ -4354,20 +3481,20 @@ var DEFAULTS = {
 };
 
 // src/core/policy/policy.posture.ts
-import { existsSync as existsSync14, readFileSync as readFileSync16 } from "node:fs";
-import { join as join15 } from "node:path";
+import { existsSync as existsSync11, readFileSync as readFileSync13 } from "node:fs";
+import { join as join12 } from "node:path";
 var OPERATOR_MODES = ["paired", "solo", "focus"];
 var DEFAULT_POSTURE = "solo";
 function isOperatorMode(value) {
   return typeof value === "string" && OPERATOR_MODES.includes(value);
 }
 function readModeFile(root) {
-  const path = join15(projectStateDir(root), "harness-mode");
-  if (!existsSync14(path)) {
+  const path = join12(projectStateDir(root), "harness-mode");
+  if (!existsSync11(path)) {
     return null;
   }
   try {
-    return readFileSync16(path, "utf8").trim().toLowerCase();
+    return readFileSync13(path, "utf8").trim().toLowerCase();
   } catch {
     return null;
   }
@@ -4378,7 +3505,7 @@ function resolvePosture(root, configured) {
     return { mode: fromFile, origin: "file" };
   }
   for (const mode of ["focus", "paired"]) {
-    if (existsSync14(join15(flagsDir(root), mode))) {
+    if (existsSync11(join12(flagsDir(root), mode))) {
       return { mode, origin: "flag" };
     }
   }
@@ -4393,11 +3520,11 @@ function resolvePosture(root, configured) {
 
 // src/core/policy/policy.loader.ts
 function readJsonFile(path) {
-  if (!existsSync15(path)) {
+  if (!existsSync12(path)) {
     return null;
   }
   try {
-    return JSON.parse(readFileSync17(path, "utf8"));
+    return JSON.parse(readFileSync14(path, "utf8"));
   } catch {
     return null;
   }
@@ -4430,11 +3557,11 @@ function deepMerge(base, patch) {
   };
 }
 function flagExists(root, flagName) {
-  return existsSync15(join16(flagsDir(root), flagName));
+  return existsSync12(join13(flagsDir(root), flagName));
 }
 function readConfigPair(root) {
   return {
-    fromUser: readJsonFile(join16(runtimeHome(), "config.json")) ?? {},
+    fromUser: readJsonFile(join13(runtimeHome(), "config.json")) ?? {},
     fromProject: readJsonFile(projectConfigPath(root)) ?? {}
   };
 }
@@ -4459,10 +3586,10 @@ function isUnderCodePaths(relativePath, codePaths) {
 }
 
 // src/core/ship/ship.ledger.ts
-import { existsSync as existsSync16, readdirSync as readdirSync2, readFileSync as readFileSync18, statSync as statSync3 } from "node:fs";
-import { join as join17 } from "node:path";
+import { existsSync as existsSync13, readdirSync as readdirSync2, readFileSync as readFileSync15, statSync as statSync3 } from "node:fs";
+import { join as join14 } from "node:path";
 function shipLedgerPath(root) {
-  return join17(projectStateDir(root), "ship-ledger.jsonl");
+  return join14(projectStateDir(root), "ship-ledger.jsonl");
 }
 function appendShipLedger(root, row) {
   const full = { ...row, ts: row.ts ?? new Date().toISOString() };
@@ -4472,14 +3599,14 @@ function readShipLedger(root) {
   return readTail(shipLedgerPath(root), Number.MAX_SAFE_INTEGER);
 }
 function hasRecentEvidence(evidenceDir, maxAgeHours, notBeforeMs) {
-  if (!existsSync16(evidenceDir)) {
+  if (!existsSync13(evidenceDir)) {
     return false;
   }
   const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
   const now = Date.now();
   for (const entry of readdirSync2(evidenceDir)) {
-    const verdictPath = join17(evidenceDir, entry, "90-verdict.txt");
-    if (!existsSync16(verdictPath)) {
+    const verdictPath = join14(evidenceDir, entry, "90-verdict.txt");
+    if (!existsSync13(verdictPath)) {
       continue;
     }
     try {
@@ -4490,7 +3617,7 @@ function hasRecentEvidence(evidenceDir, maxAgeHours, notBeforeMs) {
       if (now - writtenAt > maxAgeMs) {
         continue;
       }
-      if (/\bPASS\b/i.test(readFileSync18(verdictPath, "utf8"))) {
+      if (/\bPASS\b/i.test(readFileSync15(verdictPath, "utf8"))) {
         return true;
       }
     } catch {}
@@ -4501,7 +3628,7 @@ function newestChangeMs(root, relativePaths) {
   let newest;
   for (const relative3 of relativePaths) {
     try {
-      const at = statSync3(join17(root, relative3)).mtimeMs;
+      const at = statSync3(join14(root, relative3)).mtimeMs;
       if (newest === undefined || at > newest) {
         newest = at;
       }
@@ -4691,18 +3818,18 @@ function guardPolicySurface(args) {
 
 // src/core/policy/policy.integrity.ts
 import { createHash as createHash7 } from "node:crypto";
-import { existsSync as existsSync17, mkdirSync as mkdirSync10, readdirSync as readdirSync3, readFileSync as readFileSync19, writeFileSync as writeFileSync9 } from "node:fs";
-import { join as join18 } from "node:path";
+import { existsSync as existsSync14, mkdirSync as mkdirSync7, readdirSync as readdirSync3, readFileSync as readFileSync16, writeFileSync as writeFileSync6 } from "node:fs";
+import { join as join15 } from "node:path";
 var ABSENT = "absent";
 var SCHEMA = "harness.policy-baseline.v1";
 var MODE_FILE = "harness-mode";
 var FLAG_FILES = ["grind-on", "skip-verify", "focus", "paired"];
 function hashOf(path) {
-  if (!existsSync17(path)) {
+  if (!existsSync14(path)) {
     return ABSENT;
   }
   try {
-    return createHash7("sha256").update(readFileSync19(path)).digest("hex");
+    return createHash7("sha256").update(readFileSync16(path)).digest("hex");
   } catch {
     return "unreadable";
   }
@@ -4710,29 +3837,29 @@ function hashOf(path) {
 function policySourceFingerprint(root) {
   const paths = [
     projectConfigPath(root),
-    join18(runtimeHome(), "config.json"),
-    join18(projectStateDir(root), MODE_FILE),
-    ...FLAG_FILES.map((flag) => join18(flagsDir(root), flag))
+    join15(runtimeHome(), "config.json"),
+    join15(projectStateDir(root), MODE_FILE),
+    ...FLAG_FILES.map((flag) => join15(flagsDir(root), flag))
   ];
   return paths.map((path) => ({ path, hash: hashOf(path) }));
 }
 function baselinePath(root, sessionKey) {
-  return join18(policyBaselineDir(root), `${sanitizeSegment(sessionKey)}.json`);
+  return join15(policyBaselineDir(root), `${sanitizeSegment(sessionKey)}.json`);
 }
 function recordPolicyBaseline(root, sessionKey) {
   try {
-    mkdirSync10(policyBaselineDir(root), { recursive: true });
-    writeFileSync9(baselinePath(root, sessionKey), `${JSON.stringify({ schema: SCHEMA, sources: policySourceFingerprint(root) }, null, 2)}
+    mkdirSync7(policyBaselineDir(root), { recursive: true });
+    writeFileSync6(baselinePath(root, sessionKey), `${JSON.stringify({ schema: SCHEMA, sources: policySourceFingerprint(root) }, null, 2)}
 `, "utf8");
   } catch {}
 }
 function readBaseline(root, sessionKey) {
   const path = baselinePath(root, sessionKey);
-  if (!existsSync17(path)) {
+  if (!existsSync14(path)) {
     return null;
   }
   try {
-    const parsed = JSON.parse(readFileSync19(path, "utf8"));
+    const parsed = JSON.parse(readFileSync16(path, "utf8"));
     return Array.isArray(parsed.sources) ? parsed.sources : null;
   } catch {
     return null;
@@ -4751,7 +3878,7 @@ function divergedPaths(root, sessionKey) {
 }
 function allDivergedPaths(root) {
   const dir = policyBaselineDir(root);
-  if (!existsSync17(dir)) {
+  if (!existsSync14(dir)) {
     return [];
   }
   const found = new Set;
@@ -4777,7 +3904,7 @@ function acceptPolicySources(root, paths) {
     return { kind: "not-a-source", paths: unknown, sources: current.map((source) => source.path) };
   }
   const dir = policyBaselineDir(root);
-  if (!existsSync17(dir) || paths.length === 0) {
+  if (!existsSync14(dir) || paths.length === 0) {
     return { kind: "nothing-to-accept" };
   }
   for (const entry of readdirSync3(dir)) {
@@ -4791,7 +3918,7 @@ function acceptPolicySources(root, paths) {
     }
     const updated = baseline.map((source) => paths.includes(source.path) ? { path: source.path, hash: known.get(source.path) } : source);
     try {
-      writeFileSync9(join18(dir, entry), `${JSON.stringify({ schema: SCHEMA, sources: updated }, null, 2)}
+      writeFileSync6(join15(dir, entry), `${JSON.stringify({ schema: SCHEMA, sources: updated }, null, 2)}
 `, "utf8");
     } catch {}
   }
@@ -4824,7 +3951,7 @@ function checkPolicyBaseline(root, sessionKey) {
 }
 function refreshPolicyBaselines(root) {
   const dir = policyBaselineDir(root);
-  if (!existsSync17(dir)) {
+  if (!existsSync14(dir)) {
     return;
   }
   const sources = policySourceFingerprint(root);
@@ -4833,7 +3960,7 @@ function refreshPolicyBaselines(root) {
       continue;
     }
     try {
-      writeFileSync9(join18(dir, entry), `${JSON.stringify({ schema: SCHEMA, sources }, null, 2)}
+      writeFileSync6(join15(dir, entry), `${JSON.stringify({ schema: SCHEMA, sources }, null, 2)}
 `, "utf8");
     } catch {}
   }
@@ -4920,29 +4047,29 @@ function forProvider(scoped, provider) {
 }
 
 // src/core/presence/presence.store.ts
-import { existsSync as existsSync18, mkdirSync as mkdirSync11, readdirSync as readdirSync4, readFileSync as readFileSync20, rmSync as rmSync2, writeFileSync as writeFileSync10 } from "node:fs";
-import { join as join19 } from "node:path";
+import { existsSync as existsSync15, mkdirSync as mkdirSync8, readdirSync as readdirSync4, readFileSync as readFileSync17, rmSync as rmSync2, writeFileSync as writeFileSync7 } from "node:fs";
+import { join as join16 } from "node:path";
 function presenceSessionKey(provider, session) {
   return `${provider}-${session}`;
 }
 function presencePath(root, provider, session) {
-  return join19(presenceDir(root), `${sanitizeSegment(presenceSessionKey(provider, session))}.json`);
+  return join16(presenceDir(root), `${sanitizeSegment(presenceSessionKey(provider, session))}.json`);
 }
 function readPresenceRecord(root, provider, session) {
   const path = presencePath(root, provider, session);
-  if (!existsSync18(path)) {
+  if (!existsSync15(path)) {
     return null;
   }
   try {
-    return JSON.parse(readFileSync20(path, "utf8"));
+    return JSON.parse(readFileSync17(path, "utf8"));
   } catch {
     return null;
   }
 }
 function writePresenceRecord(root, record) {
   try {
-    mkdirSync11(presenceDir(root), { recursive: true });
-    writeFileSync10(presencePath(root, record.provider, record.session), `${JSON.stringify(record, null, 2)}
+    mkdirSync8(presenceDir(root), { recursive: true });
+    writeFileSync7(presencePath(root, record.provider, record.session), `${JSON.stringify(record, null, 2)}
 `, "utf8");
   } catch {}
 }
@@ -4953,7 +4080,7 @@ function deletePresenceRecord(root, provider, session) {
 }
 function listPresenceRecords(root) {
   const dir = presenceDir(root);
-  if (!existsSync18(dir)) {
+  if (!existsSync15(dir)) {
     return [];
   }
   const records = [];
@@ -4962,7 +4089,7 @@ function listPresenceRecords(root) {
       continue;
     }
     try {
-      records.push(JSON.parse(readFileSync20(join19(dir, entry), "utf8")));
+      records.push(JSON.parse(readFileSync17(join16(dir, entry), "utf8")));
     } catch {}
   }
   return records;
@@ -5046,8 +4173,8 @@ function release(root, provider, session) {
 }
 
 // src/core/release/release.decisions.ts
-import { existsSync as existsSync19, readdirSync as readdirSync5, readFileSync as readFileSync21 } from "node:fs";
-import { join as join20 } from "node:path";
+import { existsSync as existsSync16, readdirSync as readdirSync5, readFileSync as readFileSync18 } from "node:fs";
+import { join as join17 } from "node:path";
 function frontmatterField(text, field) {
   const match = new RegExp(`^${field}:\\s*"?(.+?)"?\\s*$`, "m").exec(text);
   const value = match?.[1]?.trim();
@@ -5057,16 +4184,16 @@ function frontmatterField(text, field) {
   return value.replace(/\\(["'\\])/g, "$1");
 }
 function decisionsDir(repoRoot) {
-  return join20(repoRoot, "docs", "decisions");
+  return join17(repoRoot, "docs", "decisions");
 }
 function readDecision(repoRoot, file) {
-  const path = join20(decisionsDir(repoRoot), file);
-  if (!existsSync19(path)) {
+  const path = join17(decisionsDir(repoRoot), file);
+  if (!existsSync16(path)) {
     return null;
   }
   let text;
   try {
-    text = readFileSync21(path, "utf8");
+    text = readFileSync18(path, "utf8");
   } catch {
     return null;
   }
@@ -5083,7 +4210,7 @@ function readDecisions(repoRoot, files) {
 }
 function allDecisionFiles(repoRoot) {
   const dir = decisionsDir(repoRoot);
-  if (!existsSync19(dir)) {
+  if (!existsSync16(dir)) {
     return [];
   }
   try {
@@ -5123,18 +4250,18 @@ function formatDecisionDigest(decisions) {
 }
 
 // src/core/release/release.seen.ts
-import { existsSync as existsSync20, readFileSync as readFileSync22 } from "node:fs";
-import { join as join21 } from "node:path";
+import { existsSync as existsSync17, readFileSync as readFileSync19 } from "node:fs";
+import { join as join18 } from "node:path";
 function seenPath(projectDir) {
-  return join21(projectStateDir(projectDir), "release-seen.json");
+  return join18(projectStateDir(projectDir), "release-seen.json");
 }
 function readReleaseSeen(projectDir) {
   const path = seenPath(projectDir);
-  if (!existsSync20(path)) {
+  if (!existsSync17(path)) {
     return null;
   }
   try {
-    const parsed = JSON.parse(readFileSync22(path, "utf8"));
+    const parsed = JSON.parse(readFileSync19(path, "utf8"));
     return typeof parsed?.revision === "string" && parsed.revision !== "" ? parsed : null;
   } catch {
     return null;
@@ -5148,26 +4275,26 @@ async function writeReleaseSeen(projectDir, revision) {
 }
 
 // src/core/shell-policy/shell-policy.stall.ts
-import { existsSync as existsSync21, mkdirSync as mkdirSync12, readFileSync as readFileSync23, writeFileSync as writeFileSync11 } from "node:fs";
-import { join as join22 } from "node:path";
+import { existsSync as existsSync18, mkdirSync as mkdirSync9, readFileSync as readFileSync20, writeFileSync as writeFileSync8 } from "node:fs";
+import { join as join19 } from "node:path";
 function storePath(root) {
-  return join22(projectStateDir(root), "shell-stall.json");
+  return join19(projectStateDir(root), "shell-stall.json");
 }
 function readStore2(root) {
   const path = storePath(root);
-  if (!existsSync21(path)) {
+  if (!existsSync18(path)) {
     return {};
   }
   try {
-    return JSON.parse(readFileSync23(path, "utf8"));
+    return JSON.parse(readFileSync20(path, "utf8"));
   } catch {
     return {};
   }
 }
 function writeStore(root, store) {
   try {
-    mkdirSync12(projectStateDir(root), { recursive: true });
-    writeFileSync11(storePath(root), `${JSON.stringify(store, null, 2)}
+    mkdirSync9(projectStateDir(root), { recursive: true });
+    writeFileSync8(storePath(root), `${JSON.stringify(store, null, 2)}
 `, "utf8");
   } catch {}
 }
@@ -5334,20 +4461,20 @@ function evaluateShellCommand(args) {
 }
 
 // src/core/stagnation/stagnation.resolution.ts
-import { existsSync as existsSync22, mkdirSync as mkdirSync13, readFileSync as readFileSync24, writeFileSync as writeFileSync12 } from "node:fs";
-import { join as join23 } from "node:path";
+import { existsSync as existsSync19, mkdirSync as mkdirSync10, readFileSync as readFileSync21, writeFileSync as writeFileSync9 } from "node:fs";
+import { join as join20 } from "node:path";
 var MAX_RESOLUTIONS = 200;
 var MAX_FILES_PER_RESOLUTION = 8;
 function storePath2(root) {
-  return join23(projectStateDir(root), "fingerprint-resolutions.json");
+  return join20(projectStateDir(root), "fingerprint-resolutions.json");
 }
 function readResolutions(root) {
   const path = storePath2(root);
-  if (!existsSync22(path)) {
+  if (!existsSync19(path)) {
     return {};
   }
   try {
-    const parsed = JSON.parse(readFileSync24(path, "utf8"));
+    const parsed = JSON.parse(readFileSync21(path, "utf8"));
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return {};
@@ -5369,8 +4496,8 @@ function recordResolution(root, fingerprint, resolution) {
   };
   const pruned = prune(store);
   try {
-    mkdirSync13(projectStateDir(root), { recursive: true });
-    writeFileSync12(storePath2(root), `${JSON.stringify(pruned, null, 2)}
+    mkdirSync10(projectStateDir(root), { recursive: true });
+    writeFileSync9(storePath2(root), `${JSON.stringify(pruned, null, 2)}
 `, "utf8");
   } catch {}
   return pruned;
@@ -5396,26 +4523,26 @@ function computeFingerprint(parts) {
 }
 
 // src/core/stagnation/stagnation.store.ts
-import { existsSync as existsSync23, mkdirSync as mkdirSync14, readFileSync as readFileSync25, writeFileSync as writeFileSync13 } from "node:fs";
-import { join as join24 } from "node:path";
+import { existsSync as existsSync20, mkdirSync as mkdirSync11, readFileSync as readFileSync22, writeFileSync as writeFileSync10 } from "node:fs";
+import { join as join21 } from "node:path";
 function storePath3(root) {
-  return join24(projectStateDir(root), "fingerprint.json");
+  return join21(projectStateDir(root), "fingerprint.json");
 }
 function readStore3(root) {
   const path = storePath3(root);
-  if (!existsSync23(path)) {
+  if (!existsSync20(path)) {
     return {};
   }
   try {
-    return JSON.parse(readFileSync25(path, "utf8"));
+    return JSON.parse(readFileSync22(path, "utf8"));
   } catch {
     return {};
   }
 }
 function writeStore2(root, store) {
   try {
-    mkdirSync14(projectStateDir(root), { recursive: true });
-    writeFileSync13(storePath3(root), `${JSON.stringify(store, null, 2)}
+    mkdirSync11(projectStateDir(root), { recursive: true });
+    writeFileSync10(storePath3(root), `${JSON.stringify(store, null, 2)}
 `, "utf8");
   } catch {}
 }
@@ -5437,19 +4564,19 @@ function clearFingerprint(root, sessionKey) {
 }
 
 // src/core/subagent-policy/subagent-policy.parent-model.ts
-import { existsSync as existsSync24, mkdirSync as mkdirSync15, readFileSync as readFileSync26, writeFileSync as writeFileSync14 } from "node:fs";
-import { join as join25 } from "node:path";
+import { existsSync as existsSync21, mkdirSync as mkdirSync12, readFileSync as readFileSync23, writeFileSync as writeFileSync11 } from "node:fs";
+import { join as join22 } from "node:path";
 var PARENT_MODEL_SCHEMA = "harness.parent-model.v1";
 function parentModelPath(root) {
-  return join25(projectStateDir(root), "parent-model.json");
+  return join22(projectStateDir(root), "parent-model.json");
 }
 function readFile(root) {
   const path = parentModelPath(root);
-  if (!existsSync24(path)) {
+  if (!existsSync21(path)) {
     return { schema: PARENT_MODEL_SCHEMA, bySession: {} };
   }
   try {
-    const parsed = JSON.parse(readFileSync26(path, "utf8"));
+    const parsed = JSON.parse(readFileSync23(path, "utf8"));
     if (parsed?.schema === PARENT_MODEL_SCHEMA && parsed.bySession) {
       return parsed;
     }
@@ -5458,8 +4585,8 @@ function readFile(root) {
 }
 function writeFile(root, file) {
   try {
-    mkdirSync15(projectStateDir(root), { recursive: true });
-    writeFileSync14(parentModelPath(root), `${JSON.stringify(file, null, 2)}
+    mkdirSync12(projectStateDir(root), { recursive: true });
+    writeFileSync11(parentModelPath(root), `${JSON.stringify(file, null, 2)}
 `, "utf8");
   } catch {}
 }
@@ -5597,6 +4724,18 @@ function shouldDenyParentFast(opts) {
     return true;
   }
   return computeFastFlag(snap.model, snap.model_params, opts.patterns);
+}
+
+// src/contracts/effort.ts
+var EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
+function effortOrdinal(level) {
+  return EFFORT_LEVELS.indexOf(level);
+}
+function compareEffort(a, b) {
+  return effortOrdinal(a) - effortOrdinal(b);
+}
+function isEffortLevel(value) {
+  return typeof value === "string" && EFFORT_LEVELS.includes(value);
 }
 
 // src/core/subagent-policy/subagent-policy.service.ts
@@ -5873,26 +5012,26 @@ function formatAutopilotBlock(plan) {
 }
 
 // src/core/turn/turn.loop-counter.ts
-import { existsSync as existsSync25, mkdirSync as mkdirSync16, readFileSync as readFileSync27, writeFileSync as writeFileSync15 } from "node:fs";
-import { join as join26 } from "node:path";
+import { existsSync as existsSync22, mkdirSync as mkdirSync13, readFileSync as readFileSync24, writeFileSync as writeFileSync12 } from "node:fs";
+import { join as join23 } from "node:path";
 function loopPath(root, sessionKey) {
-  return join26(loopsDir(root), `${sanitizeSegment(sessionKey)}.json`);
+  return join23(loopsDir(root), `${sanitizeSegment(sessionKey)}.json`);
 }
 function readLoopState(root, sessionKey) {
   const path = loopPath(root, sessionKey);
-  if (!existsSync25(path)) {
+  if (!existsSync22(path)) {
     return null;
   }
   try {
-    return JSON.parse(readFileSync27(path, "utf8"));
+    return JSON.parse(readFileSync24(path, "utf8"));
   } catch {
     return null;
   }
 }
 function writeLoopState(root, state) {
   try {
-    mkdirSync16(loopsDir(root), { recursive: true });
-    writeFileSync15(loopPath(root, state.session_key), `${JSON.stringify(state, null, 2)}
+    mkdirSync13(loopsDir(root), { recursive: true });
+    writeFileSync12(loopPath(root, state.session_key), `${JSON.stringify(state, null, 2)}
 `, "utf8");
   } catch {}
 }
@@ -5917,16 +5056,16 @@ function effectiveLoopCount(event, capabilities) {
   return currentLoopCount(event.projectDir, event.sessionKey);
 }
 function bootStampPath(root, sessionKey) {
-  return join26(bootDir(root), sanitizeSegment(sessionKey));
+  return join23(bootDir(root), sanitizeSegment(sessionKey));
 }
 function markBooted(root, sessionKey) {
   const path = bootStampPath(root, sessionKey);
-  if (existsSync25(path)) {
+  if (existsSync22(path)) {
     return { alreadyBooted: true };
   }
   try {
-    mkdirSync16(bootDir(root), { recursive: true });
-    writeFileSync15(path, new Date().toISOString(), "utf8");
+    mkdirSync13(bootDir(root), { recursive: true });
+    writeFileSync12(path, new Date().toISOString(), "utf8");
   } catch {}
   return { alreadyBooted: false };
 }
@@ -5971,21 +5110,21 @@ function detectUntrustedRead(input) {
 }
 
 // src/core/untrusted/untrusted.store.ts
-import { existsSync as existsSync26, mkdirSync as mkdirSync17, rmSync as rmSync3, writeFileSync as writeFileSync16 } from "node:fs";
-import { join as join27 } from "node:path";
+import { existsSync as existsSync23, mkdirSync as mkdirSync14, rmSync as rmSync3, writeFileSync as writeFileSync13 } from "node:fs";
+import { join as join24 } from "node:path";
 function markerDir(root) {
-  return join27(projectStateDir(root), "untrusted");
+  return join24(projectStateDir(root), "untrusted");
 }
 function markerPath(root, sessionKey) {
-  return join27(markerDir(root), `${sanitizeSegment(sessionKey)}.marker`);
+  return join24(markerDir(root), `${sanitizeSegment(sessionKey)}.marker`);
 }
 function wasFramingInjected(root, sessionKey) {
-  return existsSync26(markerPath(root, sessionKey));
+  return existsSync23(markerPath(root, sessionKey));
 }
 function markFramingInjected(root, sessionKey) {
   try {
-    mkdirSync17(markerDir(root), { recursive: true });
-    writeFileSync16(markerPath(root, sessionKey), new Date().toISOString());
+    mkdirSync14(markerDir(root), { recursive: true });
+    writeFileSync13(markerPath(root, sessionKey), new Date().toISOString());
   } catch {}
 }
 function clearFramingMarker(root, sessionKey) {
@@ -6285,6 +5424,912 @@ function writeStdout(text) {
   process.stdout.write(text);
 }
 
+// bin/tlc-cli.ts
+function classifyRuntimePath(dest, probe) {
+  if (probe.isSymlink(dest)) {
+    return "linked";
+  }
+  if (!probe.exists(dest)) {
+    return "absent";
+  }
+  return probe.exists(join25(dest, ".git")) ? "managed" : "unmanaged";
+}
+function runtimePathKind(dest) {
+  return classifyRuntimePath(dest, {
+    isSymlink: (path) => {
+      try {
+        if (lstatSync(path).isSymbolicLink()) {
+          return true;
+        }
+      } catch {
+        return false;
+      }
+      try {
+        return realpathSync(path) !== path;
+      } catch {
+        return false;
+      }
+    },
+    exists: existsSync24
+  });
+}
+if (false) {}
+
+// bin/tlc-exec.mjs
+import { existsSync as existsSync25, mkdirSync as mkdirSync16, readFileSync as readFileSync26, realpathSync as realpathSync2, writeFileSync as writeFileSync15 } from "node:fs";
+import { delimiter as delimiter2, dirname as dirname6, join as join26 } from "node:path";
+function bunExecutableName(platform = process.platform) {
+  return platform === "win32" ? "bun.exe" : "bun";
+}
+function findBunOnPath(env = process.env, platform = process.platform) {
+  const pathValue = env.PATH ?? "";
+  const bunName = bunExecutableName(platform);
+  for (const dir of pathValue.split(delimiter2)) {
+    if (!dir) {
+      continue;
+    }
+    const candidate = join26(dir, bunName);
+    if (existsSync25(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+function runtimeCachePath(harnessHome) {
+  return join26(harnessHome, "state", "runtime-cache.json");
+}
+function writeRuntimeCache(harnessHome, bunPath) {
+  const cachePath = runtimeCachePath(harnessHome);
+  mkdirSync16(dirname6(cachePath), { recursive: true });
+  const record = { bunPath, checkedAt: new Date().toISOString() };
+  writeFileSync15(cachePath, `${JSON.stringify(record)}
+`);
+  return record;
+}
+if (false) {}
+
+// bin/write-user-hooks.mjs
+import { existsSync as existsSync27, mkdirSync as mkdirSync18, readFileSync as readFileSync28, writeFileSync as writeFileSync17 } from "node:fs";
+
+// src/providers/claude/claude.wiring.ts
+import { existsSync as existsSync26, mkdirSync as mkdirSync17, readFileSync as readFileSync27, realpathSync as realpathSync3, writeFileSync as writeFileSync16 } from "node:fs";
+import { dirname as dirname7, join as join27 } from "node:path";
+var ENTRY_SPECS = [
+  { hookEvent: "SessionStart", handler: "session-start", timeoutSeconds: 10 },
+  { hookEvent: "SessionEnd", handler: "session-end", timeoutSeconds: 10 },
+  { hookEvent: "UserPromptSubmit", handler: "prompt-submit", timeoutSeconds: 5 },
+  { hookEvent: "PreToolUse", handler: "tool-before", timeoutSeconds: 10, failClosed: true },
+  { hookEvent: "PostToolUse", handler: "tool-after", timeoutSeconds: 10 },
+  { hookEvent: "PostToolUseFailure", handler: "tool-failure", timeoutSeconds: 5 },
+  { hookEvent: "SubagentStart", handler: "subagent-start", timeoutSeconds: 5, failClosed: true },
+  { hookEvent: "SubagentStop", handler: "subagent-stop", timeoutSeconds: 5 },
+  { hookEvent: "Stop", handler: "stop", timeoutSeconds: 120, loopLimit: 5 },
+  { hookEvent: "PreCompact", handler: "compact-before", timeoutSeconds: 5 },
+  { hookEvent: "MessageDisplay", handler: "response-after", timeoutSeconds: 5 }
+];
+function claudeSettingsPath() {
+  return join27(claudeConfigDir(), "settings.json");
+}
+function claudeWiring(runtime) {
+  const entries = ENTRY_SPECS.map((spec) => ({
+    hookEvent: spec.hookEvent,
+    handler: spec.handler,
+    command: "node",
+    args: [runtime.launcherPath, spec.handler],
+    timeoutSeconds: spec.timeoutSeconds,
+    ...spec.failClosed !== undefined ? { failClosed: spec.failClosed } : {},
+    ...spec.loopLimit !== undefined ? { loopLimit: spec.loopLimit } : {}
+  }));
+  return {
+    target: claudeSettingsPath(),
+    strategy: "merge",
+    entries
+  };
+}
+function isPlainRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function isHooksRecord(value) {
+  return isPlainRecord(value);
+}
+function deepEqual(a, b) {
+  if (a === b) {
+    return true;
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+      return false;
+    }
+    return a.every((item, index) => deepEqual(item, b[index]));
+  }
+  if (isPlainRecord(a) && isPlainRecord(b)) {
+    const aKeys = Object.keys(a);
+    const bKeys = Object.keys(b);
+    if (aKeys.length !== bKeys.length) {
+      return false;
+    }
+    return aKeys.every((key) => bKeys.includes(key) && deepEqual(a[key], b[key]));
+  }
+  return false;
+}
+function desiredHooksFor(entries) {
+  const hooks = {};
+  for (const entry of entries) {
+    const group = {
+      hooks: [{ type: "command", command: entry.command, args: entry.args }]
+    };
+    hooks[entry.hookEvent] = [...hooks[entry.hookEvent] ?? [], group];
+  }
+  return hooks;
+}
+var LAUNCHER_MARKER = "tlc-exec.mjs";
+function isHarnessGroup(group) {
+  return JSON.stringify(group ?? null).includes(LAUNCHER_MARKER);
+}
+function canonicalLauncherPath(path, resolve5 = realpathSync3) {
+  try {
+    return resolve5(path);
+  } catch {
+    return path;
+  }
+}
+function canonicalizeGroups(groups, resolve5) {
+  return JSON.parse(JSON.stringify(groups ?? null, (_key, value) => typeof value === "string" && value.includes(LAUNCHER_MARKER) ? canonicalLauncherPath(value, resolve5) : value));
+}
+function mergeClaudeSettings(existingText, entries) {
+  const desired = desiredHooksFor(entries);
+  let settings = {};
+  if (existingText !== null && existingText.trim() !== "") {
+    let parsed;
+    try {
+      parsed = JSON.parse(existingText);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { ok: false, error: message, block: JSON.stringify({ hooks: desired }, null, 2) };
+    }
+    if (!isPlainRecord(parsed)) {
+      return {
+        ok: false,
+        error: "settings.json root is not a JSON object",
+        block: JSON.stringify({ hooks: desired }, null, 2)
+      };
+    }
+    settings = parsed;
+  }
+  const currentHooks = isHooksRecord(settings.hooks) ? settings.hooks : {};
+  const mergedHooks = { ...currentHooks };
+  let changed = false;
+  for (const [hookEvent, groups] of Object.entries(desired)) {
+    const existingGroups = mergedHooks[hookEvent] ?? [];
+    const foreign = existingGroups.filter((group) => !isHarnessGroup(group));
+    const nextGroups = [...foreign, ...groups];
+    if (!deepEqual(canonicalizeGroups(existingGroups), canonicalizeGroups(nextGroups))) {
+      changed = true;
+    }
+    mergedHooks[hookEvent] = nextGroups;
+  }
+  const mergedSettings = { ...settings, hooks: mergedHooks };
+  return { ok: true, settingsText: JSON.stringify(mergedSettings, null, 2), changed };
+}
+// src/providers/provider.degrade.ts
+var NO_HUMAN_MODES = new Set(["bypassPermissions", "dontAsk"]);
+// src/providers/claude/claude.capabilities.ts
+function claudeCapabilities() {
+  return {
+    enforcesHooks: true,
+    askSupportedOn: ["tool.before", "shell.before", "mcp.before", "read.before"],
+    sessionEnv: false,
+    nativeLoopCounter: false,
+    dedicatedShellEvent: false,
+    toolInputRewrite: true,
+    toolOutputRewrite: true,
+    contextAtToolBefore: true,
+    contextAtToolAfter: true,
+    usageInPayload: false,
+    effortSignal: true,
+    thoughtEvent: false
+  };
+}
+
+// src/providers/claude/claude.detect.ts
+var PASCAL_CASE_EVENT_NAME = /^[A-Z][a-zA-Z0-9]*$/;
+function detectClaude(raw) {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    return false;
+  }
+  const value = raw;
+  const eventName = value.hook_event_name;
+  if (typeof eventName !== "string" || !PASCAL_CASE_EVENT_NAME.test(eventName)) {
+    return false;
+  }
+  return typeof value.cwd === "string" || typeof value.transcript_path === "string";
+}
+
+// src/providers/claude/claude.inbound.ts
+var EVENT_KIND_BY_HOOK = {
+  SessionStart: "session.start",
+  SessionEnd: "session.end",
+  UserPromptSubmit: "prompt.submit",
+  PostToolUseFailure: "tool.failure",
+  SubagentStart: "subagent.start",
+  SubagentStop: "subagent.stop",
+  Stop: "stop",
+  PreCompact: "compact.before",
+  MessageDisplay: "response.after"
+};
+var MCP_TOOL_NAME = /^mcp__/;
+function asString(value) {
+  return typeof value === "string" ? value : undefined;
+}
+function asNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+function asRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value : undefined;
+}
+function asStatus(value) {
+  return value === "completed" || value === "aborted" || value === "error" ? value : undefined;
+}
+function sessionKeyFor(raw) {
+  const seed = asString(raw.session_id) ?? "default";
+  return `claude-${sanitizeSegment(seed)}`;
+}
+function projectDirFor(raw) {
+  const envDir = process.env.CLAUDE_PROJECT_DIR;
+  if (envDir) {
+    return envDir;
+  }
+  const cwd = asString(raw.cwd);
+  if (cwd) {
+    return cwd;
+  }
+  return process.cwd();
+}
+function effortFor(raw) {
+  const effort = asRecord(raw.effort);
+  const level = effort?.level;
+  return isEffortLevel(level) ? level : undefined;
+}
+function preToolUseKind(toolName) {
+  if (toolName === "Bash") {
+    return "shell.before";
+  }
+  if (toolName && MCP_TOOL_NAME.test(toolName)) {
+    return "mcp.before";
+  }
+  if (toolName === "Read") {
+    return "read.before";
+  }
+  return "tool.before";
+}
+function postToolUseKind(toolName) {
+  if (toolName === "Bash") {
+    return "shell.after";
+  }
+  if (toolName && MCP_TOOL_NAME.test(toolName)) {
+    return "mcp.after";
+  }
+  if (toolName === "Edit" || toolName === "Write") {
+    return "edit.after";
+  }
+  return "tool.after";
+}
+function claudeToEvent(raw) {
+  const hookEventName = asString(raw.hook_event_name);
+  if (!hookEventName) {
+    return null;
+  }
+  const toolName = asString(raw.tool_name);
+  const toolInput = asRecord(raw.tool_input);
+  let eventKind;
+  if (hookEventName === "PreToolUse") {
+    eventKind = preToolUseKind(toolName);
+  } else if (hookEventName === "PostToolUse") {
+    eventKind = postToolUseKind(toolName);
+  } else {
+    eventKind = EVENT_KIND_BY_HOOK[hookEventName];
+  }
+  if (!eventKind) {
+    return null;
+  }
+  const event = {
+    provider: "claude",
+    event: eventKind,
+    sessionKey: sessionKeyFor(raw),
+    projectDir: projectDirFor(raw),
+    raw
+  };
+  const permissionMode = asString(raw.permission_mode);
+  if (permissionMode) {
+    event.permissionMode = permissionMode;
+  }
+  const isSpawnEvent = eventKind === "subagent.start" || eventKind === "subagent.stop";
+  const model = isSpawnEvent ? undefined : asString(raw.model);
+  if (model) {
+    event.model = model;
+  }
+  const effort = effortFor(raw);
+  if (effort) {
+    event.effort = effort;
+  }
+  const contextUsagePercent = asNumber(raw.context_usage_percent);
+  if (contextUsagePercent !== undefined) {
+    event.contextUsagePercent = contextUsagePercent;
+  }
+  const transcriptPath = asString(raw.transcript_path);
+  if (transcriptPath) {
+    event.transcriptPath = transcriptPath;
+  }
+  if (!isSpawnEvent) {
+    const callerAgentType = asString(raw.agent_type);
+    if (callerAgentType) {
+      event.subagentType = callerAgentType;
+    }
+  }
+  switch (eventKind) {
+    case "prompt.submit": {
+      const text = asString(raw.prompt);
+      if (text !== undefined) {
+        event.text = text;
+      }
+      break;
+    }
+    case "response.after": {
+      const text = asString(raw.text);
+      if (text !== undefined) {
+        event.text = text;
+      }
+      break;
+    }
+    case "shell.before":
+    case "shell.after": {
+      const command = toolInput ? asString(toolInput.command) : undefined;
+      if (command !== undefined) {
+        event.command = command;
+      }
+      break;
+    }
+    case "mcp.before":
+    case "mcp.after": {
+      if (toolName) {
+        event.toolName = toolName;
+      }
+      if (toolInput) {
+        event.toolInput = toolInput;
+      }
+      break;
+    }
+    case "read.before": {
+      const filePath = toolInput ? asString(toolInput.file_path) : undefined;
+      if (filePath !== undefined) {
+        event.filePath = filePath;
+      }
+      break;
+    }
+    case "edit.after": {
+      if (toolName) {
+        event.toolName = toolName;
+      }
+      const filePath = toolInput ? asString(toolInput.file_path) : undefined;
+      if (filePath !== undefined) {
+        event.filePath = filePath;
+      }
+      break;
+    }
+    case "tool.before":
+    case "tool.after":
+    case "tool.failure": {
+      if (toolName) {
+        event.toolName = toolName;
+      }
+      if (toolInput) {
+        event.toolInput = toolInput;
+      }
+      const filePath = toolInput ? asString(toolInput.file_path) : undefined;
+      if (filePath !== undefined) {
+        event.filePath = filePath;
+      }
+      const spawnSubagentType = toolInput ? asString(toolInput.subagent_type) : undefined;
+      if (spawnSubagentType) {
+        event.spawnSubagentType = spawnSubagentType;
+      }
+      const spawnModel = toolInput ? asString(toolInput.model) : undefined;
+      if (spawnModel) {
+        event.spawnModel = spawnModel;
+      }
+      break;
+    }
+    case "subagent.start":
+    case "subagent.stop": {
+      const spawnSubagentType = asString(raw.agent_type) ?? asString(raw.subagent_type) ?? (toolInput ? asString(toolInput.subagent_type) : undefined);
+      if (spawnSubagentType) {
+        event.spawnSubagentType = spawnSubagentType;
+      }
+      const spawnModel = (toolInput ? asString(toolInput.model) : undefined) ?? asString(raw.model);
+      if (spawnModel) {
+        event.spawnModel = spawnModel;
+      }
+      break;
+    }
+    case "stop": {
+      const status = asStatus(raw.status);
+      if (status) {
+        event.status = status;
+      }
+      break;
+    }
+    default:
+      break;
+  }
+  return event;
+}
+
+// src/providers/claude/claude.outbound.ts
+var HOOK_EVENT_NAME_BY_KIND = {
+  "session.start": "SessionStart",
+  "session.end": "SessionEnd",
+  "prompt.submit": "UserPromptSubmit",
+  "tool.before": "PreToolUse",
+  "tool.after": "PostToolUse",
+  "tool.failure": "PostToolUseFailure",
+  "shell.before": "PreToolUse",
+  "shell.after": "PostToolUse",
+  "mcp.before": "PreToolUse",
+  "mcp.after": "PostToolUse",
+  "read.before": "PreToolUse",
+  "edit.after": "PostToolUse",
+  "subagent.start": "SubagentStart",
+  "subagent.stop": "SubagentStop",
+  stop: "Stop",
+  "compact.before": "PreCompact",
+  "response.after": "MessageDisplay",
+  "thought.after": "MessageDisplay"
+};
+function renderPermission(permissionDecision, hookEventName, reason2) {
+  const hookSpecificOutput = { hookEventName, permissionDecision };
+  if (reason2 !== undefined) {
+    hookSpecificOutput.permissionDecisionReason = reason2;
+  }
+  return JSON.stringify({ hookSpecificOutput });
+}
+function claudeRender(decision, event) {
+  const hookEventName = HOOK_EVENT_NAME_BY_KIND[event.event];
+  switch (decision.kind) {
+    case "abstain":
+      return { stdout: null, exitCode: 0 };
+    case "allow":
+      return { stdout: renderPermission("allow", hookEventName, undefined), exitCode: 0 };
+    case "deny":
+      return { stdout: renderPermission("deny", hookEventName, decision.reason), exitCode: 0 };
+    case "ask":
+      return { stdout: renderPermission("ask", hookEventName, decision.reason), exitCode: 0 };
+    case "context":
+      return {
+        stdout: JSON.stringify({ hookSpecificOutput: { hookEventName, additionalContext: decision.text } }),
+        exitCode: 0
+      };
+    case "continue":
+      return { stdout: JSON.stringify({ decision: "block", reason: decision.text }), exitCode: 0 };
+    case "rewriteInput":
+      return {
+        stdout: JSON.stringify({ hookSpecificOutput: { hookEventName, updatedInput: decision.input } }),
+        exitCode: 0
+      };
+    default: {
+      const exhaustive = decision;
+      throw new Error(`unreachable decision kind: ${JSON.stringify(exhaustive)}`);
+    }
+  }
+}
+
+// src/providers/claude/claude.policy-defaults.ts
+function claudePolicyDefaults() {
+  return {
+    allowedModels: ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5-20251001"],
+    blockedPatterns: [],
+    minEffort: null,
+    untrustedTools: ["WebFetch", "WebSearch"]
+  };
+}
+
+// src/providers/claude/index.ts
+var claudeProvider = {
+  name: "claude",
+  detect: detectClaude,
+  capabilities: claudeCapabilities,
+  policyDefaults: claudePolicyDefaults,
+  toEvent: claudeToEvent,
+  render: claudeRender,
+  wiring: claudeWiring
+};
+
+// src/providers/cursor/cursor.capabilities.ts
+function cursorCapabilities() {
+  return {
+    enforcesHooks: true,
+    askSupportedOn: ["shell.before", "mcp.before"],
+    sessionEnv: true,
+    nativeLoopCounter: true,
+    dedicatedShellEvent: true,
+    toolInputRewrite: true,
+    toolOutputRewrite: true,
+    contextAtToolBefore: false,
+    contextAtToolAfter: true,
+    usageInPayload: true,
+    effortSignal: false,
+    thoughtEvent: true
+  };
+}
+
+// src/providers/cursor/cursor.detect.ts
+var CAMEL_CASE_EVENT_NAME = /^[a-z][a-zA-Z0-9]*$/;
+function detectCursor(raw) {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    return false;
+  }
+  const value = raw;
+  const eventName = value.hook_event_name;
+  if (typeof eventName !== "string" || !CAMEL_CASE_EVENT_NAME.test(eventName)) {
+    return false;
+  }
+  return Array.isArray(value.workspace_roots);
+}
+
+// src/providers/cursor/cursor.inbound.ts
+var EVENT_KIND_BY_HOOK2 = {
+  sessionStart: "session.start",
+  sessionEnd: "session.end",
+  beforeSubmitPrompt: "prompt.submit",
+  preToolUse: "tool.before",
+  postToolUse: "tool.after",
+  postToolUseFailure: "tool.failure",
+  beforeShellExecution: "shell.before",
+  afterShellExecution: "shell.after",
+  beforeMCPExecution: "mcp.before",
+  afterMCPExecution: "mcp.after",
+  beforeReadFile: "read.before",
+  afterFileEdit: "edit.after",
+  subagentStart: "subagent.start",
+  subagentStop: "subagent.stop",
+  stop: "stop",
+  preCompact: "compact.before",
+  afterAgentResponse: "response.after",
+  afterAgentThought: "thought.after"
+};
+function asString2(value) {
+  return typeof value === "string" ? value : undefined;
+}
+function asNumber2(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+function asRecord2(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value : undefined;
+}
+function asStatus2(value) {
+  return value === "completed" || value === "aborted" || value === "error" ? value : undefined;
+}
+function sessionKeyFor2(raw) {
+  const seed = asString2(raw.conversation_id) || asString2(raw.session_id) || "default";
+  return `cursor-${sanitizeSegment(seed)}`;
+}
+function projectDirFor2(raw) {
+  const envDir = process.env.CURSOR_PROJECT_DIR;
+  if (envDir) {
+    return envDir;
+  }
+  const roots = raw.workspace_roots;
+  if (Array.isArray(roots)) {
+    const first = asString2(roots[0]);
+    if (first) {
+      return first;
+    }
+  }
+  return process.cwd();
+}
+function cursorToEvent(raw) {
+  const hookEventName = asString2(raw.hook_event_name);
+  const eventKind = hookEventName ? EVENT_KIND_BY_HOOK2[hookEventName] : undefined;
+  if (!eventKind) {
+    return null;
+  }
+  const event = {
+    provider: "cursor",
+    event: eventKind,
+    sessionKey: sessionKeyFor2(raw),
+    projectDir: projectDirFor2(raw),
+    raw
+  };
+  const model = asString2(raw.model);
+  if (model) {
+    event.model = model;
+  }
+  const contextUsagePercent = asNumber2(raw.context_usage_percent);
+  if (contextUsagePercent !== undefined) {
+    event.contextUsagePercent = contextUsagePercent;
+  }
+  switch (eventKind) {
+    case "prompt.submit": {
+      const text = asString2(raw.prompt);
+      if (text !== undefined) {
+        event.text = text;
+      }
+      break;
+    }
+    case "response.after": {
+      const text = asString2(raw.text);
+      if (text !== undefined) {
+        event.text = text;
+      }
+      break;
+    }
+    case "thought.after": {
+      const text = asString2(raw.thought) ?? asString2(raw.text);
+      if (text !== undefined) {
+        event.text = text;
+      }
+      break;
+    }
+    case "tool.before":
+    case "tool.after":
+    case "tool.failure": {
+      const toolName = asString2(raw.tool_name);
+      if (toolName) {
+        event.toolName = toolName;
+      }
+      const toolInput = asRecord2(raw.tool_input);
+      if (toolInput) {
+        event.toolInput = toolInput;
+      }
+      const subagentType = asString2(raw.subagent_type);
+      if (subagentType) {
+        event.subagentType = subagentType;
+      }
+      const toolSpawnModel = toolInput ? asString2(toolInput.model) : undefined;
+      if (toolSpawnModel) {
+        event.spawnModel = toolSpawnModel;
+      }
+      const toolSpawnType = toolInput ? asString2(toolInput.subagent_type) : undefined;
+      if (toolSpawnType) {
+        event.spawnSubagentType = toolSpawnType;
+      }
+      break;
+    }
+    case "shell.before":
+    case "shell.after": {
+      const command = asString2(raw.command);
+      if (command !== undefined) {
+        event.command = command;
+      }
+      break;
+    }
+    case "mcp.before":
+    case "mcp.after": {
+      const toolName = asString2(raw.tool_name);
+      if (toolName) {
+        event.toolName = toolName;
+      }
+      const toolInput = asRecord2(raw.tool_input);
+      if (toolInput) {
+        event.toolInput = toolInput;
+      }
+      const command = asString2(raw.command);
+      if (command !== undefined) {
+        event.command = command;
+      }
+      break;
+    }
+    case "read.before":
+    case "edit.after": {
+      const filePath = asString2(raw.file_path);
+      if (filePath !== undefined) {
+        event.filePath = filePath;
+      }
+      break;
+    }
+    case "subagent.start":
+    case "subagent.stop": {
+      const spawnSubagentType = asString2(raw.subagent_type);
+      if (spawnSubagentType) {
+        event.spawnSubagentType = spawnSubagentType;
+      }
+      const spawnModel = asString2(raw.subagent_model);
+      if (spawnModel) {
+        event.spawnModel = spawnModel;
+      }
+      break;
+    }
+    case "stop": {
+      const status = asStatus2(raw.status);
+      if (status) {
+        event.status = status;
+      }
+      const loopCount = asNumber2(raw.loop_count);
+      if (loopCount !== undefined) {
+        event.loopCount = loopCount;
+      }
+      break;
+    }
+    default:
+      break;
+  }
+  return event;
+}
+
+// src/providers/cursor/cursor.outbound.ts
+function renderDenyOrAsk(permission, decision) {
+  const body = { permission };
+  if (decision.userNote !== undefined) {
+    body.user_message = decision.userNote;
+  }
+  body.agent_message = decision.reason;
+  return JSON.stringify(body);
+}
+function cursorRender(decision, _event) {
+  switch (decision.kind) {
+    case "abstain":
+      return { stdout: "{}", exitCode: 0 };
+    case "allow":
+      return { stdout: JSON.stringify({ permission: "allow" }), exitCode: 0 };
+    case "deny":
+      return { stdout: renderDenyOrAsk("deny", decision), exitCode: 0 };
+    case "ask":
+      return { stdout: renderDenyOrAsk("ask", decision), exitCode: 0 };
+    case "context": {
+      const body = {};
+      if (decision.env !== undefined) {
+        body.env = decision.env;
+      }
+      body.additional_context = decision.text;
+      return { stdout: JSON.stringify(body), exitCode: 0 };
+    }
+    case "continue":
+      return { stdout: JSON.stringify({ followup_message: decision.text }), exitCode: 0 };
+    case "rewriteInput":
+      return { stdout: JSON.stringify({ updated_input: decision.input }), exitCode: 0 };
+    default: {
+      const exhaustive = decision;
+      throw new Error(`unreachable decision kind: ${JSON.stringify(exhaustive)}`);
+    }
+  }
+}
+
+// src/providers/cursor/cursor.policy-defaults.ts
+function cursorPolicyDefaults() {
+  return {
+    allowedModels: [
+      "composer-2.5",
+      "cursor-grok-4.5-high",
+      "glm-5.2-high",
+      "kimi-k2.7-code",
+      "gpt-5.3-codex-high"
+    ],
+    blockedPatterns: ["-fast(?:$|[^a-z0-9])", "/fast(?:$|[^a-z0-9])", "composer-2\\.5-fast"],
+    minEffort: null,
+    untrustedTools: ["Fetch", "WebSearch"]
+  };
+}
+
+// src/providers/cursor/cursor.wiring.ts
+import { join as join28 } from "node:path";
+var ENTRY_SPECS2 = [
+  { hookEvent: "sessionStart", handler: "session-start", timeoutSeconds: 10 },
+  { hookEvent: "sessionEnd", handler: "session-end", timeoutSeconds: 10 },
+  { hookEvent: "beforeSubmitPrompt", handler: "prompt-submit", timeoutSeconds: 5 },
+  { hookEvent: "afterAgentThought", handler: "tool-after", timeoutSeconds: 5 },
+  { hookEvent: "preCompact", handler: "compact-before", timeoutSeconds: 5 },
+  { hookEvent: "subagentStart", handler: "subagent-start", timeoutSeconds: 5, failClosed: true },
+  { hookEvent: "subagentStop", handler: "subagent-stop", timeoutSeconds: 5 },
+  { hookEvent: "preToolUse", handler: "tool-before", timeoutSeconds: 5, failClosed: true },
+  { hookEvent: "postToolUse", handler: "tool-after", timeoutSeconds: 5 },
+  { hookEvent: "postToolUseFailure", handler: "tool-failure", timeoutSeconds: 5 },
+  { hookEvent: "beforeShellExecution", handler: "tool-before", timeoutSeconds: 10, failClosed: true },
+  { hookEvent: "afterShellExecution", handler: "tool-after", timeoutSeconds: 10 },
+  { hookEvent: "beforeMCPExecution", handler: "tool-before", timeoutSeconds: 10 },
+  { hookEvent: "afterMCPExecution", handler: "tool-after", timeoutSeconds: 5 },
+  { hookEvent: "beforeReadFile", handler: "tool-before", timeoutSeconds: 5 },
+  { hookEvent: "afterFileEdit", handler: "tool-after", timeoutSeconds: 30, matcher: "Write" },
+  { hookEvent: "stop", handler: "stop", timeoutSeconds: 120, loopLimit: 5 },
+  { hookEvent: "afterAgentResponse", handler: "response-after", timeoutSeconds: 5, matcher: "AgentResponse" }
+];
+function commandFor(runtime) {
+  if (process.platform === "win32") {
+    return { command: "cmd", argsPrefix: ["/c", "node", runtime.launcherPath] };
+  }
+  return { command: "node", argsPrefix: [runtime.launcherPath] };
+}
+function cursorWiring(runtime) {
+  const { command, argsPrefix } = commandFor(runtime);
+  const entries = ENTRY_SPECS2.map((spec) => ({
+    hookEvent: spec.hookEvent,
+    handler: spec.handler,
+    command,
+    args: [...argsPrefix, spec.handler],
+    timeoutSeconds: spec.timeoutSeconds,
+    ...spec.failClosed !== undefined ? { failClosed: spec.failClosed } : {},
+    ...spec.matcher !== undefined ? { matcher: spec.matcher } : {},
+    ...spec.loopLimit !== undefined ? { loopLimit: spec.loopLimit } : {}
+  }));
+  return {
+    target: join28(cursorConfigDir(), "hooks.json"),
+    strategy: "replace",
+    entries
+  };
+}
+function commandTokens(command) {
+  return [...command.matchAll(/"([^"]*)"|(\S+)/g)].map((match) => match[1] ?? match[2] ?? "");
+}
+function cursorWiringProblems(text, runtime, fileExists) {
+  if (text === null) {
+    return [{ hookEvent: "(file)", reason: "no hooks file at the expected path" }];
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return [{ hookEvent: "(file)", reason: "the hooks file is not valid JSON" }];
+  }
+  const hooks = parsed !== null && typeof parsed === "object" ? parsed.hooks ?? {} : {};
+  const problems = [];
+  for (const spec of ENTRY_SPECS2) {
+    const list = Array.isArray(hooks[spec.hookEvent]) ? hooks[spec.hookEvent] : [];
+    const commands = list.map((row) => row !== null && typeof row === "object" ? String(row.command ?? "") : "").filter((command) => command.includes(runtime.launcherPath));
+    if (commands.length === 0) {
+      problems.push({ hookEvent: spec.hookEvent, reason: "no harness entry — run: tlc harness update" });
+      continue;
+    }
+    for (const command of commands) {
+      const tokens = commandTokens(command);
+      const scriptAt = tokens.findIndex((token) => token === runtime.launcherPath);
+      if (scriptAt < 1) {
+        problems.push({
+          hookEvent: spec.hookEvent,
+          reason: `no executable before the script: \`${command}\``
+        });
+        continue;
+      }
+      if (!fileExists(runtime.launcherPath)) {
+        problems.push({
+          hookEvent: spec.hookEvent,
+          reason: `the script does not exist: ${runtime.launcherPath}`
+        });
+        continue;
+      }
+      if (tokens[scriptAt + 1] === undefined || tokens[scriptAt + 1] === "") {
+        problems.push({
+          hookEvent: spec.hookEvent,
+          reason: `no handler after the script: \`${command}\``
+        });
+      }
+    }
+  }
+  return problems;
+}
+function formatWiringProblems(problems, max = 3) {
+  const shown = problems.slice(0, max).map((problem) => `${problem.hookEvent}: ${problem.reason}`).join("; ");
+  const rest = problems.length - Math.min(problems.length, max);
+  return rest > 0 ? `${shown}; and ${rest} more` : shown;
+}
+
+// src/providers/cursor/index.ts
+var cursorProvider = {
+  name: "cursor",
+  detect: detectCursor,
+  capabilities: cursorCapabilities,
+  policyDefaults: cursorPolicyDefaults,
+  toEvent: cursorToEvent,
+  render: cursorRender,
+  wiring: cursorWiring
+};
+
+// src/providers/provider.registry.ts
+var providers = [cursorProvider, claudeProvider];
+// bin/write-user-hooks.mjs
+var CURSOR_MARKER = "tlc-exec.mjs";
+function isCursorWired(targetPath) {
+  return existsSync27(targetPath) && readFileSync28(targetPath, "utf8").includes(CURSOR_MARKER);
+}
+if (false) {}
+
 // tools/doctor.ts
 function plural(count, word) {
   return `${count} ${word}${count === 1 ? "" : "s"}`;
@@ -6331,21 +6376,36 @@ function checkNodeVersion(nodeVersion, bunPath = null) {
   }
   return checks;
 }
+function runtimeOwnershipCheck(home) {
+  const kind = runtimePathKind(home);
+  const detail = {
+    managed: "managed checkout — `tlc harness update` moves it to upstream and owns its contents",
+    linked: "link to a working clone — update never writes here; pull that clone yourself",
+    unmanaged: "not a git checkout — update cannot pull; re-install with the README one-liner",
+    absent: "missing — install with the README one-liner"
+  };
+  return {
+    level: kind === "managed" || kind === "linked" ? "ok" : "fail",
+    name: "runtime ownership",
+    detail: detail[kind]
+  };
+}
 function checkRuntimePaths(home, platform) {
-  const launcher = join28(home, "bin", "tlc-exec.mjs");
-  const distSample = join28(home, "dist", "stop.mjs");
-  const cliLink = join28(homedir3(), ".local", "bin", platform === "win32" ? "tlc.cmd" : "tlc");
+  const launcher = join29(home, "bin", "tlc-exec.mjs");
+  const distSample = join29(home, "dist", "stop.mjs");
+  const cliLink = join29(homedir3(), ".local", "bin", platform === "win32" ? "tlc.cmd" : "tlc");
   return [
     { level: "ok", name: "platform", detail: platform },
-    { level: existsSync27(launcher) ? "ok" : "fail", name: "global runtime", detail: home },
+    { level: existsSync28(launcher) ? "ok" : "fail", name: "global runtime", detail: home },
+    runtimeOwnershipCheck(home),
     {
-      level: existsSync27(distSample) ? "ok" : "fail",
+      level: existsSync28(distSample) ? "ok" : "fail",
       name: "dist bundles",
-      detail: existsSync27(distSample) ? join28(home, "dist") : "missing — run: tlc harness build"
+      detail: existsSync28(distSample) ? join29(home, "dist") : "missing — run: tlc harness build"
     },
-    { level: existsSync27(launcher) ? "ok" : "fail", name: "portable launcher", detail: launcher },
+    { level: existsSync28(launcher) ? "ok" : "fail", name: "portable launcher", detail: launcher },
     {
-      level: existsSync27(cliLink) || existsSync27(join28(home, "bin", platform === "win32" ? "tlc.cmd" : "tlc")) ? "ok" : "fail",
+      level: existsSync28(cliLink) || existsSync28(join29(home, "bin", platform === "win32" ? "tlc.cmd" : "tlc")) ? "ok" : "fail",
       name: "CLI on PATH",
       detail: cliLink
     }
@@ -6366,15 +6426,15 @@ function wiringProblems(wiring) {
   if (wiring.strategy !== "replace") {
     return [];
   }
-  const text = existsSync27(wiring.target) ? readFileSync28(wiring.target, "utf8") : null;
-  return cursorWiringProblems(text, { launcherPath: launcherPathOf(wiring) }, existsSync27);
+  const text = existsSync28(wiring.target) ? readFileSync29(wiring.target, "utf8") : null;
+  return cursorWiringProblems(text, { launcherPath: launcherPathOf(wiring) }, existsSync28);
 }
 function launcherPathOf(wiring) {
   const first = wiring.entries[0];
   return first?.args.find((arg) => arg.endsWith(".mjs")) ?? "";
 }
 function providerWiringStatus(wiring) {
-  if (!existsSync27(dirname8(wiring.target))) {
+  if (!existsSync28(dirname8(wiring.target))) {
     return "not-installed";
   }
   if (wiring.strategy === "replace") {
@@ -6383,12 +6443,12 @@ function providerWiringStatus(wiring) {
     }
     return wiringProblems(wiring).length === 0 ? "wired" : "detected-but-unwired";
   }
-  const existingText = existsSync27(wiring.target) ? readFileSync28(wiring.target, "utf8") : null;
+  const existingText = existsSync28(wiring.target) ? readFileSync29(wiring.target, "utf8") : null;
   const result = mergeClaudeSettings(existingText, wiring.entries);
   return result.ok && !result.changed ? "wired" : "detected-but-unwired";
 }
 function checkProviders(registry, home) {
-  const launcherPath = join28(home, "bin", "tlc-exec.mjs");
+  const launcherPath = join29(home, "bin", "tlc-exec.mjs");
   return registry.map((provider) => {
     const wiring = provider.wiring({ launcherPath });
     const status = providerWiringStatus(wiring);
@@ -6554,12 +6614,12 @@ function checkProjectPolicy(root) {
     {
       level: "ok",
       name: "project policy",
-      detail: existsSync27(configPath) ? configPath : "missing — run: tlc harness init"
+      detail: existsSync28(configPath) ? configPath : "missing — run: tlc harness init"
     },
     {
       level: "ok",
       name: "state dir",
-      detail: existsSync27(stateDir) ? stateDir : `${stateDir} (created on first session)`
+      detail: existsSync28(stateDir) ? stateDir : `${stateDir} (created on first session)`
     },
     checkPosture(root),
     ...checkObservedRails(root),
@@ -6569,8 +6629,8 @@ function checkProjectPolicy(root) {
   ];
 }
 function checkGlobalCommands(home) {
-  const globalCommands = join28(home, ".cursor", "commands");
-  if (!existsSync27(globalCommands)) {
+  const globalCommands = join29(home, ".cursor", "commands");
+  if (!existsSync28(globalCommands)) {
     return {
       level: "ok",
       name: "global commands dir",
@@ -6578,7 +6638,7 @@ function checkGlobalCommands(home) {
     };
   }
   try {
-    const st = lstatSync(globalCommands);
+    const st = lstatSync2(globalCommands);
     const detail = st.isSymbolicLink() ? `${globalCommands} → ${readlinkSync(globalCommands)}` : globalCommands;
     return { level: "ok", name: "global commands dir", detail };
   } catch {
@@ -6659,6 +6719,7 @@ if (__require.main == __require.module) {
 export {
   wiringProblems,
   toReport,
+  runtimeOwnershipCheck,
   runChecks,
   providerWiringStatus,
   plural,
