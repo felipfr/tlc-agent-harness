@@ -403,11 +403,18 @@ describe("harness test — step plan and runner", () => {
         "src suite",
         "tools suite",
         "check-boundaries",
+        "check-suppressions",
         "check-wiring",
         "check-docs-bundle",
         "capabilities in sync",
       ],
     );
+    /**
+     * hazard: three fixable warnings sat in this repo across several green gates, because a warn-level rule does not
+     * change biome's exit code. The flag is asserted rather than trusted
+     * ([/decisions/ad-051.md](/decisions/ad-051.md)).
+     */
+    assert.deepEqual(steps[0]?.args, ["biome", "check", "--error-on-warnings"]);
     // why: both suites carry the hermetic setup module. Without it the runner reads CLAUDE_PROJECT_DIR from
     // whatever launched it and 22 tests resolve against the real repository instead of their own fixtures.
     assert.deepEqual(steps[2]?.args, [
@@ -423,9 +430,10 @@ describe("harness test — step plan and runner", () => {
       "tools/__test__/*.test.ts",
     ]);
     assert.deepEqual(steps[4]?.args, ["tools/check-boundaries.ts"]);
-    assert.deepEqual(steps[5]?.args, ["tools/check-wiring.ts"]);
-    assert.deepEqual(steps[6]?.args, ["tools/check-docs-bundle.ts"]);
-    assert.deepEqual(steps[7]?.args, ["tools/render-capabilities.ts", "--check"]);
+    assert.deepEqual(steps[5]?.args, ["tools/check-suppressions.ts"]);
+    assert.deepEqual(steps[6]?.args, ["tools/check-wiring.ts"]);
+    assert.deepEqual(steps[7]?.args, ["tools/check-docs-bundle.ts"]);
+    assert.deepEqual(steps[8]?.args, ["tools/render-capabilities.ts", "--check"]);
   });
 
   test("stops at the first failing step and does not run the rest", () => {
@@ -436,7 +444,7 @@ describe("harness test — step plan and runner", () => {
       return { status: calls.length === 2 ? 1 : 0 };
     });
     assert.equal(status, 1);
-    assert.deepEqual(calls, ["npx biome check", "npx tsc --noEmit"]);
+    assert.deepEqual(calls, ["npx biome check --error-on-warnings", "npx tsc --noEmit"]);
   });
 
   test("runs every step and returns 0 when all pass", () => {

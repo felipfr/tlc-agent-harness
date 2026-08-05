@@ -5782,7 +5782,7 @@ function missingBundles(dest) {
 }
 function linkedRuntimeMessage(dest, target) {
   return [
-    `update: the runtime path is a link to a working clone${target ? ` → ${target}` : ""}.`,
+    `update: ${dest} is a link to a working clone${target ? ` → ${target}` : ""}.`,
     "Nothing in it is touched by this command — updating that clone is your own `git pull`.",
     "Refreshing the machine-local parts only: CLI link, init skill, provider hooks."
   ].join(`
@@ -6102,11 +6102,12 @@ detail: tlc harness help prices`);
 var TEST_ENV_IMPORT = ["--import", "./tools/test-env.mjs"];
 function buildTestSteps() {
   return [
-    { label: "biome check", bin: "npx", args: ["biome", "check"] },
+    { label: "biome check", bin: "npx", args: ["biome", "check", "--error-on-warnings"] },
     { label: "tsc --noEmit", bin: "npx", args: ["tsc", "--noEmit"] },
     { label: "src suite", bin: "node", args: [...TEST_ENV_IMPORT, "--test", "src/**/__test__/*.test.ts"] },
     { label: "tools suite", bin: "node", args: [...TEST_ENV_IMPORT, "--test", "tools/__test__/*.test.ts"] },
     { label: "check-boundaries", bin: "node", args: ["tools/check-boundaries.ts"] },
+    { label: "check-suppressions", bin: "node", args: ["tools/check-suppressions.ts"] },
     { label: "check-wiring", bin: "node", args: ["tools/check-wiring.ts"] },
     { label: "check-docs-bundle", bin: "node", args: ["tools/check-docs-bundle.ts"] },
     { label: "capabilities in sync", bin: "node", args: ["tools/render-capabilities.ts", "--check"] }

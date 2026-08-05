@@ -59,7 +59,7 @@ test("a deny or ask reaches every provider's output carrying its reason", () => 
       const rendered = provider.render(decision, eventOf("shell.before", provider.name));
       const reason = decision.kind === "deny" || decision.kind === "ask" ? decision.reason : "";
       assert.ok(
-        rendered.stdout !== null && rendered.stdout.includes(reason),
+        rendered.stdout?.includes(reason),
         `${provider.name} dropped the reason for ${decision.kind}`,
       );
     }

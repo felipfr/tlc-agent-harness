@@ -417,9 +417,13 @@ export function missingBundles(dest: string): string[] {
   return expected.filter((bundle) => !existsSync(join(dest, "dist", bundle)));
 }
 
+/**
+ * hazard: `dest` was accepted and never used, so the message said "the runtime path" without naming it while both
+ * sibling messages name theirs. An operator with more than one runtime could not tell which link was meant.
+ */
 export function linkedRuntimeMessage(dest: string, target: string | null): string {
   return [
-    `update: the runtime path is a link to a working clone${target ? ` → ${target}` : ""}.`,
+    `update: ${dest} is a link to a working clone${target ? ` → ${target}` : ""}.`,
     "Nothing in it is touched by this command — updating that clone is your own `git pull`.",
     "Refreshing the machine-local parts only: CLI link, init skill, provider hooks.",
   ].join("\n");
@@ -846,11 +850,19 @@ export const TEST_ENV_IMPORT = ["--import", "./tools/test-env.mjs"];
 
 export function buildTestSteps(): TestStep[] {
   return [
-    { label: "biome check", bin: "npx", args: ["biome", "check"] },
+    // why: `--error-on-warnings`. A warn-level rule does not change biome's exit code, so three fixable warnings
+    // sat in this repo across several green gates until someone read the output by hand. Escalating every group to
+    // `error` in biome.json was measured instead and rejected: it enables each group's non-recommended rules too,
+    // which produced 3763 findings and included `noBarrelFile` and `noReExportAll` — the two rules that forbid the
+    // core facade this architecture is built on (AD-004) — and `noNodejsModules` in a Node CLI.
+    { label: "biome check", bin: "npx", args: ["biome", "check", "--error-on-warnings"] },
     { label: "tsc --noEmit", bin: "npx", args: ["tsc", "--noEmit"] },
     { label: "src suite", bin: "node", args: [...TEST_ENV_IMPORT, "--test", "src/**/__test__/*.test.ts"] },
     { label: "tools suite", bin: "node", args: [...TEST_ENV_IMPORT, "--test", "tools/__test__/*.test.ts"] },
     { label: "check-boundaries", bin: "node", args: ["tools/check-boundaries.ts"] },
+    // why: `--error-on-warnings` above cannot see a rule that was suppressed rather than fixed, and biome accepts
+    // any text after the colon. This is what makes the reason a reason ([/decisions/ad-051.md](/decisions/ad-051.md)).
+    { label: "check-suppressions", bin: "node", args: ["tools/check-suppressions.ts"] },
     { label: "check-wiring", bin: "node", args: ["tools/check-wiring.ts"] },
     { label: "check-docs-bundle", bin: "node", args: ["tools/check-docs-bundle.ts"] },
     { label: "capabilities in sync", bin: "node", args: ["tools/render-capabilities.ts", "--check"] },

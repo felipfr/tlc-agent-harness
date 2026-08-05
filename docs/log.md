@@ -67,3 +67,7 @@ timestamp: "2026-07-30"
   ([/decisions/ad-017.md](/decisions/ad-017.md)).
 - Capability catalog became the only source for the wizard menu and the architecture rails table, generated
   and verified by `tools/render-capabilities.ts --check`.
+- A warn-level lint diagnostic fails the gate (`biome check --error-on-warnings`), and `tools/check-suppressions.ts`
+  fails it on a suppression whose reason is not a reason. Group-level `error` severity was measured at 3763
+  findings — it enables each group's non-recommended rules, including the two that forbid the core facade — and
+  rejected ([/decisions/ad-051.md](/decisions/ad-051.md)).

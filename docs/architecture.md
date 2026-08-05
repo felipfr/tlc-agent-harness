@@ -81,6 +81,13 @@ identifiers (`cursor`, `claude`, `codex`, `composer`, `anthropic`) anywhere unde
 `src/contracts/`. See [/decisions/ad-004.md](/decisions/ad-004.md) and
 [/decisions/ad-010.md](/decisions/ad-010.md).
 
+Two rules keep the gate from going quiet about itself. It runs `biome check --error-on-warnings`, because a
+warn-level diagnostic does not change biome's exit code and three fixable warnings had therefore survived several
+green runs — one of them a parameter accepted and never used. And `tools/check-suppressions.ts` fails it on any
+`biome-ignore`, `@ts-ignore` or `@ts-expect-error` whose reason does not open with `why:`, `hazard:` or `invariant:`
+followed by a real sentence, because a stricter exit code creates pressure to silence rather than fix. See
+[/decisions/ad-051.md](/decisions/ad-051.md).
+
 Each provider adapter implements the same port (`ProviderPort` in `src/providers/provider.port.ts`):
 `detect`, `capabilities`, `policyDefaults`, `toEvent`, `render`, `wiring`. Core receives a `HarnessEvent`
 and a `ProviderCapabilities` descriptor as plain data — it never branches on a provider's name. See

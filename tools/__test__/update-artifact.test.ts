@@ -150,6 +150,8 @@ test("no entrypoints directory reports nothing rather than throwing", () => {
 test("the linked message names the clone and refuses to touch it", () => {
   const text = linkedRuntimeMessage("/opt/runtime", "/opt/clone/harness");
   assert.match(text, /link to a working clone → \/opt\/clone\/harness/);
+  // invariant: the path it is talking about, like every sibling message. It was accepted and dropped.
+  assert.match(text, /\/opt\/runtime/);
   assert.match(text, /Nothing in it is touched/);
   assert.match(text, /your own `git pull`/);
   assert.doesNotMatch(text, /reset --hard/);

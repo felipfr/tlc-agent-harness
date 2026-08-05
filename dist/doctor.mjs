@@ -6378,7 +6378,7 @@ function cursorWiringProblems(text, runtime, fileExists) {
     }
     for (const command of commands) {
       const tokens = commandTokens(command);
-      const scriptAt = tokens.findIndex((token) => token === runtime.launcherPath);
+      const scriptAt = tokens.indexOf(runtime.launcherPath);
       if (scriptAt < 1) {
         problems.push({
           hookEvent: spec.hookEvent,
