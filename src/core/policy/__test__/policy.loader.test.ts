@@ -5,7 +5,12 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { flagsDir, projectConfigPath, projectStateDir } from "../../../platform/paths.ts";
 import { DEFAULTS } from "../policy.defaults.ts";
-import { isUnderCodePaths, loadPolicy, resolveProjectPosture } from "../policy.loader.ts";
+import {
+  isUnderCodePaths,
+  loadPolicy,
+  resolveProjectPosture,
+  resolveProjectSyncMode,
+} from "../policy.loader.ts";
 import { forProvider } from "../policy.types.ts";
 
 function tempRoot(): string {
@@ -336,6 +341,46 @@ test("the policy's mode and the reported resolution never disagree, whichever co
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
+  }
+});
+
+/**
+ * hazard: the migration line named `.tlc/harness/config.json` unconditionally, and the value can come from the
+ * runtime home — so a demo run sent the reader to edit a file that did not contain it
+ * ([/decisions/ad-050.md](/decisions/ad-050.md)).
+ */
+test("the coerced sync mode names the file the old boolean is actually in", () => {
+  const root = tempRoot();
+  const home = mkdtempSync(join(tmpdir(), "tlc-home-"));
+  try {
+    withTlcHome(home, () => {
+      writeFileSync(
+        join(home, "config.json"),
+        JSON.stringify({ intelligence: { lessons: { syncRulesFile: true } } }),
+      );
+      const fromHome = resolveProjectSyncMode(root);
+      assert.equal(fromHome.mode, "always");
+      assert.equal(fromHome.coercedIn, join(home, "config.json"));
+
+      writeProjectConfig(root, { intelligence: { lessons: { syncRulesFile: false } } });
+      const fromProject = resolveProjectSyncMode(root);
+      assert.equal(fromProject.mode, "never");
+      assert.equal(fromProject.coercedIn, projectConfigPath(root));
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+// invariant: no origin to report when nothing was coerced, so the line stays absent rather than naming a file.
+test("a config already carrying a mode reports no coerced origin", () => {
+  const root = tempRoot();
+  try {
+    writeProjectConfig(root, { intelligence: { lessons: { syncRulesFile: "auto" } } });
+    assert.deepEqual(resolveProjectSyncMode(root), { mode: "auto" });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

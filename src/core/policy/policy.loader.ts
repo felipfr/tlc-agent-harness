@@ -81,10 +81,14 @@ export function resolveProjectPosture(root: string): PostureResolution {
  */
 export function resolveProjectSyncMode(root: string): SyncModeResolution {
   const pair = readConfigPair(root);
-  return resolveSyncMode(
-    pair.fromProject.intelligence?.lessons?.syncRulesFile ??
-      pair.fromUser.intelligence?.lessons?.syncRulesFile,
-  );
+  const fromProject = pair.fromProject.intelligence?.lessons?.syncRulesFile;
+  const raw = fromProject ?? pair.fromUser.intelligence?.lessons?.syncRulesFile;
+  const resolution = resolveSyncMode(raw);
+  if (resolution.coercedFrom === undefined) {
+    return resolution;
+  }
+  const path = fromProject === undefined ? join(runtimeHome(), "config.json") : projectConfigPath(root);
+  return { ...resolution, coercedIn: path };
 }
 
 export function loadPolicy(root: string): Policy {

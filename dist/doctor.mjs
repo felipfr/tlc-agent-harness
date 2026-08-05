@@ -3656,7 +3656,14 @@ function resolveProjectPosture(root) {
 }
 function resolveProjectSyncMode(root) {
   const pair = readConfigPair(root);
-  return resolveSyncMode(pair.fromProject.intelligence?.lessons?.syncRulesFile ?? pair.fromUser.intelligence?.lessons?.syncRulesFile);
+  const fromProject = pair.fromProject.intelligence?.lessons?.syncRulesFile;
+  const raw = fromProject ?? pair.fromUser.intelligence?.lessons?.syncRulesFile;
+  const resolution = resolveSyncMode(raw);
+  if (resolution.coercedFrom === undefined) {
+    return resolution;
+  }
+  const path = fromProject === undefined ? join13(runtimeHome(), "config.json") : projectConfigPath(root);
+  return { ...resolution, coercedIn: path };
 }
 function loadPolicy(root) {
   const pair = readConfigPair(root);

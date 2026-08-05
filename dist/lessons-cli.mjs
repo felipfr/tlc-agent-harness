@@ -3629,7 +3629,14 @@ function resolveProjectPosture(root) {
 }
 function resolveProjectSyncMode(root) {
   const pair = readConfigPair(root);
-  return resolveSyncMode(pair.fromProject.intelligence?.lessons?.syncRulesFile ?? pair.fromUser.intelligence?.lessons?.syncRulesFile);
+  const fromProject = pair.fromProject.intelligence?.lessons?.syncRulesFile;
+  const raw = fromProject ?? pair.fromUser.intelligence?.lessons?.syncRulesFile;
+  const resolution = resolveSyncMode(raw);
+  if (resolution.coercedFrom === undefined) {
+    return resolution;
+  }
+  const path = fromProject === undefined ? join13(runtimeHome(), "config.json") : projectConfigPath(root);
+  return { ...resolution, coercedIn: path };
 }
 function loadPolicy(root) {
   const pair = readConfigPair(root);
@@ -5534,7 +5541,7 @@ function lessonRows(root, lessons, config, now) {
 }
 function listReport(root, lessons, config, now) {
   const rows = lessonRows(root, lessons, config, now);
-  const { coercedFrom } = coreFacade.policy.resolveProjectSyncMode(root);
+  const { coercedFrom, coercedIn } = coreFacade.policy.resolveProjectSyncMode(root);
   const byTier = {};
   for (const row of rows) {
     byTier[row.tier] = (byTier[row.tier] ?? 0) + 1;
@@ -5549,7 +5556,7 @@ function listReport(root, lessons, config, now) {
       enabled: config.enabled,
       promoteHitCount: config.promoteHitCount,
       syncRulesFile: config.syncRulesFile,
-      ...coercedFrom !== undefined ? { syncRulesFileCoercedFrom: coercedFrom } : {}
+      ...coercedFrom !== undefined ? { syncRulesFileCoercedFrom: coercedFrom, syncRulesFileCoercedIn: coercedIn ?? "" } : {}
     },
     totals: {
       byTier,
@@ -5592,7 +5599,7 @@ ${report.count} ${noun} — ${tiers || "none"}`);
   lines.push(`global store:  ${report.globalStorePath}  (${plural(report.stores.global, "lesson")}${shared})`);
   lines.push(`enabled=${report.config.enabled} promoteHitCount=${report.config.promoteHitCount} syncRulesFile=${report.config.syncRulesFile}`);
   if (report.config.syncRulesFileCoercedFrom !== undefined) {
-    lines.push(`  syncRulesFile is still the old boolean ${report.config.syncRulesFileCoercedFrom} in .tlc/harness/config.json; it reads as ${report.config.syncRulesFile}. Set "auto" to let the provider decide.`);
+    lines.push(`  syncRulesFile is still the old boolean ${report.config.syncRulesFileCoercedFrom} in ${report.config.syncRulesFileCoercedIn}; it reads as ${report.config.syncRulesFile}. Set "auto" to let the provider decide.`);
   }
   return lines.join(`
 `);

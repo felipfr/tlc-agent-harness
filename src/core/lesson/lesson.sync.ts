@@ -9,6 +9,11 @@ export type SyncModeResolution = {
   mode: LessonsSyncMode;
   /** The boolean this mode was read from, when a config predating the mode is still in place. */
   coercedFrom?: boolean;
+  /**
+   * hazard: the file the coerced value is actually in. The migration line named the project config unconditionally
+   * and the value can come from the runtime home, so it sent an operator to edit a file that did not have it.
+   */
+  coercedIn?: string;
 };
 
 /**

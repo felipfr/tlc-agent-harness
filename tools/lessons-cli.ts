@@ -40,6 +40,8 @@ export type LessonsListReport = {
     syncRulesFile: LessonsSyncMode;
     /** Present only while a config predating the mode is still in place. */
     syncRulesFileCoercedFrom?: boolean;
+    /** The file that value is in — the project config and the runtime home are both possible sources. */
+    syncRulesFileCoercedIn?: string;
   };
   totals: {
     byTier: Record<string, number>;
@@ -95,7 +97,7 @@ export function listReport(
   now: Date,
 ): LessonsListReport {
   const rows = lessonRows(root, lessons, config, now);
-  const { coercedFrom } = coreFacade.policy.resolveProjectSyncMode(root);
+  const { coercedFrom, coercedIn } = coreFacade.policy.resolveProjectSyncMode(root);
   const byTier: Record<string, number> = {};
   for (const row of rows) {
     byTier[row.tier] = (byTier[row.tier] ?? 0) + 1;
@@ -112,7 +114,9 @@ export function listReport(
       syncRulesFile: config.syncRulesFile,
       // hazard: spread rather than assigned. An explicitly `undefined` property survives `deepEqual` and dies in
       // `JSON.stringify`, which is how the report stopped surviving its own round trip.
-      ...(coercedFrom !== undefined ? { syncRulesFileCoercedFrom: coercedFrom } : {}),
+      ...(coercedFrom !== undefined
+        ? { syncRulesFileCoercedFrom: coercedFrom, syncRulesFileCoercedIn: coercedIn ?? "" }
+        : {}),
     },
     totals: {
       byTier,
@@ -172,7 +176,7 @@ export function listText(report: LessonsListReport): string {
   // once, next to the value it produced ([/decisions/ad-050.md](/decisions/ad-050.md)).
   if (report.config.syncRulesFileCoercedFrom !== undefined) {
     lines.push(
-      `  syncRulesFile is still the old boolean ${report.config.syncRulesFileCoercedFrom} in .tlc/harness/config.json; it reads as ${report.config.syncRulesFile}. Set "auto" to let the provider decide.`,
+      `  syncRulesFile is still the old boolean ${report.config.syncRulesFileCoercedFrom} in ${report.config.syncRulesFileCoercedIn}; it reads as ${report.config.syncRulesFile}. Set "auto" to let the provider decide.`,
     );
   }
   return lines.join("\n");
