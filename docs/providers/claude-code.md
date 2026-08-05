@@ -89,9 +89,17 @@ already-present entry.
 
 ## Lessons view
 
-`claude.lessons-view.ts` appends a single `@.tlc/harness/lessons.md` import line to the project's
-`CLAUDE.md` when `intelligence.lessons.syncRulesFile` is enabled and the line is not already present (see
-[/decisions/ad-011.md](/decisions/ad-011.md) item 4).
+`claude.lessons-view.ts` appends a single `@.tlc/harness/lessons.md` import line to the project's `CLAUDE.md` when it
+is not already present. It is a pointer, not a copy — the content lives in one file.
+
+It is written under `intelligence.lessons.syncRulesFile: "always"` and **not** under the default `"auto"`, because
+this adapter declares `sessionStartContextReliable: true`: `SessionStart` delivers
+`hookSpecificOutput.additionalContext`, so lessons arrive without a durable file and the pointer would be a second
+copy of a working route. Set `always` to have it anyway — it survives a restart, which the injected context does not
+(see [/decisions/ad-050.md](/decisions/ad-050.md), and [/decisions/ad-011.md](/decisions/ad-011.md) item 4).
+
+Only `hookSpecificOutput.additionalContext` is emitted. Claude Code reads a top-level `additional_context` as well
+and does not deduplicate the two, so emitting both would inject the same text twice.
 
 ## Doctor / status
 

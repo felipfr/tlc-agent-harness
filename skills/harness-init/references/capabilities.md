@@ -27,7 +27,7 @@ assume Cursor — check what Step 1 detected).
 | 6 | Block parent Fast mode for Task spawns | `subagents.blockParentFast` | off | Denies Task/subagentStart while the parent chat is in Fast mode (sticky from hooks), closing the gap where Task slugs omit *-fast. | Needs parent model hooks (sessionStart/obs/stop); false denials if you intentionally run Fast parent with workers. | recommend **on** |
 | 7 | Shell stall detection | `shell.stallDetection` | off | Blocks repeating the exact same shell command too many times. | Can false-positive on intentional retries. | `stallRepeatThreshold (default 3)` |
 | 8 | Catastrophic shell ask | `shell.catastrophicAsk` | **on** | Asks before destructive shell commands (rm -rf, drop db, force push, …). | Extra prompts on risky commands. | recommend **on** |
-| 9 | Lessons | `intelligence.lessons.enabled` | off | Records compact lessons on gate stagnation and reinjects them ranked under a char budget. A lesson can name the path or symbol that makes it true and is withheld once that stops resolving, can carry an end date, and is graded helped or neutral by the next run of the gate it was injected for. Three tiers: shipped core, a global tier read by every product on this machine, and this project's own. | Uses context tokens; not a second brain / chat memory. The grading is correlational, not causal — a gate passing after a lesson was injected does not prove the lesson caused it. Nothing is promoted between products automatically, so carrying a lesson to another product is an operator command. | `maxInjectSession`, `maxCharsSession`, `maxInjectRetry`, `maxCharsRetry`, `promoteHitCount`, `decayLambda`, `projectBoost`, `syncRulesFile`, `gardenOnSessionEnd`; recommend **on** |
+| 9 | Lessons | `intelligence.lessons.enabled` | off | Records compact lessons on gate stagnation and reinjects them ranked under a char budget. A lesson can name the path or symbol that makes it true and is withheld once that stops resolving, can carry an end date, and is graded helped or neutral by the next run of the gate it was injected for. Three tiers: shipped core, a global tier read by every product on this machine, and this project's own. How the lessons reach the model is decided by the provider rather than configured: where a host does not deliver context returned from its session-start hook, a durable rules file is written instead. | Uses context tokens; not a second brain / chat memory. The grading is correlational, not causal — a gate passing after a lesson was injected does not prove the lesson caused it. Nothing is promoted between products automatically, so carrying a lesson to another product is an operator command. On a host that needs the durable view, a file is written into the repo (`.cursor/rules/harness-lessons.mdc`) and asked to be included on every request; `syncRulesFile: never` declines it. | `maxInjectSession`, `maxCharsSession`, `maxInjectRetry`, `maxCharsRetry`, `promoteHitCount`, `decayLambda`, `projectBoost`, `syncRulesFile`, `gardenOnSessionEnd`; recommend **on** |
 | 10 | Budget continue | `intelligence.budgetContinue` | off | Pushes the agent to keep working under context pressure instead of wrapping up early. | Can delay clean stops. | `budgetContinueAfterLoops` |
 | 11 | Gap feedback | `intelligence.gapFeedback` | **on** | Injects PREVIOUS_GAPS on gate failure so retries fix listed items. | Longer follow-ups. | — |
 | 12 | Failure classification | `intelligence.failureClassification` | **on** | Stores failure categories on the handoff for clearer next actions. | Extra handoff fields. | — |
@@ -56,7 +56,7 @@ If the user enables lessons, explain what runs automatically:
 | Stop retry / sessionStart | Inject ranked lessons under char budget, skipping any that are stale or out of window |
 | Next run of the same gate | Grade the lessons injected for it: passed → `helped`, failed → `neutral` |
 | sessionEnd | Promote / decay / quarantine when `gardenOnSessionEnd`, mark or clear staleness, prune expired |
-| `syncRulesFile` | Rewrite the provider-native durable view when enabled — Cursor's `.cursor/rules/harness-lessons.mdc`, Claude's `CLAUDE.md` import line |
+| `syncRulesFile` | Rewrite the provider-native durable view — Cursor's `.cursor/rules/harness-lessons.mdc`, Claude's `CLAUDE.md` import line. `auto` writes it where the provider does not deliver context returned from its session-start hook, which today is Cursor |
 
 Ask for lessons knobs (offer defaults):
 
@@ -64,8 +64,10 @@ Ask for lessons knobs (offer defaults):
 - `maxInjectRetry` (8), `maxCharsRetry` (1400)
 - `promoteHitCount` (2) — counted in **distinct sessions**, not raw recurrences
 - `decayLambda` (0.02), `projectBoost` (1.5) — the boost favours this project over the global tier
-- `syncRulesFile` (recommend **true** on Cursor — sessionStart `additional_context` can drop; also fine to
-  recommend on Claude Code, where it just keeps `CLAUDE.md` current)
+- `syncRulesFile` (recommend **auto**, the default — the provider decides. Cursor drops `additional_context`
+  returned from `sessionStart`, acknowledged by Cursor as a race with the composer handle, so `auto` writes the
+  rules file there and not on Claude Code. Use `never` if the user does not want a file in `.cursor/rules/`, and
+  `always` on Claude Code to keep a `CLAUDE.md` pointer that survives a restart)
 - `gardenOnSessionEnd` (recommend true)
 
 **Nothing to configure for the tiers.** The global tier lives at `<runtime home>/state/lessons.json` and is read

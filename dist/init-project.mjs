@@ -236,7 +236,7 @@ var DEFAULT_LESSONS_POLICY = {
   promoteHitCount: 2,
   decayLambda: 0.02,
   projectBoost: 1.5,
-  syncRulesFile: false,
+  syncRulesFile: "auto",
   gardenOnSessionEnd: true
 };
 var DEFAULTS = {

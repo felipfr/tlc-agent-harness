@@ -136,7 +136,7 @@ optional
 | `promoteHitCount` | 2 | Candidate → active, counted in **distinct sessions** |
 | `decayLambda` | 0.02 | Exponential decay per hour since the failure last **recurred** (`lastSeenAt`) |
 | `projectBoost` | 1.5 | Score multiplier for the **project** tier |
-| `syncRulesFile` | false | Write the provider-native durable view |
+| `syncRulesFile` | `auto` | Write the provider-native durable view: `auto` where the provider does not deliver hook context, `always`, or `never` |
 | `gardenOnSessionEnd` | true | Garden on sessionEnd |
 
 ## Ranking
@@ -187,15 +187,26 @@ delivery and `lessons list` marks each one `PINNED` ([/decisions/ad-043.md](/dec
 
 ## Provider views
 
-`.tlc/harness/lessons.md` is the source of truth. When `syncRulesFile` is on, each provider renders its own
-durable, provider-native view of it (see [/decisions/ad-011.md](/decisions/ad-011.md) item 4):
+`.tlc/harness/lessons.md` is the source of truth, and the store, the ranking, the budget and the rendered text are
+shared by every provider. What differs is **transport** — how the text reaches the model — and that is a declared
+capability rather than a preference ([/decisions/ad-050.md](/decisions/ad-050.md)):
 
-| Provider | Rendered view |
-| --- | --- |
-| Cursor | `.cursor/rules/harness-lessons.mdc` (`alwaysApply: true`) — hooks alone can drop `additional_context`, so a Cursor-durable rules file survives that race |
-| Claude Code | a single `@.tlc/harness/lessons.md` import line appended to `CLAUDE.md` |
+| Provider | `sessionStartContextReliable` | Rendered view |
+| --- | --- | --- |
+| Cursor | `false` — `additional_context` returned from `sessionStart` is accepted, logged as merged, and dropped; acknowledged by Cursor as a race between the hook and the composer handle (forum 158452, 2026-04-20; reported again against 3.14.7 on 2026-08-02) | `.cursor/rules/harness-lessons.mdc` (`alwaysApply: true`) — the durable route, and on this host the only reliable one |
+| Claude Code | `true` — `SessionStart` delivers `hookSpecificOutput.additionalContext` | a single `@.tlc/harness/lessons.md` import line appended to `CLAUDE.md`, under `always` |
 
-The synced file carries only what would actually be injected, so a withheld lesson never appears there.
+Under the default `auto`, the view is written where the provider does not deliver hook context and withheld where it
+does. `always` writes it everywhere; `never` writes it nowhere, which is how an operator declines a file in their
+repo. A config carrying the field's old boolean still works — `true` reads as `always`, `false` as `never` — and
+`tlc harness lessons list` names the coercion.
+
+The view carries all three tiers and only what would actually be injected, so a withheld lesson never appears there
+and a core or global lesson is not missing from it. It is written at session start as well as session end, because a
+transport that is one session behind carries the previous session's guidance.
+
+`tlc harness obs report` says which of the two is paid: the emission where the host delivers it, the rules file where
+it does not.
 
 ## Design notes
 

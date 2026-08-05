@@ -84,9 +84,16 @@ Unix/macOS, `cmd /c node <launcherPath> <handler>` on Windows. Handler names are
 ## Lessons view
 
 `cursor.lessons-view.ts` renders `.tlc/harness/lessons.md` into `.cursor/rules/harness-lessons.mdc`
-(`alwaysApply: true`) when `intelligence.lessons.syncRulesFile` is enabled — hooks alone can drop
-`additional_context`, so a Cursor-durable rules file survives that race (see
-[/decisions/ad-011.md](/decisions/ad-011.md) item 4).
+(`alwaysApply: true`). This is not a second copy of a working route — it is **the** route on this host. Cursor
+accepts `additional_context` returned from `sessionStart`, logs it as merged, and drops it; its own staff called that
+"a bug on our side… a timing issue between when the hook runs and when the composer handle is created" (forum thread
+158452, 2026-04-20), and it was reported again against 3.14.7 on 2026-08-02. `env` on the same payload arrives,
+because that is a different code path — which is why `HARNESS_ACTIVE` works while the prose does not.
+
+The adapter therefore declares `sessionStartContextReliable: false`, and the default `syncRulesFile: "auto"` writes
+the view here for that reason rather than because an operator guessed. `never` declines it; `always` forces it (see
+[/decisions/ad-050.md](/decisions/ad-050.md), and [/decisions/ad-011.md](/decisions/ad-011.md) item 4 for the
+original reasoning).
 
 ## Doctor / status
 

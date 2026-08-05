@@ -2564,7 +2564,7 @@ function emptySyncReason(lessons, config, now) {
 }
 function renderLessonsMarkdown(root, lessons, config) {
   const now = new Date;
-  const ranked = rankLessonsForSync(lessons.filter((lesson) => isInjectable(lesson, now))).slice(0, 12);
+  const ranked = rankLessonsForSync(lessons.filter((lesson) => isInjectable(lesson, now) && appliesHere(root, lesson))).slice(0, 12);
   const { body } = packLessonsUnderBudget({
     lessons: ranked,
     maxChars: config.maxCharsSession,
@@ -2581,13 +2581,12 @@ ${body || emptySyncReason(lessons, config, now)}
   writeFileSync4(path, content, "utf8");
   return path;
 }
-function gardenAndPersistLessons(root, config, now = new Date) {
+function gardenAndPersistLessons(root, config, options, now = new Date) {
   return gardenLessons(root, config, now).then((report) => {
-    if (!config.syncRulesFile) {
+    if (!options.writeDurableView) {
       return { report, markdownPath: null };
     }
-    const lessons = readProjectLessons(root);
-    const path = renderLessonsMarkdown(root, lessons, config);
+    const path = renderLessonsMarkdown(root, allLessons(root), config);
     return { report, markdownPath: path };
   });
 }
@@ -2675,6 +2674,41 @@ async function recordLessonFromFailure(args) {
   return upsertProjectLesson(args.projectDir, lesson);
 }
 
+// src/core/lesson/lesson.sync.ts
+function resolveSyncMode(raw) {
+  if (raw === true) {
+    return { mode: "always", coercedFrom: true };
+  }
+  if (raw === false) {
+    return { mode: "never", coercedFrom: false };
+  }
+  if (raw === "always" || raw === "never" || raw === "auto") {
+    return { mode: raw };
+  }
+  return { mode: "auto" };
+}
+function lessonsSyncMode(raw) {
+  return resolveSyncMode(raw).mode;
+}
+function durableViewVerdict(mode, hookContextReliable) {
+  if (mode === "never") {
+    return { writes: false, reason: "syncRulesFile is set to never" };
+  }
+  if (mode === "always") {
+    return { writes: true, reason: "syncRulesFile is set to always" };
+  }
+  if (hookContextReliable) {
+    return {
+      writes: false,
+      reason: "this provider delivers context from its session-start hook, so lessons arrive without a rules file"
+    };
+  }
+  return {
+    writes: true,
+    reason: "this provider does not deliver context from its session-start hook, so the durable view is the route"
+  };
+}
+
 // src/core/observability/observability.report.ts
 function emptyTotals(provider) {
   return { provider, events: 0, signals: 0, denials: 0, gates: { pass: 0, fail: 0 }, estimated_cost_usd: 0 };
@@ -2716,6 +2750,21 @@ function railsNeverFired(rollup, activeRules) {
   const fired = new Set(Object.keys(rollup.railsByRule ?? {}));
   return activeRules.filter((rule) => !fired.has(rule)).sort();
 }
+function costLines(rollup) {
+  if (rollup.injected_chars === 0 && rollup.durable_chars === 0) {
+    return [];
+  }
+  const lines = ["", "## Injected context", ""];
+  if (rollup.hook_context_reliable) {
+    lines.push(`Injected at session start: ${rollup.injected_chars} characters. That is the price of the rails, paid on every turn.`);
+  } else {
+    lines.push(`Emitted at session start: ${rollup.injected_chars} characters — this provider does not deliver context returned from that hook, so it is not what the model reads.`);
+  }
+  if (rollup.durable_chars > 0) {
+    lines.push(`Durable lessons view: ${rollup.durable_chars} characters, written as an always-applied rules file. That is what the provider is asked to include on every request.`);
+  }
+  return lines;
+}
 function railActivity(rollup, activeRules) {
   const fired = Object.entries(rollup.railsByRule ?? {}).sort((a, b) => b[1] - a[1]);
   const silent = railsNeverFired(rollup, activeRules);
@@ -2731,9 +2780,6 @@ function railActivity(rollup, activeRules) {
     ...fired.map(([rule, count]) => `| ${rule} | ${count} |`),
     ...silent.map((rule) => `| ${rule} | 0 — enabled and never fired |`)
   ];
-  if (rollup.injected_chars > 0) {
-    rows.push("", `Injected at session start: ${rollup.injected_chars} characters. That is the price of the rails above, paid on every turn.`);
-  }
   return rows.join(`
 `);
 }
@@ -2830,6 +2876,8 @@ ${JSON.stringify(rollup.mcp, null, 2)}
 \`\`\`
 ${gateTimeSection(rollup)}
 ${railActivity(rollup, activeRules)}
+${costLines(rollup).join(`
+`)}
 `;
 }
 
@@ -2969,6 +3017,8 @@ function newRollup(sessionKey, provider) {
     gatesByName: {},
     gateTime: {},
     injected_chars: 0,
+    durable_chars: 0,
+    hook_context_reliable: false,
     mcp: {},
     estimated_cost_usd: 0,
     cost_incomplete: false,
@@ -3244,6 +3294,12 @@ function updateRollup(root, config, event) {
   if (event.kind === "session.start" && typeof event.attrs.injected_chars === "number") {
     rollup.injected_chars = event.attrs.injected_chars;
   }
+  if (event.kind === "session.start" && typeof event.attrs.durable_chars === "number") {
+    rollup.durable_chars = event.attrs.durable_chars;
+  }
+  if (event.kind === "session.start" && typeof event.attrs.hook_context_reliable === "boolean") {
+    rollup.hook_context_reliable = event.attrs.hook_context_reliable;
+  }
   if (event.kind === "policy.deny" || event.kind === "shell.start" || event.kind === "shell.end") {
     const permission = String(event.attrs.permission ?? "");
     if (permission === "ask" || permission === "deny") {
@@ -3413,7 +3469,7 @@ var DEFAULT_LESSONS_POLICY = {
   promoteHitCount: 2,
   decayLambda: 0.02,
   projectBoost: 1.5,
-  syncRulesFile: false,
+  syncRulesFile: "auto",
   gardenOnSessionEnd: true
 };
 var DEFAULTS = {
@@ -3586,6 +3642,10 @@ function postureOf(root, pair) {
 function resolveProjectPosture(root) {
   return postureOf(root, readConfigPair(root));
 }
+function resolveProjectSyncMode(root) {
+  const pair = readConfigPair(root);
+  return resolveSyncMode(pair.fromProject.intelligence?.lessons?.syncRulesFile ?? pair.fromUser.intelligence?.lessons?.syncRulesFile);
+}
 function loadPolicy(root) {
   const pair = readConfigPair(root);
   const merged = deepMerge(deepMerge(DEFAULTS, pair.fromUser), pair.fromProject);
@@ -3593,6 +3653,7 @@ function loadPolicy(root) {
   if (flagExists(root, "grind-on")) {
     merged.grind.enabled = true;
   }
+  merged.intelligence.lessons.syncRulesFile = lessonsSyncMode(merged.intelligence.lessons.syncRulesFile);
   return merged;
 }
 function isUnderCodePaths(relativePath, codePaths) {
@@ -5281,11 +5342,14 @@ var coreFacade = {
     writeProjectLessons: writeProjectLessons2,
     readProjectLessons,
     readGlobalLessons,
+    allLessons,
     globalLessonsStorePath,
     creditLessons: creditLessons2,
     markGradeable,
     gardenAndPersistLessons,
     renderLessonsMarkdown,
+    durableViewVerdict,
+    resolveSyncMode,
     renderLessonBlock,
     promotionCount,
     isInjectable,
@@ -5335,6 +5399,7 @@ var coreFacade = {
     operatorBootstrapLines,
     loadPolicy,
     resolveProjectPosture,
+    resolveProjectSyncMode,
     OPERATOR_MODES,
     isOperatorMode,
     isUnderCodePaths,
@@ -5421,7 +5486,66 @@ var coreFacade = {
   }
 };
 // src/entrypoints/run.ts
-import { join as join28 } from "node:path";
+import { join as join30 } from "node:path";
+
+// src/providers/claude/claude.lessons-view.ts
+import { existsSync as existsSync24, mkdirSync as mkdirSync15, readFileSync as readFileSync25, writeFileSync as writeFileSync14 } from "node:fs";
+import { dirname as dirname6, join as join25 } from "node:path";
+var IMPORT_LINE = "@.tlc/harness/lessons.md";
+function claudeLessonsSourcePath(root) {
+  return join25(dirname6(projectConfigPath(root)), "lessons.md");
+}
+function claudeMdPath(root) {
+  return join25(root, "CLAUDE.md");
+}
+function renderClaudeLessonsView(root) {
+  if (!existsSync24(claudeLessonsSourcePath(root))) {
+    return null;
+  }
+  const path = claudeMdPath(root);
+  const existing = existsSync24(path) ? readFileSync25(path, "utf8") : "";
+  const alreadyImported = existing.split(`
+`).some((line) => line.trim() === IMPORT_LINE);
+  if (alreadyImported) {
+    return path;
+  }
+  const separator = existing.length > 0 && !existing.endsWith(`
+`) ? `
+` : "";
+  const content = existing.length > 0 ? `${existing}${separator}
+${IMPORT_LINE}
+` : `${IMPORT_LINE}
+`;
+  mkdirSync15(dirname6(path), { recursive: true });
+  writeFileSync14(path, content, "utf8");
+  return path;
+}
+// src/providers/cursor/cursor.lessons-view.ts
+import { existsSync as existsSync25, mkdirSync as mkdirSync16, readFileSync as readFileSync26, writeFileSync as writeFileSync15 } from "node:fs";
+import { dirname as dirname7, join as join26 } from "node:path";
+function cursorLessonsSourcePath(root) {
+  return join26(dirname7(projectConfigPath(root)), "lessons.md");
+}
+function cursorLessonsViewPath(root) {
+  return join26(root, ".cursor", "rules", "harness-lessons.mdc");
+}
+function renderCursorLessonsView(root) {
+  const sourcePath = cursorLessonsSourcePath(root);
+  if (!existsSync25(sourcePath)) {
+    return null;
+  }
+  const body = readFileSync26(sourcePath, "utf8");
+  const path = cursorLessonsViewPath(root);
+  mkdirSync16(dirname7(path), { recursive: true });
+  const content = `---
+description: Harness-learned lessons (auto-synced from gate failures)
+alwaysApply: true
+---
+
+${body}`;
+  writeFileSync15(path, content, "utf8");
+  return path;
+}
 // src/providers/provider.degrade.ts
 var ESCALATION_PREFIX = "Escalation unavailable on this provider — ";
 var NO_HUMAN_PREFIX = "No operator is answering prompts in this permission mode — ";
@@ -5462,6 +5586,9 @@ function canCarryContext(event, capabilities) {
   }
   if (event.event === "tool.after") {
     return capabilities.contextAtToolAfter;
+  }
+  if (event.event === "stop") {
+    return capabilities.contextAtStop;
   }
   return true;
 }
@@ -5518,6 +5645,8 @@ function claudeCapabilities() {
     toolOutputRewrite: true,
     contextAtToolBefore: true,
     contextAtToolAfter: true,
+    contextAtStop: true,
+    sessionStartContextReliable: true,
     usageInPayload: false,
     effortSignal: true,
     thoughtEvent: false
@@ -5826,7 +5955,7 @@ function claudePolicyDefaults() {
 }
 
 // src/providers/claude/claude.wiring.ts
-import { dirname as dirname6, join as join25 } from "node:path";
+import { dirname as dirname8, join as join27 } from "node:path";
 var ENTRY_SPECS = [
   { hookEvent: "SessionStart", handler: "session-start", timeoutSeconds: 10 },
   { hookEvent: "SessionEnd", handler: "session-end", timeoutSeconds: 10 },
@@ -5841,7 +5970,7 @@ var ENTRY_SPECS = [
   { hookEvent: "MessageDisplay", handler: "response-after", timeoutSeconds: 5 }
 ];
 function claudeSettingsPath() {
-  return join25(claudeConfigDir(), "settings.json");
+  return join27(claudeConfigDir(), "settings.json");
 }
 function claudeWiring(runtime) {
   const entries = ENTRY_SPECS.map((spec) => ({
@@ -5883,6 +6012,8 @@ function cursorCapabilities() {
     toolOutputRewrite: true,
     contextAtToolBefore: false,
     contextAtToolAfter: true,
+    contextAtStop: false,
+    sessionStartContextReliable: false,
     usageInPayload: true,
     effortSignal: false,
     thoughtEvent: true
@@ -6138,7 +6269,7 @@ function cursorPolicyDefaults() {
 }
 
 // src/providers/cursor/cursor.wiring.ts
-import { join as join26 } from "node:path";
+import { join as join28 } from "node:path";
 var ENTRY_SPECS2 = [
   { hookEvent: "sessionStart", handler: "session-start", timeoutSeconds: 10 },
   { hookEvent: "sessionEnd", handler: "session-end", timeoutSeconds: 10 },
@@ -6178,7 +6309,7 @@ function cursorWiring(runtime) {
     ...spec.loopLimit !== undefined ? { loopLimit: spec.loopLimit } : {}
   }));
   return {
-    target: join26(cursorConfigDir(), "hooks.json"),
+    target: join28(cursorConfigDir(), "hooks.json"),
     strategy: "replace",
     entries
   };
@@ -6209,8 +6340,8 @@ function resolveFromRegistry(raw, registry) {
   };
 }
 // src/entrypoints/support.ts
-import { existsSync as existsSync24 } from "node:fs";
-import { join as join27 } from "node:path";
+import { existsSync as existsSync26, statSync as statSync4 } from "node:fs";
+import { join as join29 } from "node:path";
 var OBS_CONFIG = coreFacade.observability.DEFAULT_OBS;
 var OBS_CONFIG_AUDIT = { ...OBS_CONFIG, debugEnabled: true };
 function obsConfigFor(policy, base = OBS_CONFIG) {
@@ -6223,12 +6354,19 @@ function obsConfigFor(policy, base = OBS_CONFIG) {
     retentionDays: policy.obs.retentionDays
   };
 }
+function sizeOf(path) {
+  try {
+    return statSync4(path).size;
+  } catch {
+    return 0;
+  }
+}
 function sessionIdFromKey(event) {
   const prefix = `${event.provider}-`;
   return event.sessionKey.startsWith(prefix) ? event.sessionKey.slice(prefix.length) : event.sessionKey;
 }
 async function currentGitBranch(root) {
-  if (!existsSync24(join27(root, ".git"))) {
+  if (!existsSync26(join29(root, ".git"))) {
     return null;
   }
   const result = await runProcess({ command: ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd: root });
@@ -6239,7 +6377,7 @@ async function currentGitBranch(root) {
   return branch.length > 0 ? branch : null;
 }
 async function currentGitSha(root) {
-  if (!existsSync24(join27(root, ".git"))) {
+  if (!existsSync26(join29(root, ".git"))) {
     return null;
   }
   const result = await runProcess({ command: ["git", "rev-parse", "--short", "HEAD"], cwd: root });
@@ -6255,6 +6393,15 @@ function effectiveBlockedPatterns(configured, provider) {
 }
 function renderLessonLine(lesson) {
   return coreFacade.lesson.renderLessonBlock(lesson);
+}
+function renderProviderLessonsView(providerName, root) {
+  if (providerName === "cursor") {
+    return renderCursorLessonsView(root);
+  }
+  if (providerName === "claude") {
+    return renderClaudeLessonsView(root);
+  }
+  return null;
 }
 function formatLessonsBlock(lessons, title, omitted = 0) {
   if (lessons.length === 0) {
@@ -6276,7 +6423,7 @@ function errorMessage(error) {
 }
 function recordAdapterEvent(root, kind, attrs) {
   try {
-    appendRecord(join28(projectStateDir(root), "obs.jsonl"), {
+    appendRecord(join30(projectStateDir(root), "obs.jsonl"), {
       schema: "harness.observability.v1",
       provider: "unknown",
       kind,
@@ -6389,6 +6536,7 @@ var sessionStartHandler = async (event, ctx) => {
   const session = sessionIdFromKey(event);
   const root = event.projectDir;
   coreFacade.policy.recordPolicyBaseline(root, event.sessionKey);
+  let durableChars = 0;
   const boot = coreFacade.turn.markBooted(root, event.sessionKey);
   if (boot.alreadyBooted) {
     return { kind: "context", text: "", env: { HARNESS_ACTIVE: "1" } };
@@ -6446,15 +6594,21 @@ var sessionStartHandler = async (event, ctx) => {
     }
   }
   if (policy.intelligence.lessons.enabled) {
+    const config = policy.intelligence.lessons;
     const selected = await coreFacade.lesson.selectLessons({
       projectDir: root,
-      config: policy.intelligence.lessons,
+      config,
       mode: "session",
       text: [handoff.blockers, handoff.next_action].filter(Boolean).join(" ")
     });
     const block = formatLessonsBlock(selected.lessons, "Lessons (ranked; follow these — do not repeat known failures):", selected.omitted);
     if (block) {
       lines.push("", block);
+    }
+    if (coreFacade.lesson.durableViewVerdict(config.syncRulesFile, ctx.capabilities.sessionStartContextReliable).writes) {
+      coreFacade.lesson.renderLessonsMarkdown(root, coreFacade.lesson.allLessons(root), config);
+      const viewPath = renderProviderLessonsView(event.provider, root);
+      durableChars = viewPath === null ? 0 : sizeOf(viewPath);
     }
   }
   lines.push(policy.grind.enabled ? "Grind ON: stop hook runs configured lint/test gates and auto-continues on failure." : "Grind OFF (default).");
@@ -6468,7 +6622,9 @@ var sessionStartHandler = async (event, ctx) => {
       injected_chars: text.length,
       injected_lines: lines.length,
       posture: policy.mode,
-      lessons_injected: policy.intelligence.lessons.enabled
+      lessons_injected: policy.intelligence.lessons.enabled,
+      durable_chars: durableChars,
+      hook_context_reliable: ctx.capabilities.sessionStartContextReliable
     }
   });
   return { kind: "context", text, env: { HARNESS_ACTIVE: "1" } };

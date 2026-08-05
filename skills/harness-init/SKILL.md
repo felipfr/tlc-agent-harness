@@ -158,7 +158,9 @@ Only after confirmation:
    `CURSOR_CONFIG_DIR` and `CLAUDE_CONFIG_DIR` override them and a relocated config is common. Take the
    resolved paths from `tlc harness doctor` rather than assuming either default.
 5. Ensure `.gitignore` covers `.tlc/harness/state/`.
-6. If `intelligence.lessons.syncRulesFile` is true, run `tlc harness lessons sync-rules` once after write.
+6. If `intelligence.lessons.enabled` is true and `syncRulesFile` is not `never`, run `tlc harness lessons
+   sync-rules` once after write. Under the default `auto` the durable view is written where the provider does not
+   deliver hook context, so do not ask the user to choose a transport — ask only whether they want the file at all.
 7. Run `tlc harness status` and `tlc harness doctor`.
 8. Tell the user: reload/restart the provider session if hooks were new; next agent turn should set
    `TLC_ACTIVE`; day-to-day help is `tlc harness help`.
