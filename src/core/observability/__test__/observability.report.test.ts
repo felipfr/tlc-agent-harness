@@ -126,10 +126,44 @@ test("the report names the silent rails and the price of the prose", () => {
   const rollup = newRollup("session-a", "provider-a");
   rollup.railsByRule = { "shell-posture-paired": 4 };
   rollup.injected_chars = 2480;
+  rollup.hook_context_reliable = true;
   const markdown = sessionReportMarkdown(rollup, ["shell-posture-paired", "comments"]);
   assert.match(markdown, /shell-posture-paired \| 4/);
   assert.match(markdown, /comments \| 0 — enabled and never fired/);
   assert.match(markdown, /2480 characters/);
+  assert.match(markdown, /paid on every turn/);
+});
+
+/**
+ * hazard: the line read "that is the price of the rails above, paid on every turn" for every provider. On a host that
+ * drops context returned from its session-start hook it is paid never, so the report was charging the operator for
+ * prose the model never saw ([/decisions/ad-050.md](/decisions/ad-050.md)).
+ */
+test("a provider that drops hook context is not charged for the emission", () => {
+  const rollup = newRollup("session-a", "provider-a");
+  rollup.injected_chars = 2480;
+  rollup.hook_context_reliable = false;
+  const markdown = sessionReportMarkdown(rollup, []);
+  assert.match(markdown, /2480 characters/);
+  assert.match(markdown, /does not deliver context/);
+  assert.doesNotMatch(markdown, /paid on every turn/);
+});
+
+// invariant: the file the harness wrote is counted, because that is what the host is asked to read every request.
+test("the durable view's size is reported next to the emission it replaces", () => {
+  const rollup = newRollup("session-a", "provider-a");
+  rollup.injected_chars = 2480;
+  rollup.durable_chars = 912;
+  rollup.hook_context_reliable = false;
+  const markdown = sessionReportMarkdown(rollup, []);
+  assert.match(markdown, /912 characters, written as an always-applied rules file/);
+  assert.match(markdown, /every request/);
+});
+
+// invariant: silent when there is nothing to charge for. A cost section on a session that injected nothing is noise.
+test("a session that injected nothing says nothing about cost", () => {
+  const markdown = sessionReportMarkdown(newRollup("session-a", "provider-a"), []);
+  assert.doesNotMatch(markdown, /characters/);
 });
 
 test("a per-gate breakdown separates one flaky gate from a broken build", () => {

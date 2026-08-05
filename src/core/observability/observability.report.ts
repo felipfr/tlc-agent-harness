@@ -70,6 +70,39 @@ export function railsNeverFired(rollup: SessionRollup, activeRules: readonly str
   return activeRules.filter((rule) => !fired.has(rule)).sort();
 }
 
+/**
+ * hazard: one line said `injected_chars` was "the price of the rails above, paid on every turn". On a host that
+ * drops context returned from its session-start hook it is paid never, and the durable rules file — which asks to be
+ * included on every request — was absent from the rollup entirely. The number was wrong in both directions there
+ * ([/decisions/ad-050.md](/decisions/ad-050.md)).
+ *
+ * invariant: every number here was observed. The characters are counted from what the harness emitted and from the
+ * file it wrote; what the host then does with either is stated as the host's declaration, not as a measurement.
+ */
+export function costLines(rollup: SessionRollup): string[] {
+  if (rollup.injected_chars === 0 && rollup.durable_chars === 0) {
+    return [];
+  }
+  // why: its own section rather than a trailing line under the rails table, which is where it was — so a session
+  // with no active rail reported no cost while still paying one.
+  const lines = ["", "## Injected context", ""];
+  if (rollup.hook_context_reliable) {
+    lines.push(
+      `Injected at session start: ${rollup.injected_chars} characters. That is the price of the rails, paid on every turn.`,
+    );
+  } else {
+    lines.push(
+      `Emitted at session start: ${rollup.injected_chars} characters — this provider does not deliver context returned from that hook, so it is not what the model reads.`,
+    );
+  }
+  if (rollup.durable_chars > 0) {
+    lines.push(
+      `Durable lessons view: ${rollup.durable_chars} characters, written as an always-applied rules file. That is what the provider is asked to include on every request.`,
+    );
+  }
+  return lines;
+}
+
 function railActivity(rollup: SessionRollup, activeRules: readonly string[]): string {
   const fired = Object.entries(rollup.railsByRule ?? {}).sort((a, b) => b[1] - a[1]);
   const silent = railsNeverFired(rollup, activeRules);
@@ -85,12 +118,6 @@ function railActivity(rollup: SessionRollup, activeRules: readonly string[]): st
     ...fired.map(([rule, count]) => `| ${rule} | ${count} |`),
     ...silent.map((rule) => `| ${rule} | 0 — enabled and never fired |`),
   ];
-  if (rollup.injected_chars > 0) {
-    rows.push(
-      "",
-      `Injected at session start: ${rollup.injected_chars} characters. That is the price of the rails above, paid on every turn.`,
-    );
-  }
   return rows.join("\n");
 }
 
@@ -203,5 +230,6 @@ ${JSON.stringify(rollup.mcp, null, 2)}
 \`\`\`
 ${gateTimeSection(rollup)}
 ${railActivity(rollup, activeRules)}
+${costLines(rollup).join("\n")}
 `;
 }

@@ -398,6 +398,31 @@ test("the durable view carries the core tier, not only this project's lessons", 
   }
 });
 
+/**
+ * hazard: a sensor caught this one. Zeroing `durable_chars` at the producer left the whole suite green — the report
+ * read a field nothing asserted, which is the shape of every dead rail this project has found
+ * ([/decisions/ad-050.md](/decisions/ad-050.md)).
+ */
+test("session start records the durable view's size and what the host does with hook context", () => {
+  const root = tempRoot();
+  return (async () => {
+    try {
+      writeProjectPolicy(root, { intelligence: { lessons: { enabled: true } } });
+      await runHandler(sessionStartHandler, stdinOf(cursorStart(root)));
+      const rollup = coreFacade.observability.getRollup(root, "cursor-conv-1");
+      assert.ok(rollup, "a rollup was written");
+      assert.equal(rollup?.hook_context_reliable, false, "this host declares it drops hook context");
+      assert.ok(
+        (rollup?.durable_chars ?? 0) > 0,
+        `the durable view's size reached the rollup, got ${rollup?.durable_chars}`,
+      );
+      assert.ok((rollup?.injected_chars ?? 0) > 0, "the emission is still counted");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  })();
+});
+
 // invariant: the control. A host that delivers hook context gets no file written at session start either.
 test("a Claude session start writes no durable view", async () => {
   const root = tempRoot();

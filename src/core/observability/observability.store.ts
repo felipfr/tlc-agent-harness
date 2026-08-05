@@ -40,6 +40,14 @@ export type SessionRollup = {
   gateTime: Record<string, { runs: number; totalMs: number; worstMs: number; reused?: number }>;
   /** Characters of prose the harness injected at session start. The cost side of every rail, in one number. */
   injected_chars: number;
+  /**
+   * hazard: `injected_chars` was reported as the price paid on every turn. On a host that drops hook context it is
+   * paid never, and the durable rules file — which asks to be included on every request — was absent from the
+   * rollup. The number was wrong in both directions there ([/decisions/ad-050.md](/decisions/ad-050.md)).
+   */
+  durable_chars: number;
+  /** What the provider declares about delivering context from its session-start hook. */
+  hook_context_reliable: boolean;
   mcp: Record<string, number>;
   estimated_cost_usd: number;
   cost_incomplete: boolean;
@@ -202,6 +210,10 @@ export function newRollup(sessionKey: string, provider: string): SessionRollup {
     gatesByName: {},
     gateTime: {},
     injected_chars: 0,
+    durable_chars: 0,
+    // why: the pessimistic default. A rollup whose session start never ran claims no delivery rather than claiming
+    // one it did not observe.
+    hook_context_reliable: false,
     mcp: {},
     estimated_cost_usd: 0,
     cost_incomplete: false,

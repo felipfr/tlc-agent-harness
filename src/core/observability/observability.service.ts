@@ -169,6 +169,12 @@ function updateRollup(root: string, config: ObservabilityConfig, event: ObsEvent
   if (event.kind === "session.start" && typeof event.attrs.injected_chars === "number") {
     rollup.injected_chars = event.attrs.injected_chars;
   }
+  if (event.kind === "session.start" && typeof event.attrs.durable_chars === "number") {
+    rollup.durable_chars = event.attrs.durable_chars;
+  }
+  if (event.kind === "session.start" && typeof event.attrs.hook_context_reliable === "boolean") {
+    rollup.hook_context_reliable = event.attrs.hook_context_reliable;
+  }
   // invariant: one place counts refusals by rule, whichever rail produced them. Two counters for one fact is how
   // they come to disagree.
   if (event.kind === "policy.deny" || event.kind === "shell.start" || event.kind === "shell.end") {

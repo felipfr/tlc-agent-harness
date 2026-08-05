@@ -10,6 +10,7 @@ import {
   obsConfigFor,
   renderProviderLessonsView,
   sessionIdFromKey,
+  sizeOf,
 } from "./support.ts";
 
 export const sessionStartHandler: Handler = async (
@@ -23,6 +24,8 @@ export const sessionStartHandler: Handler = async (
   // why: recorded before the already-booted return so a resumed session has a baseline too. The check
   // records lazily when one is missing, so this is robustness rather than correctness.
   coreFacade.policy.recordPolicyBaseline(root, event.sessionKey);
+
+  let durableChars = 0;
 
   const boot = coreFacade.turn.markBooted(root, event.sessionKey);
   if (boot.alreadyBooted) {
@@ -112,7 +115,10 @@ export const sessionStartHandler: Handler = async (
         .writes
     ) {
       coreFacade.lesson.renderLessonsMarkdown(root, coreFacade.lesson.allLessons(root), config);
-      renderProviderLessonsView(event.provider, root);
+      const viewPath = renderProviderLessonsView(event.provider, root);
+      // why: measured from the file that was written, not estimated from the lessons that went into it. The view
+      // carries frontmatter the injected block does not ([/decisions/ad-050.md](/decisions/ad-050.md)).
+      durableChars = viewPath === null ? 0 : sizeOf(viewPath);
     }
   }
 
@@ -135,6 +141,8 @@ export const sessionStartHandler: Handler = async (
       injected_lines: lines.length,
       posture: policy.mode,
       lessons_injected: policy.intelligence.lessons.enabled,
+      durable_chars: durableChars,
+      hook_context_reliable: ctx.capabilities.sessionStartContextReliable,
     },
   });
 

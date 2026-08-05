@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { EffortLevel, HarnessEvent } from "../contracts/index.ts";
 import { coreFacade, type HarnessLesson, type ObservabilityConfig, type Policy } from "../core/index.ts";
@@ -30,6 +30,15 @@ export function obsConfigFor(
     sessionCostAlertUsd: policy.obs.sessionCostAlertUsd,
     retentionDays: policy.obs.retentionDays,
   };
+}
+
+/** Characters on disk, or zero when the file went away between the write and the read. */
+export function sizeOf(path: string): number {
+  try {
+    return statSync(path).size;
+  } catch {
+    return 0;
+  }
 }
 
 export function sessionIdFromKey(event: HarnessEvent): string {
