@@ -71,7 +71,10 @@ function stuckInstall(): { install: string; upstream: string } {
   writeFileSync(join(work, "dist", "stop.mjs"), "// upstream v2\n");
   git(work, ["add", "."]);
   git(work, ["commit", "-qm", "v2"]);
-  git(work, ["push", "-q", "origin", "main"]);
+  // hazard: `push origin main` needs a *local* branch called main, and a clone of an empty bare repository takes
+  // its name from `init.defaultBranch` — `main` on this machine, `master` on CI. Pushing `HEAD:main` names the
+  // remote ref and asks nothing of the local one.
+  git(work, ["push", "-q", "origin", "HEAD:main"]);
 
   // the dirt: a local build rewrote the bundle with different bytes
   writeFileSync(join(install, "dist", "stop.mjs"), "// rebuilt locally by esbuild\n");
