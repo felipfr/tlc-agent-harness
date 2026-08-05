@@ -37,7 +37,7 @@ export type SessionRollup = {
    * on every gate outcome and surfaced nowhere. `worstMs` separates "one slow run" from "many runs"
    * ([/decisions/ad-033.md](/decisions/ad-033.md)).
    */
-  gateTime: Record<string, { runs: number; totalMs: number; worstMs: number }>;
+  gateTime: Record<string, { runs: number; totalMs: number; worstMs: number; reused?: number }>;
   /** Characters of prose the harness injected at session start. The cost side of every rail, in one number. */
   injected_chars: number;
   mcp: Record<string, number>;

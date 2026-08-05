@@ -117,12 +117,18 @@ function gateTimeSection(rollup: SessionRollup): string {
     "",
     "## Gate time",
     "",
-    "| Gate | Runs | Total s | Worst run s |",
-    "|------|------|---------|-------------|",
-    ...entries.map(([gate, t]) => `| ${gate} | ${t.runs} | ${seconds(t.totalMs)} | ${seconds(t.worstMs)} |`),
+    "| Gate | Runs | Reused | Total s | Worst run s |",
+    "|------|------|--------|---------|-------------|",
+    ...entries.map(
+      ([gate, t]) =>
+        `| ${gate} | ${t.runs} | ${t.reused ?? 0} | ${seconds(t.totalMs)} | ${seconds(t.worstMs)} |`,
+    ),
     "",
     "A gate's cost is paid once per attempt, so the total is the command's own time multiplied by how many times the",
     "agent had to retry. Lowering it means a faster command or fewer failures, not a faster harness.",
+    "",
+    "**Reused** is a stop where nothing the gate reads had changed, so the previous verdict stood and the command did",
+    "not run. Those are the runs the harness did not make you pay for.",
   ].join("\n");
 }
 

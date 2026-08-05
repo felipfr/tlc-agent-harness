@@ -68,6 +68,26 @@ Re-run the platform installer, or ensure the CLI shim is on PATH:
 3. Confirm `.tlc/harness/state/` is writable in the project.
 4. `tlc harness obs live` after a prompt submit / stop / denial.
 
+## The gate runs on a turn that changed nothing
+
+It does not any more, and this is how to confirm it. A verdict is keyed on a content hash of the gate command and
+the files it ran against; a match reuses the verdict without executing the command
+([/decisions/ad-045.md](/decisions/ad-045.md)).
+
+```bash
+tlc harness obs report      # the Gate time table has a Reused column
+```
+
+| Reading | Meaning |
+| --- | --- |
+| `Runs` climbing on every turn | the inputs really are changing, or the hash is incomplete |
+| `Reused` climbing | the verdict stood and the command did not run |
+| both zero | the gate never ran; check `grind.enabled` and `codePaths` |
+
+The hash is **incomplete** — so the gate always runs — when an input cannot be read, which includes a tracked file
+that was deleted, or when the changed set exceeds 400 files or 12 MB. A gate that depends on something outside the
+changed files (a database, a service, an environment variable) can also reuse a verdict that no longer holds.
+
 ## A lesson is not reaching the turn
 
 `tlc harness lessons list` answers it directly — a lesson that is being withheld is marked `WITHHELD` and the

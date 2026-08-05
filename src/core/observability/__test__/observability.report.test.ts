@@ -164,9 +164,32 @@ test("the report shows runs, total and worst per gate, worst-total first", () =>
   };
   const markdown = sessionReportMarkdown(rollup, []);
   assert.match(markdown, /## Gate time/);
-  assert.match(markdown, /\| test \| 3 \| 720\.0 \| 250\.0 \|/);
+  assert.match(markdown, /\| test \| 3 \| 0 \| 720\.0 \| 250\.0 \|/);
   assert.ok(markdown.indexOf("| test |") < markdown.indexOf("| lint |"), "worst total must come first");
   assert.match(markdown, /once per attempt/);
+});
+
+/**
+ * why: the reused column is what makes the saving visible. Without it, a session where the suite ran once and was
+ * reused five times reads identically to one where it ran once and nothing else happened
+ * ([/decisions/ad-045.md](/decisions/ad-045.md)).
+ */
+test("the report counts reused verdicts apart from runs, and they add no time", () => {
+  const rollup = newRollup("session-a", "provider-a");
+  rollup.gateTime = { test: { runs: 1, totalMs: 240_000, worstMs: 240_000, reused: 5 } };
+  const markdown = sessionReportMarkdown(rollup, []);
+  assert.match(markdown, /\| test \| 1 \| 5 \| 240\.0 \| 240\.0 \|/);
+  assert.match(markdown, /the runs the harness did not make you pay for/);
+});
+
+// hazard: a rollup written before the field existed has no `reused`, and rendering `undefined` in a table cell is
+// what turns a missing number into the word "undefined" in an operator's report.
+test("a rollup written before the reused column renders zero, not undefined", () => {
+  const rollup = newRollup("session-a", "provider-a");
+  rollup.gateTime = { lint: { runs: 2, totalMs: 1_000, worstMs: 600 } };
+  const markdown = sessionReportMarkdown(rollup, []);
+  assert.match(markdown, /\| lint \| 2 \| 0 \| 1\.0 \| 0\.6 \|/);
+  assert.doesNotMatch(markdown, /undefined/);
 });
 
 test("no gate time renders no section", () => {

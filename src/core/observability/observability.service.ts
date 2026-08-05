@@ -150,10 +150,16 @@ function updateRollup(root: string, config: ObservabilityConfig, event: ObsEvent
 
     const ms = Number(event.attrs.duration_ms ?? 0);
     const timing = rollup.gateTime ?? {};
-    const cell = timing[name] ?? { runs: 0, totalMs: 0, worstMs: 0 };
-    cell.runs += 1;
-    cell.totalMs += ms;
-    cell.worstMs = Math.max(cell.worstMs, ms);
+    const cell = timing[name] ?? { runs: 0, totalMs: 0, worstMs: 0, reused: 0 };
+    // invariant: a reused verdict is counted apart and adds no time. Counting it as a run would divide the total
+    // by a larger number and make the command look faster than it is ([/decisions/ad-045.md](/decisions/ad-045.md)).
+    if (event.attrs.reused === true) {
+      cell.reused = (cell.reused ?? 0) + 1;
+    } else {
+      cell.runs += 1;
+      cell.totalMs += ms;
+      cell.worstMs = Math.max(cell.worstMs, ms);
+    }
     timing[name] = cell;
     rollup.gateTime = timing;
   }

@@ -17,6 +17,12 @@ export type LastGateArtifact = {
   ts: string;
   outputTail: string;
   findings: GateFinding[];
+  /**
+   * The content hash of the command and files this verdict was produced under. Absent on an artifact written
+   * before the field existed, which is why the first run after an upgrade always executes
+   * ([/decisions/ad-045.md](/decisions/ad-045.md)).
+   */
+  inputsHash?: string;
 };
 
 export type AppendFilesMode = "auto" | "always" | "never";

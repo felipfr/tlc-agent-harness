@@ -36,6 +36,7 @@ import {
   shouldAppendFiles,
 } from "./gate/gate.command.ts";
 import { filesFromOutput } from "./gate/gate.findings.ts";
+import { cachedVerdict, computeInputsHash, isCacheHit } from "./gate/gate.inputs.ts";
 import { describeHolder, withGateLock } from "./gate/gate.lock.ts";
 import { gapsFromArtifact } from "./gate/gate.service.ts";
 import { patchHandoff, readForeignSlices, readHandoff, readHandoffFile } from "./handoff/handoff.service.ts";
@@ -205,6 +206,9 @@ export const coreFacade = {
     writeLastGate,
     readLastGate,
     computeGateFingerprint,
+    computeInputsHash,
+    isCacheHit,
+    cachedVerdict,
     gapsFromArtifact,
     withGateLock,
     describeHolder,

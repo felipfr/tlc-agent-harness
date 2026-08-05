@@ -29,6 +29,7 @@ function recordGateOutcome(args: {
   sessionKey: string;
   policy: Policy;
   artifact: LastGateArtifact;
+  reused: boolean;
 }): void {
   coreFacade.observability.recordObs(args.root, obsConfigFor(args.policy), {
     provider: args.provider,
@@ -40,9 +41,22 @@ function recordGateOutcome(args: {
       exit_code: args.artifact.exitCode,
       duration_ms: args.artifact.durationMs,
       file_count: args.artifact.files.length,
+      // why: a reused verdict costs no time, so counting it as a run would make the total gate time read lower
+      // than it is and hide the saving instead of showing it ([/decisions/ad-045.md](/decisions/ad-045.md)).
+      reused: args.reused,
     },
   });
 }
+
+/**
+ * The verdict a gate would produce, without producing it twice.
+ *
+ * why: keyed on a content hash of the command and the files, which is the monorepo-tooling rule — same inputs,
+ * replay the result. A read-only turn in a repository with uncommitted work re-ran the whole suite on every
+ * question, because the trigger read the state of the tree rather than what the turn did
+ * ([/decisions/ad-045.md](/decisions/ad-045.md)).
+ */
+type GateRun = { artifact: LastGateArtifact; reused: boolean };
 
 /**
  * Grades the lessons that were injected the last time this gate failed. `helped` means the gate the lessons were
@@ -82,21 +96,29 @@ async function runLockedGate(args: {
   sessionKey: string;
   policy: Policy;
   pendingCredit: PendingLessonCredit | undefined;
-}): Promise<LastGateArtifact> {
-  const artifact = await coreFacade.gate.withGateLock(args.root, args.provider, args.session, async () => {
-    const result = await runCommand(args.root, args.command, args.argvFiles);
-    return coreFacade.gate.writeLastGate({
-      root: args.root,
-      gate: args.gate,
-      exitCode: result.exitCode,
-      command: [...args.command, ...args.argvFiles],
-      files: args.recordFiles,
-      durationMs: result.durationMs,
-      output: result.output,
-    });
-  });
+}): Promise<GateRun> {
+  const command = [...args.command, ...args.argvFiles];
+  const inputs = coreFacade.gate.computeInputsHash(args.root, args.recordFiles, command);
+  const cached = coreFacade.gate.cachedVerdict(coreFacade.gate.readLastGate(args.root), args.gate, inputs);
+
+  const artifact =
+    cached ??
+    (await coreFacade.gate.withGateLock(args.root, args.provider, args.session, async () => {
+      const result = await runCommand(args.root, args.command, args.argvFiles);
+      return coreFacade.gate.writeLastGate({
+        root: args.root,
+        gate: args.gate,
+        exitCode: result.exitCode,
+        command,
+        files: args.recordFiles,
+        durationMs: result.durationMs,
+        output: result.output,
+        ...(inputs.complete ? { inputsHash: inputs.hash } : {}),
+      });
+    }));
+
   // invariant: recorded outside the lock. A measurement must not widen the window in which one gate blocks another.
-  recordGateOutcome({ ...args, artifact });
+  recordGateOutcome({ ...args, artifact, reused: cached !== null });
   await creditPendingLessons({
     root: args.root,
     provider: args.provider,
@@ -104,7 +126,7 @@ async function runLockedGate(args: {
     gate: args.gate,
     passed: artifact.passed,
   });
-  return artifact;
+  return { artifact, reused: cached !== null };
 }
 
 async function failGate(args: {
@@ -377,7 +399,7 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
   }
 
   if (policy.grind.enabled && policy.grind.lintCommand && codeTargets.length > 0) {
-    const artifact = await runLockedGate({
+    const run = await runLockedGate({
       root,
       provider,
       session,
@@ -391,8 +413,17 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
         : [],
       recordFiles: codeTargets,
     });
-    if (!artifact.passed) {
-      return failGate({ root, provider, sessionKey, gate: "lint", artifact, loopCount, maxLoops, policy });
+    if (!run.artifact.passed) {
+      return failGate({
+        root,
+        provider,
+        sessionKey,
+        gate: "lint",
+        artifact: run.artifact,
+        loopCount,
+        maxLoops,
+        policy,
+      });
     }
   }
 
@@ -403,7 +434,7 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
     const shouldRunTests = testTargets.length > 0 || codeTargets.length > 0;
     if (shouldRunTests) {
       const recordFiles = testTargets.length > 0 ? testTargets : codeTargets;
-      const artifact = await runLockedGate({
+      const run = await runLockedGate({
         root,
         provider,
         session,
@@ -417,8 +448,17 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
           : [],
         recordFiles,
       });
-      if (!artifact.passed) {
-        return failGate({ root, provider, sessionKey, gate: "test", artifact, loopCount, maxLoops, policy });
+      if (!run.artifact.passed) {
+        return failGate({
+          root,
+          provider,
+          sessionKey,
+          gate: "test",
+          artifact: run.artifact,
+          loopCount,
+          maxLoops,
+          policy,
+        });
       }
     }
   }
@@ -467,7 +507,7 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
   // — and the harness runs it through the same lock, artifact writer and failure path as lint and test.
   // Inferring staleness from directory mapping was measured at 82-100% false reports and removed.
   if (policy.docs.command && policy.docs.command.length > 0) {
-    const artifact = await runLockedGate({
+    const run = await runLockedGate({
       root,
       provider,
       session,
@@ -479,9 +519,18 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
       argvFiles: [],
       recordFiles: changedFiles,
     });
-    if (!artifact.passed) {
+    if (!run.artifact.passed) {
       if (policy.docs.severity === "deny") {
-        return failGate({ root, provider, sessionKey, gate: "docs", artifact, loopCount, maxLoops, policy });
+        return failGate({
+          root,
+          provider,
+          sessionKey,
+          gate: "docs",
+          artifact: run.artifact,
+          loopCount,
+          maxLoops,
+          policy,
+        });
       }
       return {
         kind: "context",
@@ -490,7 +539,7 @@ export const stopHandler: Handler = async (event: HarnessEvent, ctx: HandlerCont
           `TRIED: ${policy.docs.command.join(" ")}`,
           "NEED: update what it names, or accept it knowingly — this does not block the stop.",
           "",
-          artifact.outputTail,
+          run.artifact.outputTail,
         ].join("\n"),
       };
     }

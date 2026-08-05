@@ -106,6 +106,7 @@ export function writeLastGate(args: {
   durationMs: number;
   output: string;
   reportPath?: string;
+  inputsHash?: string;
 }): LastGateArtifact {
   const outputTail = trimOutputTail(args.output);
   const fromReport = args.reportPath ? readReportFindings(args.reportPath) : null;
@@ -128,6 +129,7 @@ export function writeLastGate(args: {
     ts: new Date().toISOString(),
     outputTail,
     findings,
+    ...(args.inputsHash ? { inputsHash: args.inputsHash } : {}),
   };
   const path = lastGatePath(args.root);
   mkdirSync(dirname(path), { recursive: true });
