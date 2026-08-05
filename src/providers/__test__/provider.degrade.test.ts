@@ -13,6 +13,8 @@ const FULL_CAPS: ProviderCapabilities = {
   toolOutputRewrite: true,
   contextAtToolBefore: true,
   contextAtToolAfter: true,
+  contextAtStop: true,
+  sessionStartContextReliable: true,
   usageInPayload: true,
   effortSignal: true,
   thoughtEvent: true,
@@ -227,4 +229,44 @@ test("an event with no per-event context capability is unaffected", () => {
     caps({ contextAtToolAfter: false, contextAtToolBefore: false }),
   );
   assert.equal(decision.kind, "context");
+});
+
+/**
+ * hazard: the docs gate raises a non-blocking advisory on `stop`. Cursor's `stop` output schema carries
+ * `followup_message` and nothing else, so the advisory was rendered into `additional_context` and read by nobody —
+ * a rail that reported protection it never gave ([/decisions/ad-050.md](/decisions/ad-050.md)).
+ */
+test("context on stop abstains where the provider has no field for it", () => {
+  const decision = degrade(
+    { kind: "context", text: "advisory" },
+    eventAt("stop"),
+    caps({ contextAtStop: false }),
+  );
+  assert.equal(decision.kind, "abstain");
+});
+
+// invariant: the control for the test above. Claude's Stop hook does accept hookSpecificOutput.additionalContext,
+// so the same decision has to survive there — otherwise the capability reads as "nobody gets advisories".
+test("context on stop survives where the provider carries it", () => {
+  const decision = degrade(
+    { kind: "context", text: "advisory" },
+    eventAt("stop"),
+    caps({ contextAtStop: true }),
+  );
+  assert.equal(decision.kind, "context");
+});
+
+/**
+ * invariant: session.start keeps its text and its env even on a host that declares the delivery unreliable. The
+ * drop is a race, so the emission is free when lost and delivered when won; abstaining here would also take
+ * HARNESS_ACTIVE with it, and rails downstream read that variable.
+ */
+test("session.start context survives on a provider that declares the delivery unreliable", () => {
+  const decision = degrade(
+    { kind: "context", text: "framing", env: { HARNESS_ACTIVE: "1" } },
+    eventAt("session.start"),
+    caps({ sessionStartContextReliable: false }),
+  );
+  assert.equal(decision.kind, "context");
+  assert.deepEqual(decision.kind === "context" ? decision.env : null, { HARNESS_ACTIVE: "1" });
 });

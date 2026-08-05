@@ -11,6 +11,8 @@ export function claudeCapabilities(): ProviderCapabilities {
     toolOutputRewrite: true,
     contextAtToolBefore: true,
     contextAtToolAfter: true,
+    contextAtStop: true,
+    sessionStartContextReliable: true,
     usageInPayload: false,
     effortSignal: true,
     thoughtEvent: false,

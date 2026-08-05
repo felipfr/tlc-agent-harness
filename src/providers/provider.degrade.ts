@@ -58,6 +58,15 @@ function canCarryContext(event: HarnessEvent, capabilities: ProviderCapabilities
   if (event.event === "tool.after") {
     return capabilities.contextAtToolAfter;
   }
+  // hazard: the docs gate raises an advisory here. Cursor's `stop` schema carries `followup_message` and nothing
+  // else, so the advisory was rendered into `additional_context` and read by no one. `followup_message` is not the
+  // fallback — it auto-submits, and the advisory says in its own words that it does not block the stop.
+  if (event.event === "stop") {
+    return capabilities.contextAtStop;
+  }
+  // why: `session.start` stays true even where the host loses the text. Cursor's drop is a race rather than a
+  // refusal, so the emission is free when lost and delivered when won — the durable view is the second route,
+  // not the replacement ([/decisions/ad-050.md](/decisions/ad-050.md)).
   return true;
 }
 

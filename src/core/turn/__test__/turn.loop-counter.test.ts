@@ -30,6 +30,8 @@ function capabilities(overrides: Partial<ProviderCapabilities> = {}): ProviderCa
     toolOutputRewrite: false,
     contextAtToolBefore: false,
     contextAtToolAfter: false,
+    contextAtStop: false,
+    sessionStartContextReliable: false,
     usageInPayload: false,
     effortSignal: false,
     thoughtEvent: false,

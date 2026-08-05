@@ -11,6 +11,8 @@ export function cursorCapabilities(): ProviderCapabilities {
     toolOutputRewrite: true,
     contextAtToolBefore: false,
     contextAtToolAfter: true,
+    contextAtStop: false,
+    sessionStartContextReliable: false,
     usageInPayload: true,
     effortSignal: false,
     thoughtEvent: true,

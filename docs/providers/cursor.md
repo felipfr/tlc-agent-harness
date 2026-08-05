@@ -30,6 +30,8 @@ Source: `src/providers/cursor/`.
 | `toolOutputRewrite` | `true` |
 | `contextAtToolBefore` | `false` |
 | `contextAtToolAfter` | `true` |
+| `contextAtStop` | `false` — the `stop` output schema carries `followup_message` and nothing else |
+| `sessionStartContextReliable` | `false` — Cursor accepts `additional_context` at `sessionStart`, logs it as merged, and drops it (see [Lessons view](#lessons-view)) |
 | `usageInPayload` | `true` |
 | `effortSignal` | `false` |
 | `thoughtEvent` | `true` |

@@ -573,12 +573,32 @@ test("a failing docs command at warn injects the tool output and does not block"
   const root = repoWithChange();
   try {
     writeProjectPolicy(root, { docs: { command: FAILING_DOCS, severity: "warn" } });
-    const outcome = await runHandler(stopHandler, stdinOf(cursorStop(root)));
+    const outcome = await runHandler(stopHandler, stdinOf(claudeStop(root)));
     assert.equal(outcome.decision.kind, "context");
     if (outcome.decision.kind === "context") {
       assert.match(outcome.decision.text, /^ADVISORY/);
       assert.match(outcome.decision.text, /doc x is stale/);
     }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * hazard: this test asserted the advisory on a Cursor stop event, and Cursor's `stop` schema carries
+ * `followup_message` and nothing else — so the text it asserted was rendered into a field the host ignores. The
+ * advisory is not lost, it is in the gate artifact, which is where an operator on that host reads it
+ * ([/decisions/ad-050.md](/decisions/ad-050.md)).
+ */
+test("the docs advisory abstains on a provider whose stop event carries no context, and the artifact keeps it", async () => {
+  const root = repoWithChange();
+  try {
+    writeProjectPolicy(root, { docs: { command: FAILING_DOCS, severity: "warn" } });
+    const outcome = await runHandler(stopHandler, stdinOf(cursorStop(root)));
+    assert.equal(outcome.decision.kind, "abstain");
+    const artifact = readFileSync(join(root, ".tlc", "harness", "state", "last-gate.json"), "utf8");
+    assert.match(artifact, /"gate":\s*"docs"/);
+    assert.match(artifact, /doc x is stale/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

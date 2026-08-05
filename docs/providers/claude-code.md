@@ -30,6 +30,8 @@ Source: `src/providers/claude/`.
 | `toolOutputRewrite` | `true` |
 | `contextAtToolBefore` | `true` |
 | `contextAtToolAfter` | `true` |
+| `contextAtStop` | `true` — `Stop` accepts `hookSpecificOutput.additionalContext` for feedback that continues the turn |
+| `sessionStartContextReliable` | `true` — `SessionStart` delivers `hookSpecificOutput.additionalContext`, capped at 10,000 characters |
 | `usageInPayload` | `false` — cost comes from the transcript, not the hook payload |
 | `effortSignal` | `true` — `effort.level` (`low\|medium\|high\|xhigh\|max`) |
 | `thoughtEvent` | `false` |
